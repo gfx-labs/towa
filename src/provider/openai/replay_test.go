@@ -1,0 +1,260 @@
+package openai_test
+
+import (
+	"encoding/json/jsontext"
+	"errors"
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/gfx-labs/acpharness/src/auth"
+	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/provider/openai"
+	"github.com/gfx-labs/acpharness/src/provider/providertest"
+	"github.com/gfx-labs/acpharness/src/transcript"
+)
+
+// Recordings are made from a real account and never written by hand:
+//
+//	ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=... go test ./src/provider/openai -run TestExchange/api_
+//	ACPHARNESS_RECORD_OPENAI=1 ACPHARNESS_CODEX_TOKEN=... ACPHARNESS_CODEX_ACCOUNT_ID=... \
+//	    go test ./src/provider/openai -run TestExchange/codex_
+//
+// ACPHARNESS_OPENAI_MODEL and ACPHARNESS_CODEX_MODEL name the models. A
+// recording holds the model it was made with, so a replay needs the same
+// values. Without the record variable a scenario replays its file, and is
+// skipped when the file does not exist.
+const (
+	recordEnv     = "ACPHARNESS_RECORD_OPENAI"
+	cacheKey      = "acpharness-recording"
+	accountInTest = "recorded"
+)
+
+type scenario struct {
+	name   string
+	scheme auth.Scheme
+	effort string
+	prompt string
+	tools  []provider.Tool
+	// maxOutput provokes an incomplete response when set.
+	maxOutput int64
+	check     func(t *testing.T, events []provider.Event, err error)
+}
+
+var readTool = provider.Tool{
+	Name:        "read",
+	Description: "Read a file and return its content.",
+	InputSchema: jsontext.Value(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
+}
+
+// patchTool is a free-text tool, which only the Responses API has.
+var patchTool = provider.Tool{Native: jsontext.Value(
+	`{"type":"custom","name":"apply_patch","description":"Apply a patch. The input is the patch text."}`)}
+
+func scenarios() []scenario {
+	var out []scenario
+	for _, ep := range []struct {
+		prefix string
+		scheme auth.Scheme
+	}{{"api_", auth.SchemeAPIKey}, {"codex_", auth.SchemeOAuth}} {
+		out = append(out,
+			scenario{
+				name: ep.prefix + "text", scheme: ep.scheme, effort: "low",
+				prompt: "Reply with the single word: ready",
+				check:  checkText,
+			},
+			scenario{
+				name: ep.prefix + "function_call", scheme: ep.scheme, effort: "low",
+				prompt: "Read the file notes.txt with the read tool.", tools: []provider.Tool{readTool},
+				check: checkToolCall('{'),
+			},
+			scenario{
+				name: ep.prefix + "custom_call", scheme: ep.scheme, effort: "low",
+				prompt: "Use apply_patch to add a file hello.txt containing the line hello.", tools: []provider.Tool{patchTool},
+				check: checkToolCall('"'),
+			},
+		)
+	}
+	// The Codex backend takes no output limit, so only the API can be cut
+	// short on purpose.
+	return append(out, scenario{
+		name: "api_max_output_tokens", scheme: auth.SchemeAPIKey, effort: "low", maxOutput: 16,
+		prompt: "Write three paragraphs about rivers.",
+		check: func(t *testing.T, events []provider.Event, err error) {
+			require.NoError(t, err)
+			require.Equal(t, provider.StopMaxTokens, events[len(events)-1].Stop)
+		},
+	})
+}
+
+func checkText(t *testing.T, events []provider.Event, err error) {
+	require.NoError(t, err)
+	var deltas, finished strings.Builder
+	for _, ev := range events {
+		deltas.WriteString(ev.TextDelta)
+		if ev.Item != nil && ev.Item.Text != nil {
+			finished.WriteString(ev.Item.Text.Text)
+		}
+	}
+	require.NotEmpty(t, finished.String())
+	require.Equal(t, finished.String(), deltas.String(), "the deltas add up to the finished text")
+	require.Equal(t, provider.StopEndTurn, events[len(events)-1].Stop)
+	checkUsageBeforeStop(t, events)
+}
+
+// checkToolCall expects one call whose input is a JSON object for a
+// function tool and a JSON string for a free-text tool.
+func checkToolCall(kind jsontext.Kind) func(*testing.T, []provider.Event, error) {
+	return func(t *testing.T, events []provider.Event, err error) {
+		require.NoError(t, err)
+		progress := map[string]*strings.Builder{}
+		var call *transcript.ToolCall
+		for _, ev := range events {
+			if ev.ToolCall != nil {
+				if progress[ev.ToolCall.ID] == nil {
+					progress[ev.ToolCall.ID] = &strings.Builder{}
+				}
+				progress[ev.ToolCall.ID].WriteString(ev.ToolCall.InputDelta)
+			}
+			if ev.Item != nil && ev.Item.ToolCall != nil {
+				call = ev.Item.ToolCall
+			}
+		}
+		require.NotNil(t, call, "the response holds a tool call")
+		require.True(t, call.Input.IsValid())
+		require.Equal(t, kind, call.Input.Kind())
+		require.Contains(t, progress, call.ID, "progress was reported under the call's id")
+		require.Equal(t, provider.StopToolUse, events[len(events)-1].Stop)
+		checkUsageBeforeStop(t, events)
+	}
+}
+
+func checkUsageBeforeStop(t *testing.T, events []provider.Event) {
+	require.GreaterOrEqual(t, len(events), 2)
+	usage := events[len(events)-2].Usage
+	require.NotNil(t, usage, "usage comes before the stop")
+	require.Positive(t, usage.OutputTokens)
+}
+
+func (s scenario) request(model string, cred auth.Credential) provider.Request {
+	req := provider.Request{
+		Model: model, Credential: cred,
+		System:          []provider.SystemBlock{{Name: "instructions", Text: "You are a coding agent under test. Follow the user's request exactly."}},
+		Items:           []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: s.prompt}}}}},
+		Tools:           s.tools,
+		Effort:          s.effort,
+		CacheKey:        cacheKey,
+		MaxOutputTokens: s.maxOutput,
+	}
+	return req
+}
+
+func TestExchange(t *testing.T) {
+	recording := os.Getenv(recordEnv) != ""
+	for _, s := range scenarios() {
+		t.Run(s.name, func(t *testing.T) {
+			path := filepath.Join("testdata", s.name+".json")
+			cred := auth.Credential{Account: accountInTest, Scheme: s.scheme, Token: providertest.Redacted}
+			model := os.Getenv("ACPHARNESS_OPENAI_MODEL")
+			if s.scheme == auth.SchemeOAuth {
+				model = os.Getenv("ACPHARNESS_CODEX_MODEL")
+				cred.ChatGPTAccountID = providertest.Redacted
+			}
+			httpClient := httpclient.New()
+			cfg := openai.Config{HTTPClient: httpClient}
+			switch {
+			case recording:
+				cred.Token = os.Getenv("OPENAI_API_KEY")
+				if s.scheme == auth.SchemeOAuth {
+					cred.Token = os.Getenv("ACPHARNESS_CODEX_TOKEN")
+					cred.ChatGPTAccountID = os.Getenv("ACPHARNESS_CODEX_ACCOUNT_ID")
+				}
+				if cred.Token == "" || model == "" {
+					t.Skip("the credential or the model for this endpoint is not in the environment")
+				}
+				require.NoError(t, os.MkdirAll("testdata", 0o755))
+				httpClient.Transport = &providertest.Recorder{
+					Next: httpClient.Transport, Path: path,
+					Secrets: []string{cred.Token, cred.ChatGPTAccountID},
+				}
+			default:
+				ex, err := providertest.Load(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					t.Skipf("%s has not been recorded", path)
+				}
+				require.NoError(t, err)
+				model = recordedModel(t, ex)
+				server := providertest.Replay(t, path)
+				cfg.BaseURL, cfg.CodexBaseURL = server.URL+"/v1", server.URL+"/backend-api/codex"
+			}
+			client, err := openai.New(cfg)
+			require.NoError(t, err)
+
+			req := s.request(model, cred)
+			var events []provider.Event
+			var streamErr error
+			for ev, err := range client.Stream(t.Context(), req) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+				events = append(events, ev)
+			}
+			s.check(t, events, streamErr)
+
+			// What came back must be sendable: the next request is built
+			// from these items, and one this client cannot render would
+			// end the session.
+			for _, ev := range events {
+				if ev.Item != nil {
+					require.NoError(t, ev.Item.Validate())
+					require.NotEmpty(t, ev.Item.Provider)
+					req.Items = append(req.Items, *ev.Item)
+				}
+			}
+			requireBuilds(t, req)
+		})
+	}
+}
+
+// requireBuilds sends req to an address nothing listens on. A request the
+// client cannot build from its items fails before that, as an invalid
+// request.
+func requireBuilds(t *testing.T, req provider.Request) {
+	t.Helper()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	client, err := openai.New(openai.Config{HTTPClient: httpclient.New(), BaseURL: closed.URL, CodexBaseURL: closed.URL})
+	require.NoError(t, err)
+	for _, err := range client.Stream(t.Context(), req) {
+		var perr *provider.Error
+		require.ErrorAs(t, err, &perr)
+		require.Equal(t, provider.ReasonNetwork, perr.Reason, "the request was built and sent: %v", err)
+	}
+}
+
+func recordedModel(t *testing.T, ex *providertest.Exchange) string {
+	t.Helper()
+	dec := jsontext.NewDecoder(strings.NewReader(string(ex.Request.Body)))
+	_, err := dec.ReadToken()
+	require.NoError(t, err)
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadToken()
+		require.NoError(t, err)
+		if name.String() == "model" {
+			value, err := dec.ReadToken()
+			require.NoError(t, err)
+			return value.String()
+		}
+		require.NoError(t, dec.SkipValue())
+	}
+	t.Fatal("the recorded request names no model")
+	return ""
+}
