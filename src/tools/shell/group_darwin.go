@@ -13,8 +13,13 @@ func groupAttr() *syscall.SysProcAttr {
 // killGroup kills every process in the group that pid leads. A group with
 // nobody left in it is not an error. macOS answers EPERM, not ESRCH, when
 // the only members left are zombies.
-func killGroup(pid int) error {
-	err := syscall.Kill(-pid, syscall.SIGKILL)
+func killGroup(pid int) error { return signalGroup(pid, syscall.SIGKILL) }
+
+// terminateGroup asks every process in the group to end.
+func terminateGroup(pid int) error { return signalGroup(pid, syscall.SIGTERM) }
+
+func signalGroup(pid int, sig syscall.Signal) error {
+	err := syscall.Kill(-pid, sig)
 	if err == syscall.ESRCH || err == syscall.EPERM { //nolint:errorlint // Kill returns a bare Errno
 		return nil
 	}

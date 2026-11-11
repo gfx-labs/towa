@@ -34,6 +34,17 @@ type Input struct {
 	Dir string
 	// Timeout is zero for the configured default.
 	Timeout time.Duration
+	// CancelGrace and TimeoutGrace say how the command is stopped when the
+	// context is cancelled and when the timeout passes. Zero kills the
+	// process group at once. Otherwise the group is sent SIGTERM, and
+	// SIGKILL when the command has not exited by the end of the period.
+	// There is no default: the caller passes what its upstream tool does.
+	CancelGrace  time.Duration
+	TimeoutGrace time.Duration
+	// MaxOutputBytes is the most output to keep, when the caller wants less
+	// than the configured tools.max_output_bytes. Zero means the configured
+	// size. More than the configured size is an error.
+	MaxOutputBytes int64
 }
 
 // End says how a run ended.
@@ -61,6 +72,12 @@ type Result struct {
 	ExitCode int
 	// Signal names the signal that ended the command, when one did.
 	Signal string
+	// StopSignal names the signal that stopped the command after a cancel
+	// or a timeout: "terminated" when it exited within the grace period
+	// after SIGTERM, whether it died of the signal or caught it and exited,
+	// and "killed" when it was sent SIGKILL. It is empty when the command
+	// ended on its own.
+	StopSignal string
 	// Output is standard output and standard error as the command wrote
 	// them, through one pipe so their order is kept. Bytes that are not
 	// UTF-8 are replaced with U+FFFD.
@@ -105,22 +122,28 @@ const (
 	KindEmptyCommand Kind = "empty_command"
 	// KindTimeout: the timeout is negative or over Limit.
 	KindTimeout Kind = "timeout"
+	// KindGrace: a grace period is negative.
+	KindGrace Kind = "grace"
+	// KindOutputLimit: the output limit is negative or over LimitBytes.
+	KindOutputLimit Kind = "output_limit"
 )
 
-// Error is an Input the model has to correct. A Dir that cannot be used is
+// Error is an Input that has to be corrected. A Dir that cannot be used is
 // an *fsops.Error.
 type Error struct {
 	Kind Kind
 	// Limit is the longest timeout allowed.
 	Limit time.Duration
+	// LimitBytes is the largest output limit allowed.
+	LimitBytes int64
 }
 
 func (e *Error) Error() string { return "shell: " + string(e.Kind) }
 
 // Run runs a command in its own process group and waits for it. Output goes
 // to env.Progress as it arrives. When the context is cancelled or the
-// timeout passes, the whole group is killed. An error means the command
-// could not be run at all.
+// timeout passes, the whole group is stopped as the Input's grace periods
+// say. An error means the command could not be run at all.
 func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result, error) {
 	if strings.TrimSpace(in.Command) == "" {
 		return Result{}, &Error{Kind: KindEmptyCommand}
@@ -131,6 +154,16 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	}
 	if timeout < 0 || timeout > cfg.Shell.MaxTimeout {
 		return Result{}, &Error{Kind: KindTimeout, Limit: cfg.Shell.MaxTimeout}
+	}
+	if in.CancelGrace < 0 || in.TimeoutGrace < 0 {
+		return Result{}, &Error{Kind: KindGrace}
+	}
+	maxOutput := cfg.MaxOutputBytes
+	if in.MaxOutputBytes != 0 {
+		if in.MaxOutputBytes < 0 || in.MaxOutputBytes > cfg.MaxOutputBytes {
+			return Result{}, &Error{Kind: KindOutputLimit, LimitBytes: cfg.MaxOutputBytes}
+		}
+		maxOutput = in.MaxOutputBytes
 	}
 	dir, err := workDir(env, cfg.Files, in.Dir)
 	if err != nil {
@@ -161,7 +194,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 		return Result{}, errors.Join(fmt.Errorf("shell: %w", err), killGroup(cmd.Process.Pid), cmd.Wait(), read.Close())
 	}
 
-	out := &collector{limit: cfg.MaxOutputBytes, progress: env.Progress}
+	out := &collector{limit: maxOutput, progress: env.Progress}
 	drained := make(chan error, 1)
 	// The reader keeps sending progress after a cancel, so that the output
 	// up to the kill reaches the client.
@@ -177,12 +210,10 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 		res.End = EndExited
 	case <-timer.C:
 		res.End = EndTimedOut
-		killErr = killGroup(cmd.Process.Pid)
-		waitErr = <-exited
+		res.StopSignal, waitErr, killErr = stop(cmd.Process.Pid, exited, in.TimeoutGrace)
 	case <-ctx.Done():
 		res.End = EndCancelled
-		killErr = killGroup(cmd.Process.Pid)
-		waitErr = <-exited
+		res.StopSignal, waitErr, killErr = stop(cmd.Process.Pid, exited, in.CancelGrace)
 	}
 	res.Duration = time.Since(start)
 
@@ -222,6 +253,34 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 		return Result{}, fmt.Errorf("shell: read output: %w", readErr)
 	}
 	return res, nil
+}
+
+// stop ends the process group that pid leads and waits for the command. It
+// returns the name of the signal that stopped the command.
+func stop(pid int, exited <-chan error, grace time.Duration) (signal string, waitErr, killErr error) {
+	if grace == 0 {
+		killErr = killGroup(pid)
+		return syscall.SIGKILL.String(), <-exited, killErr
+	}
+	if err := terminateGroup(pid); err != nil {
+		// The polite signal could not be sent. The group is still killed.
+		killErr = errors.Join(err, killGroup(pid))
+		return syscall.SIGKILL.String(), <-exited, killErr
+	}
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case waitErr = <-exited:
+		// The command is gone. What it started may have ignored the signal
+		// and is still in the group. By now the command has been waited
+		// for, so its process id is free: the kill reaches another group
+		// only if the kernel gave the id out again and that process made
+		// itself a group leader in the time between.
+		return syscall.SIGTERM.String(), waitErr, killGroup(pid)
+	case <-timer.C:
+		killErr = killGroup(pid)
+		return syscall.SIGKILL.String(), <-exited, killErr
+	}
 }
 
 // workDir returns the directory a command runs in.

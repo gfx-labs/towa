@@ -131,9 +131,130 @@ func TestCancelKillsTheWholeProcessGroup(t *testing.T) {
 	require.Equal(t, shell.EndCancelled, got.res.End)
 	require.True(t, got.res.Started)
 	require.Equal(t, "killed", got.res.Signal)
+	require.Equal(t, "killed", got.res.StopSignal)
 	require.Equal(t, transcript.OutcomeUnknown, got.res.Outcome())
 	require.False(t, got.res.PipeHeld)
 	require.Eventually(t, func() bool { return !alive(child) }, 10*time.Second, 5*time.Millisecond)
+}
+
+// cancelWhen runs a command and cancels it once ready reports true.
+func cancelWhen(t *testing.T, cfg config.Tools, e tools.Env, in shell.Input, ready func() bool) shell.Result {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type outcome struct {
+		res shell.Result
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := shell.Run(ctx, e, cfg, in)
+		done <- outcome{res, err}
+	}()
+	require.Eventually(t, ready, 10*time.Second, 5*time.Millisecond)
+	cancel()
+	got := <-done
+	require.NoError(t, got.err)
+	return got.res
+}
+
+// The command catches SIGTERM, says so and exits 0. With a grace period it
+// gets the chance, and the result says SIGTERM was enough.
+func TestAGracePeriodLetsACommandCleanUp(t *testing.T) {
+	cfg, s := toolsConfig(t), &stream{}
+	e := env(t, s)
+	const command = `trap 'echo cleaned; exit 0' TERM; echo ready; sleep 300 & wait`
+	ready := func() bool { return strings.Contains(s.String(), "ready\n") }
+
+	res := cancelWhen(t, cfg, e, shell.Input{Command: command, CancelGrace: 10 * time.Second}, ready)
+	require.Equal(t, shell.EndCancelled, res.End)
+	require.Equal(t, "ready\ncleaned\n", res.Output)
+	require.Equal(t, "terminated", res.StopSignal)
+	require.Empty(t, res.Signal)
+	require.Zero(t, res.ExitCode)
+	require.Less(t, res.Duration, 10*time.Second)
+	// It was still cancelled after it started: nothing is known about it.
+	require.Equal(t, transcript.OutcomeUnknown, res.Outcome())
+
+	// Without a grace period the same command is killed and cleans nothing.
+	s2 := &stream{}
+	e.Progress = s2.progress
+	res = cancelWhen(t, cfg, e, shell.Input{Command: command}, func() bool { return strings.Contains(s2.String(), "ready\n") })
+	require.Equal(t, "ready\n", res.Output)
+	require.Equal(t, "killed", res.StopSignal)
+	require.Equal(t, "killed", res.Signal)
+
+	// A timeout has its own grace period.
+	res, err := shell.Run(context.Background(), e, cfg, shell.Input{
+		Command: command, Timeout: 300 * time.Millisecond, TimeoutGrace: 10 * time.Second,
+	})
+	require.NoError(t, err)
+	require.Equal(t, shell.EndTimedOut, res.End)
+	require.Equal(t, "ready\ncleaned\n", res.Output)
+	require.Equal(t, "terminated", res.StopSignal)
+	require.Equal(t, transcript.OutcomeFailed, res.Outcome())
+}
+
+// The command ignores SIGTERM, and so does the sleep it starts. It is
+// killed when the grace period ends, and not before.
+func TestACommandThatIgnoresTermIsKilledAfterTheGracePeriod(t *testing.T) {
+	cfg, s := toolsConfig(t), &stream{}
+	e := env(t, s)
+	const grace = 300 * time.Millisecond
+	var cancelled time.Time
+	res := cancelWhen(t, cfg, e, shell.Input{Command: `trap '' TERM; sleep 300 & echo $!; wait`, CancelGrace: grace}, func() bool {
+		cancelled = time.Now()
+		return strings.HasSuffix(s.String(), "\n")
+	})
+	require.GreaterOrEqual(t, time.Since(cancelled), grace)
+	require.Equal(t, "killed", res.StopSignal)
+	require.Equal(t, "killed", res.Signal)
+	require.False(t, res.PipeHeld)
+	child, err := strconv.Atoi(strings.TrimSpace(res.Output))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return !alive(child) }, 10*time.Second, 5*time.Millisecond)
+}
+
+// The command exits on SIGTERM and leaves behind a child that ignores it.
+// The child is still in the group, so it is killed all the same.
+func TestAChildLeftInTheGroupIsKilledAfterTheCommandExits(t *testing.T) {
+	cfg, s := toolsConfig(t), &stream{}
+	e := env(t, s)
+	// The subshell ignores SIGTERM, and the sleep it becomes inherits that.
+	const command = `(trap '' TERM; exec sleep 300) & echo $!; trap 'exit 0' TERM; wait`
+	res := cancelWhen(t, cfg, e, shell.Input{Command: command, CancelGrace: 10 * time.Second}, func() bool {
+		return strings.HasSuffix(s.String(), "\n")
+	})
+	require.Equal(t, "terminated", res.StopSignal)
+	require.Zero(t, res.ExitCode)
+	require.Less(t, res.Duration, 10*time.Second)
+	require.False(t, res.PipeHeld)
+	child, err := strconv.Atoi(strings.TrimSpace(res.Output))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return !alive(child) }, 10*time.Second, 5*time.Millisecond)
+}
+
+func TestACallMayAskForLessOutputAndNeverMore(t *testing.T) {
+	cfg := toolsConfig(t)
+	cfg.MaxOutputBytes = 2000
+	e := env(t, nil)
+	res, err := shell.Run(context.Background(), e, cfg, shell.Input{Command: "seq -w 1 10000", MaxOutputBytes: 200})
+	require.NoError(t, err)
+	require.Len(t, res.Output, 100)
+	require.Len(t, res.Tail, 100)
+	require.Equal(t, int64(10000*6-200), res.DroppedBytes)
+
+	for _, limit := range []int64{2001, -1} {
+		_, err = shell.Run(context.Background(), e, cfg, shell.Input{Command: "true", MaxOutputBytes: limit})
+		var bad *shell.Error
+		require.ErrorAs(t, err, &bad)
+		require.Equal(t, shell.KindOutputLimit, bad.Kind)
+		require.Equal(t, int64(2000), bad.LimitBytes)
+	}
+	_, err = shell.Run(context.Background(), e, cfg, shell.Input{Command: "true", CancelGrace: -time.Second})
+	var bad *shell.Error
+	require.ErrorAs(t, err, &bad)
+	require.Equal(t, shell.KindGrace, bad.Kind)
 }
 
 func TestCancelBeforeStartRunsNothing(t *testing.T) {
