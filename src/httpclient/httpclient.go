@@ -12,7 +12,14 @@ import "net/http"
 
 // New returns a client with its own connection pool. It takes its proxy
 // from HTTP_PROXY, HTTPS_PROXY and NO_PROXY, and trusts the system
-// certificate pool, which on Linux includes SSL_CERT_FILE and SSL_CERT_DIR.
+// certificate pool.
+//
+// SSL_CERT_FILE names the certificate file to trust in place of the
+// system's default file, so a file that holds only a proxy's CA must also
+// hold the public roots, unless they are in a certificate directory. On
+// Linux the default directories, or the ones in SSL_CERT_DIR, are read as
+// well. On macOS with Go 1.27, setting either variable turns the system
+// verifier off and only the named file and directories are trusted.
 //
 // The client has no overall timeout, because a model stream has no bound on
 // its length. Callers bound a request with its context.
