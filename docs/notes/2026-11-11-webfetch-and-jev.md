@@ -35,6 +35,8 @@ Errors, all `*webfetch.Error` with a `Kind`: `invalid_url`, `scheme` (not http o
 
 ### Converted
 
+Superseded on 2026-11-11: the converter is now a library. See `2026-11-11-webfetch-markdown-library.md` for what changed. The dropped list and the link rules below still hold. The formatting details and the expected `.md` files do not.
+
 Headings, paragraphs, line breaks, links, images (`![alt](src)`), unordered and ordered lists with nesting and `start`, block quotes, `pre` as a fenced block with the language from a `language-` or `lang-` class, inline code, bold, italic, strikethrough, `q`, horizontal rules, definition lists, tables as pipe tables with a caption.
 
 Details that are decisions:

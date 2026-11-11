@@ -4,8 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -43,28 +41,31 @@ func fetch(t *testing.T, cfg config.WebFetch, url string) (webfetch.Result, erro
 	return webfetch.Fetch(t.Context(), httpclient.New(), cfg, webfetch.Input{URL: url})
 }
 
-// expected reads the Markdown a fixture converts to. {{BASE}} stands for
-// the server's address, which differs on every run.
-func expected(t *testing.T, name, base string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name+".md"))
-	require.NoError(t, err)
-	return strings.ReplaceAll(string(data), "{{BASE}}", base)
-}
-
-func TestHTMLPagesComeBackAsMarkdown(t *testing.T) {
+// The Markdown itself is the library's. What is checked is what this package
+// decides before the conversion: the title, and where links point.
+func TestAnHTMLPageComesBackWithItsTitleAndAbsoluteLinks(t *testing.T) {
 	srv := site(t, nil)
-	for name, title := range map[string]string{
-		"article": "Rotating log files by hand",
-		"tables":  "Signal reference",
-		"untidy":  "Untidy page & friends",
+	for _, c := range []struct {
+		name, title   string
+		holds, absent []string
+	}{
+		// A link to a place in the same page keeps its text and loses its target.
+		{"article", "Rotating log files by hand", []string{"](" + srv.URL + "/authors/mira)", "or jump further down."}, []string{"#truncate"}},
+		// Links follow the page's base element, and an image that cannot be
+		// linked leaves its description.
+		{"untidy", "Untidy page & friends", []string{"](https://docs.example.net/guide/v2/install.html)", "A data image: inline pixels."}, nil},
 	} {
-		t.Run(name, func(t *testing.T) {
-			url := srv.URL + "/posts/" + name + ".html"
+		t.Run(c.name, func(t *testing.T) {
+			url := srv.URL + "/posts/" + c.name + ".html"
 			res, err := fetch(t, limits(), url)
 			require.NoError(t, err)
-			require.Equal(t, expected(t, name, srv.URL), res.Text)
-			require.Equal(t, title, res.Title)
+			for _, text := range c.holds {
+				require.Contains(t, res.Text, text)
+			}
+			for _, text := range c.absent {
+				require.NotContains(t, res.Text, text)
+			}
+			require.Equal(t, c.title, res.Title)
 			require.Equal(t, webfetch.FormatMarkdown, res.Format)
 			require.Equal(t, "text/html", res.ContentType)
 			require.Equal(t, url, res.URL)
@@ -74,9 +75,7 @@ func TestHTMLPagesComeBackAsMarkdown(t *testing.T) {
 	}
 }
 
-// What a reader of the page would not see must not reach the model. The
-// expected files show it is absent, and this names each thing, so that a
-// regenerated expected file cannot let one back in unnoticed.
+// What a reader of the page would not see must not reach the model.
 func TestScriptsStylesNavigationAndControlsAreDropped(t *testing.T) {
 	srv := site(t, nil)
 	for name, absent := range map[string][]string{
