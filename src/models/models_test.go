@@ -76,31 +76,26 @@ func TestAChainMayMixProviders(t *testing.T) {
 
 // Select from a real config file, as the wiring will call it.
 func TestSelectFromAConfigFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
+	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
-default_model = "opus"
-
-[models.opus]
-chain = ["claude:work/claude-opus-4-7"]
-
-[models.glm]
-chain = ["zai:main/glm-5"]
-
-[[accounts]]
-id = "work"
-provider = "claude"
-kind = "oauth"
-
-[[accounts]]
-id = "main"
-provider = "zai"
-kind = "api_key"
-api_key_env = "ZAI_API_KEY"
-
-[[providers]]
-id = "zai"
-kind = "chat"
-base_url = "https://zai.example/v4"
+default_model: opus
+models:
+  opus:
+    chain: ["claude:work/claude-opus-4-7"]
+  glm:
+    chain: ["zai:main/glm-5"]
+accounts:
+  - id: work
+    provider: claude
+    kind: oauth
+  - id: main
+    provider: zai
+    kind: api_key
+    api_key_env: ZAI_API_KEY
+providers:
+  - id: zai
+    kind: chat
+    base_url: https://zai.example/v4
 `), 0o600))
 	loaded, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)

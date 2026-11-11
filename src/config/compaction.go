@@ -8,83 +8,104 @@ import (
 
 // Compaction configures when a session's context is compacted and how the
 // summary is asked for.
+//
+// Every default is jcode's, read from origin/master 8e11eb23e with
+// `git show`, and each field names its line. "config-types" is
+// crates/jcode-config-types/src/lib.rs and "core" is
+// crates/jcode-compaction-core/src/lib.rs. jcode counts the keep and goal
+// windows in messages and calls them turns. The key names here say
+// messages.
 type Compaction struct {
 	// Mode is when to compact: CompactionReactive, CompactionProactive,
 	// CompactionSemantic or CompactionOff. Off stops the turn with a
 	// context-full reason when the next request would not fit.
-	Mode string `koanf:"mode" validate:"oneof=reactive proactive semantic off"`
+	// config-types:350.
+	Mode string `name:"mode" default:"reactive" validate:"oneof=reactive proactive semantic off" help:"When to compact: reactive, proactive, semantic or off. Off stops the turn when the next request would not fit."`
 	// SummaryPrompt selects the prompt of the summary request:
-	// SummaryCheckpoint or SummaryShort.
-	SummaryPrompt string `koanf:"summary_prompt" validate:"oneof=checkpoint short"`
+	// SummaryCheckpoint or SummaryShort. docs/design.md makes checkpoint
+	// the default. jcode has only the short prompt.
+	SummaryPrompt string `name:"summary_prompt" default:"checkpoint" validate:"oneof=checkpoint short" help:"Prompt of the summary request: checkpoint or short."`
 	// MaxContextTokens caps the budget the thresholds are measured against
 	// below the model's context window. Zero means the window.
-	MaxContextTokens int64 `koanf:"max_context_tokens" validate:"gte=0"`
+	// config-types:363.
+	MaxContextTokens int64 `name:"max_context_tokens" default:"0" validate:"gte=0" help:"Budget the thresholds are measured against, when lower than the model's context window. 0 is the window."`
 	// KeepRecentMessages is how many of the latest messages a compaction
 	// leaves as they are. A message is a run of items of one role.
-	KeepRecentMessages int `koanf:"keep_recent_messages" validate:"gte=0"`
+	// core:19 RECENT_TURNS_TO_KEEP.
+	KeepRecentMessages int `name:"keep_recent_messages" default:"10" validate:"gte=0" help:"Latest messages a compaction leaves as they are."`
 
 	// EmergencyThreshold is the fraction of the budget at which the next
 	// request is taken not to fit. The context is then cut without a model
-	// summary, keeping EmergencyKeepRecentMessages.
-	EmergencyThreshold          float64 `koanf:"emergency_threshold" validate:"gt=0,lte=1,gtefield=ReactiveThreshold"`
-	EmergencyKeepRecentMessages int     `koanf:"emergency_keep_recent_messages" validate:"gte=0,ltefield=KeepRecentMessages"`
+	// summary, keeping EmergencyKeepRecentMessages. core:13
+	// CRITICAL_THRESHOLD and core:22 MIN_TURNS_TO_KEEP.
+	EmergencyThreshold          float64 `name:"emergency_threshold" default:"0.95" validate:"gt=0,lte=1,gtefield=ReactiveThreshold" help:"Fraction of the budget at which the context is cut without a model summary."`
+	EmergencyKeepRecentMessages int     `name:"emergency_keep_recent_messages" default:"2" validate:"gte=0,ltefield=KeepRecentMessages" help:"Latest messages an emergency cut keeps."`
 	// PendingWaitMillis bounds the emergency wait for an existing summary.
 	// The caller's context may end it sooner.
-	PendingWaitMillis int64 `koanf:"pending_wait_ms" validate:"gte=0"`
+	// crates/jcode-base/src/compaction.rs:44 HARD_THRESHOLD_PENDING_WAIT_MS.
+	PendingWaitMillis int64 `name:"pending_wait_ms" default:"15000" validate:"gte=0" help:"Milliseconds an emergency cut waits for a summary that is already being made."`
 
 	// ReactiveThreshold is the fraction of the budget that starts a
 	// compaction in reactive mode. ReactiveThresholdTokens is a token count
 	// that starts one too, whichever is reached first. Zero turns the count
-	// off.
-	ReactiveThreshold       float64 `koanf:"reactive_threshold" validate:"gt=0,lte=1"`
-	ReactiveThresholdTokens int64   `koanf:"reactive_threshold_tokens" validate:"gte=0"`
+	// off. config-types:351 and 352.
+	ReactiveThreshold       float64 `name:"reactive_threshold" default:"0.8" validate:"gt=0,lte=1" help:"Fraction of the budget that starts a compaction in reactive mode."`
+	ReactiveThresholdTokens int64   `name:"reactive_threshold_tokens" default:"400000" validate:"gte=0" help:"Token count that starts a compaction in reactive mode. 0 turns the count off."`
 
 	// The proactive settings also gate semantic mode.
 	//
 	// ProactiveThreshold is the fraction of the budget the projected
 	// context has to reach. The projection is the current context plus
 	// LookaheadTurns times the growth per turn, smoothed with EWMAAlpha.
-	ProactiveThreshold float64 `koanf:"proactive_threshold" validate:"gt=0,lte=1"`
-	LookaheadTurns     int     `koanf:"lookahead_turns" validate:"gt=0"`
-	EWMAAlpha          float64 `koanf:"ewma_alpha" validate:"gt=0,lte=1"`
+	// jcode projects against the constant COMPACTION_THRESHOLD (core:9) and
+	// has no setting for it. config-types:353 and 354.
+	ProactiveThreshold float64 `name:"proactive_threshold" default:"0.8" validate:"gt=0,lte=1" help:"Fraction of the budget the projected context has to reach to compact ahead of need."`
+	LookaheadTurns     int     `name:"lookahead_turns" default:"15" validate:"gt=0" help:"Turns the projection looks ahead."`
+	EWMAAlpha          float64 `name:"ewma_alpha" default:"0.3" validate:"gt=0,lte=1" help:"Weight of the latest turn in the smoothed growth per turn."`
 	// ProactiveFloor is the fraction of the budget below which nothing is
 	// projected, unless ProactiveFloorTokens is reached. Zero turns the
-	// count off.
-	ProactiveFloor       float64 `koanf:"proactive_floor" validate:"gte=0,lte=1"`
-	ProactiveFloorTokens int64   `koanf:"proactive_floor_tokens" validate:"gte=0"`
+	// count off. config-types:355 and 356.
+	ProactiveFloor       float64 `name:"proactive_floor" default:"0.4" validate:"gte=0,lte=1" help:"Fraction of the budget below which nothing is projected."`
+	ProactiveFloorTokens int64   `name:"proactive_floor_tokens" default:"150000" validate:"gte=0" help:"Token count at which projection starts below the floor. 0 turns the count off."`
 	// MinSamples is how many per-turn context sizes are needed to project.
-	MinSamples int `koanf:"min_samples" validate:"gte=2"`
+	// config-types:357.
+	MinSamples int `name:"min_samples" default:"3" validate:"gte=2" help:"Per-turn context sizes needed to project."`
 	// StallWindow is how many of the latest turns must show growth. No
 	// growth across them means there is nothing to get ahead of.
-	StallWindow int `koanf:"stall_window" validate:"gt=0"`
+	// config-types:358.
+	StallWindow int `name:"stall_window" default:"5" validate:"gt=0" help:"Latest turns that must show growth for a projection."`
 	// MinTurnsBetween is how many turns pass after a compaction before
-	// another is started ahead of need.
-	MinTurnsBetween int `koanf:"min_turns_between" validate:"gte=0"`
-	// HistoryWindow is how many per-turn context sizes are kept.
-	HistoryWindow int `koanf:"history_window" validate:"gtefield=MinSamples,gtefield=StallWindow"`
+	// another is started ahead of need. config-types:359.
+	MinTurnsBetween int `name:"min_turns_between" default:"10" validate:"gte=0" help:"Turns that pass after a compaction before another is started ahead of need."`
+	// HistoryWindow is how many per-turn context sizes are kept. core:74
+	// TOKEN_HISTORY_WINDOW.
+	HistoryWindow int `name:"history_window" default:"20" validate:"gtefield=MinSamples,gtefield=StallWindow" help:"Per-turn context sizes kept."`
 
 	// TopicShiftThreshold is the cosine similarity between the older and
 	// the newer half of the turn embeddings below which the topic is taken
-	// to have changed.
-	TopicShiftThreshold float64 `koanf:"topic_shift_threshold" validate:"gte=0,lte=1"`
+	// to have changed. config-types:360.
+	TopicShiftThreshold float64 `name:"topic_shift_threshold" default:"0.45" validate:"gte=0,lte=1" help:"Cosine similarity between older and newer turns below which the topic is taken to have changed."`
 	// RelevanceKeepThreshold is the cosine similarity to the current goal
 	// at or above which an older message is kept and not summarised.
-	RelevanceKeepThreshold float64 `koanf:"relevance_keep_threshold" validate:"gte=0,lte=1"`
+	// config-types:361.
+	RelevanceKeepThreshold float64 `name:"relevance_keep_threshold" default:"0.65" validate:"gte=0,lte=1" help:"Cosine similarity to the current goal at or above which an older message is kept."`
 	// GoalWindowMessages is how many of the latest messages make up the
-	// current goal.
-	GoalWindowMessages int `koanf:"goal_window_messages" validate:"gt=0"`
+	// current goal. config-types:362.
+	GoalWindowMessages int `name:"goal_window_messages" default:"5" validate:"gt=0" help:"Latest messages that make up the current goal."`
 	// EmbedMaxChars is how much of a message is embedded, from its start.
-	EmbedMaxChars int `koanf:"embed_max_chars" validate:"gt=0"`
+	// core:77 EMBED_MAX_CHARS_PER_MSG.
+	EmbedMaxChars int `name:"embed_max_chars" default:"512" validate:"gt=0" help:"Characters of a message that are embedded, from its start."`
 	// EmbeddingHistoryWindow is how many turn embeddings are kept for
-	// topic-shift detection.
-	EmbeddingHistoryWindow int `koanf:"embedding_history_window" validate:"gte=4"`
+	// topic-shift detection. core:80 EMBEDDING_HISTORY_WINDOW.
+	EmbeddingHistoryWindow int `name:"embedding_history_window" default:"10" validate:"gte=4" help:"Turn embeddings kept for topic-shift detection."`
 
 	// OpenAINative is how a conversation with an OpenAI Responses endpoint
 	// is compacted: NativeAuto lets the server compact at
 	// OpenAINativeThresholdTokens, NativeExplicit calls the compact
 	// endpoint at that count, NativeOff uses Mode as for any provider.
-	OpenAINative                string `koanf:"openai_native" validate:"oneof=auto explicit off"`
-	OpenAINativeThresholdTokens int64  `koanf:"openai_native_threshold_tokens"`
+	// config-types:1320 and 1321.
+	OpenAINative                string `name:"openai_native" default:"auto" validate:"oneof=auto explicit off" help:"How a conversation with an OpenAI Responses endpoint is compacted: auto, explicit or off."`
+	OpenAINativeThresholdTokens int64  `name:"openai_native_threshold_tokens" default:"200000" help:"Token count at which an OpenAI Responses conversation is compacted natively."`
 }
 
 // Compaction modes.
@@ -107,43 +128,6 @@ const (
 	NativeExplicit = "explicit"
 	NativeOff      = "off"
 )
-
-// Every figure is jcode's, read from origin/master 8e11eb23e with
-// `git show`. "config-types" is crates/jcode-config-types/src/lib.rs and
-// "core" is crates/jcode-compaction-core/src/lib.rs. jcode counts the keep
-// and goal windows in messages and calls them turns. The key names here say
-// messages.
-var compactionDefaults = map[string]any{
-	"compaction.mode": CompactionReactive, // config-types:350
-	// docs/design.md makes checkpoint the default. jcode has only the
-	// short prompt.
-	"compaction.summary_prompt":                 SummaryCheckpoint,
-	"compaction.max_context_tokens":             0,      // config-types:363
-	"compaction.keep_recent_messages":           10,     // core:19 RECENT_TURNS_TO_KEEP
-	"compaction.emergency_threshold":            0.95,   // core:13 CRITICAL_THRESHOLD
-	"compaction.emergency_keep_recent_messages": 2,      // core:22 MIN_TURNS_TO_KEEP
-	"compaction.pending_wait_ms":                15000,  // crates/jcode-base/src/compaction.rs:44 HARD_THRESHOLD_PENDING_WAIT_MS
-	"compaction.reactive_threshold":             0.80,   // config-types:351
-	"compaction.reactive_threshold_tokens":      400000, // config-types:352
-	// jcode projects against the constant COMPACTION_THRESHOLD and has no
-	// setting for it.
-	"compaction.proactive_threshold":            0.80,       // core:9
-	"compaction.lookahead_turns":                15,         // config-types:353
-	"compaction.ewma_alpha":                     0.3,        // config-types:354
-	"compaction.proactive_floor":                0.40,       // config-types:355
-	"compaction.proactive_floor_tokens":         150000,     // config-types:356
-	"compaction.min_samples":                    3,          // config-types:357
-	"compaction.stall_window":                   5,          // config-types:358
-	"compaction.min_turns_between":              10,         // config-types:359
-	"compaction.history_window":                 20,         // core:74 TOKEN_HISTORY_WINDOW
-	"compaction.topic_shift_threshold":          0.45,       // config-types:360
-	"compaction.relevance_keep_threshold":       0.65,       // config-types:361
-	"compaction.goal_window_messages":           5,          // config-types:362
-	"compaction.embed_max_chars":                512,        // core:77 EMBED_MAX_CHARS_PER_MSG
-	"compaction.embedding_history_window":       10,         // core:80 EMBEDDING_HISTORY_WINDOW
-	"compaction.openai_native":                  NativeAuto, // config-types:1320
-	"compaction.openai_native_threshold_tokens": 200000,     // config-types:1321
-}
 
 func (c Compaction) validate() error {
 	if err := validateFields("compaction", c); err != nil {

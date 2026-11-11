@@ -65,10 +65,10 @@ func startSockets(t *testing.T) *socketProcess {
 		done:   make(chan struct{}),
 		stderr: &wire{}, stdout: &wire{}, unixPath: filepath.Join(dir, "acp.sock"),
 	}
-	configFile := filepath.Join(dir, "config.toml")
-	body := "[telemetry.logs.stderr]\nlevel = \"info\"\nformat = \"json\"\n" +
-		"[listen]\nstdio = true\n[listen.unix]\npath = \"" + p.unixPath + "\"\n" +
-		"[listen.tcp]\naddress = \"127.0.0.1:0\"\n"
+	configFile := filepath.Join(dir, "config.yaml")
+	body := "telemetry:\n  logs:\n    stderr:\n      level: info\n      format: json\n" +
+		"listen:\n  stdio: true\n  unix:\n    path: \"" + p.unixPath + "\"\n" +
+		"  tcp:\n    address: \"127.0.0.1:0\"\n"
 	require.NoError(t, os.WriteFile(configFile, []byte(body), 0o600))
 	p.cmd = exec.Command(binary, "--config", configFile, "serve")
 	p.cmd.Env = []string{

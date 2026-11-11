@@ -14,71 +14,53 @@ import (
 // sessions.
 type Listen struct {
 	// Stdio serves one connection on standard input and output.
-	Stdio bool `koanf:"stdio"`
+	Stdio bool `name:"stdio" default:"true" help:"Serve one connection on standard input and output. On by default."`
 	// MaxConnections is the most socket connections served at once, over
 	// both listeners. At the limit a connection waits until one ends.
 	// Each listener may hold one accepted connection waiting for a slot,
 	// with further connections queued in the kernel. Zero is no limit.
-	MaxConnections int `koanf:"max_connections" validate:"gte=0"`
-	// HandshakeTimeoutSeconds bounds a TLS handshake. Zero is no bound.
-	HandshakeTimeoutSeconds int `koanf:"handshake_timeout_seconds" validate:"gte=0"`
+	MaxConnections int `name:"max_connections" default:"0" validate:"gte=0" help:"Most socket connections served at once, over both listeners. 0 is no limit."`
+	// HandshakeTimeoutSeconds bounds a TLS handshake. Zero is no bound. The
+	// default is not measured. It is the TLSHandshakeTimeout of net/http's
+	// DefaultTransport, the bound Go's own client puts on the same step.
+	HandshakeTimeoutSeconds int `name:"handshake_timeout_seconds" default:"10" validate:"gte=0" help:"Seconds a TLS handshake may take. 0 is no bound."`
 
-	Unix ListenUnix `koanf:"unix"`
-	TCP  ListenTCP  `koanf:"tcp"`
+	Unix ListenUnix `embed:"" prefix:"unix."`
+	TCP  ListenTCP  `embed:"" prefix:"tcp."`
 }
 
 // ListenUnix configures the unix socket. It is on when Path is set.
 type ListenUnix struct {
 	// Path is the socket file. It is absolute.
-	Path string `koanf:"path"`
+	Path string `name:"path" placeholder:"FILE" help:"Absolute path of a unix socket to serve on. Empty means no unix socket."`
 	// Mode is the socket file's permission bits in octal, such as "0600".
 	// A process connects when it may write the file.
-	Mode string    `koanf:"mode"`
-	TLS  ListenTLS `koanf:"tls"`
+	Mode string    `name:"mode" default:"0600" help:"Permission bits of the socket file, in octal. In a file, write it in quotes."`
+	TLS  ListenTLS `embed:"" prefix:"tls."`
 }
 
 // ListenTCP configures the TCP listener. It is on when Address is set.
 type ListenTCP struct {
 	// Address is host:port. An empty host is every interface.
-	Address string `koanf:"address"`
+	Address string `name:"address" placeholder:"HOST:PORT" help:"TCP address to serve on. An empty host is every interface. Empty means no TCP listener."`
 	// PlaintextOnNonLoopback allows an address that is not a loopback one
 	// to be served without TLS. Anyone who reaches the port then drives the
 	// agent, so it is for a network that is already private.
-	PlaintextOnNonLoopback bool      `koanf:"plaintext_on_non_loopback"`
-	TLS                    ListenTLS `koanf:"tls"`
+	PlaintextOnNonLoopback bool      `name:"plaintext_on_non_loopback" help:"Serve an address that is not a loopback one without TLS. Anyone who reaches the port then drives the agent."`
+	TLS                    ListenTLS `embed:"" prefix:"tls."`
 }
 
 // ListenTLS configures TLS on one listener. It is on when CertFile is set.
 type ListenTLS struct {
 	// CertFile and KeyFile are the PEM certificate chain and its key.
-	CertFile string `koanf:"cert_file" validate:"required_with=KeyFile ClientCAFile"`
-	KeyFile  string `koanf:"key_file" validate:"required_with=CertFile"`
+	CertFile string `name:"cert_file" placeholder:"FILE" validate:"required_with=KeyFile ClientCAFile" help:"PEM certificate chain. Setting it turns TLS on for this listener."`
+	KeyFile  string `name:"key_file" placeholder:"FILE" validate:"required_with=CertFile" help:"PEM key of the certificate."`
 	// ClientCAFile is a PEM file of the authorities that sign client
 	// certificates. When it is set, a certificate a client presents must
 	// verify against it.
-	ClientCAFile string `koanf:"client_ca_file" validate:"required_if=RequireClientCert true"`
+	ClientCAFile string `name:"client_ca_file" placeholder:"FILE" validate:"required_if=RequireClientCert true" help:"PEM file of the authorities that sign client certificates. A certificate a client presents must verify against it."`
 	// RequireClientCert refuses a client that presents no certificate.
-	RequireClientCert bool `koanf:"require_client_cert"`
-}
-
-var listenDefaults = map[string]any{
-	"listen.stdio":           true,
-	"listen.max_connections": 0,
-	// Not measured. It is the TLSHandshakeTimeout of net/http's
-	// DefaultTransport, the bound Go's own client puts on the same step.
-	"listen.handshake_timeout_seconds":     10,
-	"listen.unix.path":                     "",
-	"listen.unix.mode":                     "0600",
-	"listen.unix.tls.cert_file":            "",
-	"listen.unix.tls.key_file":             "",
-	"listen.unix.tls.client_ca_file":       "",
-	"listen.unix.tls.require_client_cert":  false,
-	"listen.tcp.address":                   "",
-	"listen.tcp.plaintext_on_non_loopback": false,
-	"listen.tcp.tls.cert_file":             "",
-	"listen.tcp.tls.key_file":              "",
-	"listen.tcp.tls.client_ca_file":        "",
-	"listen.tcp.tls.require_client_cert":   false,
+	RequireClientCert bool `name:"require_client_cert" help:"Refuse a client that presents no certificate."`
 }
 
 // Enabled reports whether TLS is on.

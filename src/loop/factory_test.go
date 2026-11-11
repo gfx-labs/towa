@@ -149,53 +149,57 @@ func TestFactoryWriteProcess(t *testing.T) {
 		}
 	}))
 	defer relay.Close()
-	configuration := fmt.Sprintf(`default_model = "local"
-[[providers]]
-id = "ollama"
-kind = "chat"
-base_url = %q
-[[accounts]]
-id = "local"
-provider = "ollama"
-kind = "api_key"
-api_key_env = "FACTORY_TEST_KEY"
-[models.local]
-chain = ["ollama:local/llama3.2:3b"]
-context_window = 131072
-max_output_tokens = 256
-[store]
-root = %q
-compression = "none"
-[context]
-agents_files = false
-global_dir = ""
-skills_enabled = false
-skills_dirs = []
-[compaction]
-mode = "off"
-[conversation_search]
-enabled = false
-[webfetch]
-enabled = false
-[websearch]
-enabled = false
-[tools.batch]
-enabled = false
-[tools.files]
-confine = true
-[subagents]
-max_depth = 0
-[limits]
-max_tool_calls = 1
-max_wall = "60s"
-[limits.retry]
-max_retries = 0
-[telemetry.logs.stderr]
-level = "error"
+	configuration := fmt.Sprintf(`default_model: local
+providers:
+  - id: ollama
+    kind: chat
+    base_url: %q
+accounts:
+  - id: local
+    provider: ollama
+    kind: api_key
+    api_key_env: FACTORY_TEST_KEY
+models:
+  local:
+    chain: ["ollama:local/llama3.2:3b"]
+    context_window: 131072
+    max_output_tokens: 256
+store:
+  root: %q
+  compression: none
+context:
+  agents_files: false
+  global_dir: ""
+  skills_enabled: false
+  skills_dirs: []
+compaction:
+  mode: "off"
+conversation_search:
+  enabled: false
+webfetch:
+  enabled: false
+websearch:
+  enabled: false
+tools:
+  batch:
+    enabled: false
+  files:
+    confine: true
+subagents:
+  max_depth: 0
+limits:
+  max_tool_calls: 1
+  max_wall: 60s
+  retry:
+    max_retries: 0
+telemetry:
+  logs:
+    stderr:
+      level: error
 `, relay.URL+"/v1", filepath.Join(home, "store"))
 	cfgDir := filepath.Join(home, "config", "acpharness")
 	require.NoError(t, os.MkdirAll(cfgDir, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(configuration), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(configuration), 0o600))
 	binary := filepath.Join(t.TempDir(), "acpharness")
 	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "./cmd/acpharness")
 	build.Dir = repo

@@ -5,11 +5,11 @@ type Session struct {
 	// Mode is the mode a new session starts in. A client changes it for one
 	// session with session/set_mode, session/set_config_option or the mode
 	// key of _meta.acpharness on session/new.
-	Mode string `koanf:"mode" validate:"oneof=auto ask"`
+	Mode string `name:"mode" default:"auto" validate:"oneof=auto ask" help:"Mode a new session starts in: auto runs every tool call, ask asks the client before one that writes or executes."`
 	// ListPageSize is the most sessions one session/list response holds.
 	// Zero means every session in one response, which is the default: no
 	// measurement says where a page should end.
-	ListPageSize int `koanf:"list_page_size" validate:"gte=0"`
+	ListPageSize int `name:"list_page_size" default:"0" validate:"gte=0" help:"Most sessions in one session/list response. 0 puts every session in one response."`
 }
 
 // Session modes.
@@ -20,11 +20,6 @@ const (
 	// executes.
 	SessionModeAsk = "ask"
 )
-
-var sessionDefaults = map[string]any{
-	"session.mode":           SessionModeAuto,
-	"session.list_page_size": 0,
-}
 
 func (s Session) validate() error {
 	return validateFields("session", s)

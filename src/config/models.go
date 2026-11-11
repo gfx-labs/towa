@@ -11,16 +11,16 @@ import (
 // src/models does not know it or is wrong for this endpoint.
 type Model struct {
 	// Chain is tried in order. Each entry is "provider:account/model".
-	Chain []string `koanf:"chain" validate:"min=1"`
+	Chain []string `json:"chain" validate:"min=1"`
 	// ContextWindow is the model's context size in tokens. Zero takes the
 	// built-in figure.
-	ContextWindow int64 `koanf:"context_window" validate:"gte=0"`
+	ContextWindow int64 `json:"context_window" validate:"gte=0"`
 	// MaxOutputTokens is the most tokens one response may hold. Zero takes
 	// the built-in figure.
-	MaxOutputTokens int64 `koanf:"max_output_tokens" validate:"gte=0"`
+	MaxOutputTokens int64 `json:"max_output_tokens" validate:"gte=0"`
 }
 
-// Providers that need no [[providers]] entry: the harness has their
+// Providers that need no providers entry: the harness has their
 // endpoints and their OAuth flows built in.
 const (
 	ProviderClaude = "claude"

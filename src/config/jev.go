@@ -23,53 +23,40 @@ const (
 // Jev configures the decisions endpoint behind the jev_decision tool. An
 // empty Route means there is none. src/jev reads it and holds each route's
 // endpoint and default model.
-type Jev struct {
-	// Route is openrouter, typesafe, aimlapi or custom.
-	Route string `koanf:"route" validate:"omitempty,oneof=openrouter typesafe aimlapi custom"`
-	// Model is the route's own name for the model. Empty means the route's
-	// default. The custom route has no default.
-	Model string `koanf:"model"`
-	// Account is the id of the account whose credential is sent. Only the
-	// custom route may leave it empty, for an endpoint that wants none.
-	Account string `koanf:"account"`
-	// BaseURL is the root of the custom route's endpoint. It must be https,
-	// or http to a loopback, private or tailnet host.
-	BaseURL string `koanf:"base_url"`
-	// Referer and Title name the application to OpenRouter, as they do for
-	// a provider. Neither is sent when empty.
-	Referer string `koanf:"referer"`
-	Title   string `koanf:"title"`
-	// Timeout bounds a decision that names no timeout of its own.
-	Timeout time.Duration `koanf:"timeout" validate:"gt=0"`
-	// MaxTimeout is the longest timeout a decision may ask for.
-	MaxTimeout time.Duration `koanf:"max_timeout" validate:"gtefield=Timeout"`
-	// MaxRequestBytes is the largest request body that is sent. A larger
-	// one is an error before anything is sent.
-	MaxRequestBytes int64 `koanf:"max_request_bytes" validate:"gt=0"`
-	// MaxResponseBytes is the largest response body that is read.
-	MaxResponseBytes int64 `koanf:"max_response_bytes" validate:"gt=0"`
-	// MaxTextChars is the most characters the instructions, or one
-	// option's description, may hold.
-	MaxTextChars int `koanf:"max_text_chars" validate:"gt=0"`
-}
-
+//
 // The limits are jcode's. docs/notes/2026-11-11-webfetch-and-jev.md gives
 // the ref, file and line of each.
-var jevDefaults = map[string]any{
-	"jev.route":    "",
-	"jev.model":    "",
-	"jev.account":  "",
-	"jev.base_url": "",
-	"jev.referer":  "",
-	"jev.title":    "",
+type Jev struct {
+	// Route is openrouter, typesafe, aimlapi or custom.
+	Route string `name:"route" validate:"omitempty,oneof=openrouter typesafe aimlapi custom" help:"Route to a decisions endpoint: openrouter, typesafe, aimlapi or custom. Empty means there is none."`
+	// Model is the route's own name for the model. Empty means the route's
+	// default. The custom route has no default.
+	Model string `name:"model" help:"The route's own name for the model. Empty means the route's default. The custom route has none."`
+	// Account is the id of the account whose credential is sent. Only the
+	// custom route may leave it empty, for an endpoint that wants none.
+	Account string `name:"account" help:"Id of the account whose credential is sent. Only the custom route may leave it empty."`
+	// BaseURL is the root of the custom route's endpoint. It must be https,
+	// or http to a loopback, private or tailnet host.
+	BaseURL string `name:"base_url" placeholder:"URL" help:"Root of the custom route's endpoint: https, or http to a loopback, private or tailnet host."`
+	// Referer and Title name the application to OpenRouter, as they do for
+	// a provider. Neither is sent when empty.
+	Referer string `name:"referer" help:"Names the application to OpenRouter in the HTTP-Referer header. Not sent when empty."`
+	Title   string `name:"title" help:"Names the application to OpenRouter in the X-OpenRouter-Title header. Not sent when empty."`
+	// Timeout bounds a decision that names no timeout of its own, and
+	// MaxTimeout is the longest timeout a decision may ask for:
 	// DEFAULT_TIMEOUT_MS and MAX_TIMEOUT_MS of the jev_decision tool.
-	"jev.timeout":     "10s",
-	"jev.max_timeout": "30s",
-	// MAX_REQUEST_BYTES and MAX_RESPONSE_BYTES of jev.rs.
-	"jev.max_request_bytes":  80 << 10,
-	"jev.max_response_bytes": 256 << 10,
-	// MAX_TEXT_CHARS of the jev_decision tool.
-	"jev.max_text_chars": 4000,
+	Timeout    time.Duration `name:"timeout" default:"10s" validate:"gt=0" help:"Timeout of a decision that names none."`
+	MaxTimeout time.Duration `name:"max_timeout" default:"30s" validate:"gtefield=Timeout" help:"Longest timeout a decision may ask for."`
+	// MaxRequestBytes is the largest request body that is sent. A larger
+	// one is an error before anything is sent. MaxResponseBytes is the
+	// largest response body that is read. They are MAX_REQUEST_BYTES and
+	// MAX_RESPONSE_BYTES of jev.rs.
+	MaxRequestBytes  int64 `name:"max_request_bytes" default:"81920" validate:"gt=0" help:"Largest request body that is sent. A larger one is an error before anything is sent."`
+	MaxResponseBytes int64 `name:"max_response_bytes" default:"262144" validate:"gt=0" help:"Largest response body that is read."`
+	// MaxTextChars is the most characters the instructions, or one
+	// option's description, may hold: MAX_TEXT_CHARS of the jev_decision
+	// tool.
+	MaxTextChars int `name:"max_text_chars" default:"4000" validate:"gt=0" help:"Most characters the instructions, or one option's description, may hold."`
 }
 
 func (j Jev) validate() error {

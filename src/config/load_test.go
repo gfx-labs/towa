@@ -24,90 +24,114 @@ func write(t *testing.T, path, body string) string {
 func TestLaterLayersOverrideEarlierOnes(t *testing.T) {
 	dir := t.TempDir()
 	system, user := filepath.Join(dir, "etc"), filepath.Join(dir, "user")
-	write(t, filepath.Join(system, "config.toml"), "[telemetry]\notel = true\n[telemetry.logs.stderr]\nlevel = \"warn\"\nformat = \"json\"\n")
-	write(t, filepath.Join(user, "config.yaml"), "telemetry:\n  logs:\n    stderr:\n      level: error\n")
+	write(t, filepath.Join(system, "config.yaml"), "telemetry:\n  otel: true\n  logs:\n    stderr:\n      level: warn\n      format: json\n")
+	write(t, filepath.Join(user, "config.yml"), "telemetry:\n  logs:\n    stderr:\n      level: error\n")
 	extra := write(t, filepath.Join(dir, "extra.json"), `{"telemetry":{"logs":{"stderr":{"level":"debug"}}}}`)
+	flagged := write(t, filepath.Join(dir, "flagged.yaml"), "telemetry:\n  logs:\n    stderr:\n      level: info\n")
 
+	var src config.Sources
+	var args []string
 	steps := []struct {
 		name       string
-		apply      func(*config.Sources)
+		apply      func()
 		wantLevel  slog.Level
 		wantOrigin string
 	}{
-		{"defaults", func(*config.Sources) {}, slog.LevelInfo, "default"},
-		{"system file", func(s *config.Sources) { s.SystemDir = system }, slog.LevelWarn, filepath.Join(system, "config.toml")},
-		{"user file", func(s *config.Sources) { s.UserDir = user }, slog.LevelError, filepath.Join(user, "config.yaml")},
-		{"listed file", func(s *config.Sources) { s.Files = []string{extra} }, slog.LevelDebug, extra},
-		{"environment", func(s *config.Sources) {
-			s.Environ = []string{"ACPHARNESS_TELEMETRY__LOGS__STDERR__LEVEL=warn", "ACPHARNESS_CONFIG=" + extra, "HOME=/nowhere"}
+		{"defaults", func() {}, slog.LevelInfo, "default"},
+		{"system file", func() { src.SystemDir = system }, slog.LevelWarn, filepath.Join(system, "config.yaml")},
+		{"user file", func() { src.UserDir = user }, slog.LevelError, filepath.Join(user, "config.yml")},
+		{"listed file", func() { src.Files = []string{extra} }, slog.LevelDebug, extra},
+		{"file of --config", func() { args = []string{"--config", flagged} }, slog.LevelInfo, flagged},
+		{"environment", func() {
+			src.Environ = []string{"ACPHARNESS_TELEMETRY__LOGS__STDERR__LEVEL=warn", "ACPHARNESS_CONFIG=" + extra, "HOME=/nowhere"}
 		}, slog.LevelWarn, "environment"},
-		{"flag", func(s *config.Sources) {
-			s.Flags = map[string]any{config.FlagKeys["log-level"]: "error"}
-		}, slog.LevelError, "flag"},
-		{"set", func(s *config.Sources) { s.Set = []string{"telemetry.logs.stderr.level=debug"} }, slog.LevelDebug, "--set"},
+		{"flag", func() { args = append(args, "--telemetry.logs.stderr.level=error") }, slog.LevelError, "flag"},
+		{"flag by its short name", func() { args = append(args, "--log-level", "debug") }, slog.LevelDebug, "flag"},
 	}
-	var src config.Sources
 	for _, step := range steps {
-		step.apply(&src)
-		got, err := config.Load(src)
+		step.apply()
+		got, err := config.Load(src, args...)
 		require.NoError(t, err, step.name)
 		require.Equal(t, step.wantLevel, got.Config.Telemetry.Logs.Stderr.Level, step.name)
 		require.Equal(t, step.wantOrigin, got.Origin["telemetry.logs.stderr.level"], step.name)
 	}
 
 	// The system file's other keys survived every layer above it.
-	got, err := config.Load(src)
+	got, err := config.Load(src, args...)
 	require.NoError(t, err)
 	require.True(t, got.Config.Telemetry.OTel)
 	require.Equal(t, config.FormatJSON, got.Config.Telemetry.Logs.Stderr.Format)
-	require.Equal(t, filepath.Join(system, "config.toml"), got.Origin["telemetry.logs.stderr.format"])
+	require.Equal(t, filepath.Join(system, "config.yaml"), got.Origin["telemetry.logs.stderr.format"])
+	require.Equal(t, `"DEBUG"`, got.Values["telemetry.logs.stderr.level"])
 }
 
 func TestInvalidInputIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	two := filepath.Join(dir, "two")
-	write(t, filepath.Join(two, "config.toml"), "")
+	two, old := filepath.Join(dir, "two"), filepath.Join(dir, "old")
+	write(t, filepath.Join(two, "config.yaml"), "")
 	write(t, filepath.Join(two, "config.json"), "{}")
+	write(t, filepath.Join(old, "config.toml"), "")
+	file := func(name, body string) config.Sources {
+		return config.Sources{Files: []string{write(t, filepath.Join(dir, name), body)}}
+	}
 
 	tests := []struct {
 		name string
 		src  config.Sources
+		args []string
 		want string
 	}{
-		{"unknown key in a file", config.Sources{Files: []string{write(t, filepath.Join(dir, "typo.toml"), "[telemetry]\notle = true\n")}}, "otle"},
-		{"unknown key in the environment", config.Sources{Environ: []string{"ACPHARNESS_TELEMETRY__OTLE=1"}}, "otle"},
-		{"unknown key in --set", config.Sources{Set: []string{"telemetry.otle=1"}}, "otle"},
-		{"value of the wrong type", config.Sources{Set: []string{"telemetry.otel=sometimes"}}, "telemetry.otel"},
-		{"unknown log level", config.Sources{Set: []string{"telemetry.logs.stderr.level=loud"}}, "loud"},
-		{"unknown log format", config.Sources{Set: []string{"telemetry.logs.stderr.format=xml"}}, "telemetry.logs.stderr.format"},
-		{"shell timeout over maximum", config.Sources{Set: []string{"tools.shell.timeout=11m"}}, "tools.shell.timeout"},
-		{"disabled gate still requires budget", config.Sources{Set: []string{"tools.gate.enabled=false", "tools.gate.budget_tokens=0"}}, "tools.gate.budget_tokens"},
-		{"retry nan", config.Sources{Set: []string{"limits.retry.multiplier=NaN"}}, "limits.retry.multiplier"},
-		{"retry infinity", config.Sources{Set: []string{"limits.retry.multiplier=+Inf"}}, "limits.retry.multiplier"},
-		{"compaction nan", config.Sources{Set: []string{"compaction.reactive_threshold=NaN"}}, "compaction."},
-		{"compaction duration overflow", config.Sources{Set: []string{"compaction.pending_wait_ms=9223372036855"}}, "compaction.pending_wait_ms"},
-		{"history shorter than samples", config.Sources{Set: []string{"compaction.history_window=2"}}, "compaction.history_window"},
-		{"nested section requires one source", config.Sources{Files: []string{write(t, filepath.Join(dir, "section.toml"), "[[context.sections]]\nname='policy'\ntext='rule'\nfile='rule.md'\n")}}, "context.sections[0].text"},
-		{"nested hook tool name", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook.toml"), "[[hooks]]\nevent='pre_tool'\ncommand=['true']\ntimeout='1s'\ntools=['']\n")}}, "hooks[0].tools[0]"},
-		{"hook tools on an event without a tool", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook-stop.toml"), "[[hooks]]\nevent='stop'\ncommand=['true']\ntimeout='1s'\ntools=['Bash']\n")}}, "hooks[0].tools"},
-		{"hook with an empty program", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook-empty.toml"), "[[hooks]]\nevent='stop'\ncommand=['']\ntimeout='1s'\n")}}, "hooks[0].command"},
-		{"provider invalid scheme with credentials", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-url.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='ftp://url-user:url-password@example.com?token=url-query-secret'\n")}}, "providers[0].base_url"},
-		{"provider URL parse failure", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-parse.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='https://url-user:url-password@example.com/%zz?token=url-query-secret'\n")}}, "providers[0].base_url"},
-		{"embeddings URL query", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "embeddings.base_url"},
-		{"embeddings URL parse failure", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}}, "embeddings.base_url"},
-		{"jev URL without route", config.Sources{Set: []string{"jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "jev.base_url"},
-		{"jev URL credentials", config.Sources{Set: []string{"jev.route=custom", "jev.model=decision", "jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "jev.base_url"},
-		{"jev URL parse failure", config.Sources{Set: []string{"jev.route=custom", "jev.model=decision", "jev.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}}, "jev.base_url"},
-		{"mcp invalid scheme with credentials", config.Sources{Files: []string{write(t, filepath.Join(dir, "mcp-url.toml"), "[[mcp.servers]]\nname='remote'\ntransport='sse'\nurl='ftp://url-user:url-password@example.com?token=url-query-secret'\n")}}, "mcp.servers[0].url"},
-		{"mcp URL parse failure", config.Sources{Files: []string{write(t, filepath.Join(dir, "mcp-parse.toml"), "[[mcp.servers]]\nname='remote'\ntransport='sse'\nurl='https://url-user:url-password@example.com/%zz?token=url-query-secret'\n")}}, "mcp.servers[0].url"},
-		{"--set without a value", config.Sources{Set: []string{"telemetry.otel"}}, "key=value"},
-		{"listed file is missing", config.Sources{Files: []string{filepath.Join(dir, "absent.toml")}}, "absent.toml"},
-		{"listed file of an unknown format", config.Sources{Files: []string{write(t, filepath.Join(dir, "c.ini"), "")}}, ".ini"},
-		{"two config files in one directory", config.Sources{UserDir: two}, "more than one"},
+		{"unknown key in a file", file("typo.yaml", "telemetry:\n  otle: true\n"), nil, "typo.yaml: telemetry.otle"},
+		{"unknown section in a file", file("section.yaml", "telemetery:\n  otel: true\n"), nil, "section.yaml: telemetery"},
+		// The flag's spelling of a key is not a file's.
+		{"dotted key in a file", file("dotted.yaml", "limits.max_wall: 30m\n"), nil, "dotted.yaml: limits.max_wall"},
+		{"unknown key in a table", file("table.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1s\n    timout: 2s\n"), nil, "hooks[0].timout"},
+		{"unknown key in the environment", config.Sources{Environ: []string{"ACPHARNESS_TELEMETRY__OTLE=1"}}, nil, "ACPHARNESS_TELEMETRY__OTLE"},
+		{"unknown flag", config.Sources{}, []string{"--telemetry.otle"}, "otle"},
+		{"file that does not parse", file("broken.yaml", "telemetry:\n  otel: [true\n"), nil, "broken.yaml"},
+		{"file with two documents", file("two.yaml", "telemetry:\n  otel: true\n---\ntelemetry:\n  otel: false\n"), nil, "two.yaml"},
+		{"section given one value", file("flat.yaml", "telemetry: true\n"), nil, "flat.yaml: telemetry"},
+		// YAML reads 0600 as the number 384.
+		{"number where a file needs text", file("mode.yaml", "listen:\n  unix:\n    mode: 0600\n"), nil, "mode.yaml"},
+		{"number where a file needs a duration", file("wall.yaml", "limits:\n  max_wall: 30\n"), nil, "wall.yaml"},
+		{"number where a table needs a duration", file("hook-wait.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1\n"), nil, "hooks[0].timeout"},
+		{"value of the wrong type in a file", file("type.yaml", "limits:\n  max_tool_calls: many\n"), nil, "type.yaml"},
+		{"text where a file needs a list", file("list.yaml", "context:\n  extra_files: a.md,b.md\n"), nil, "list.yaml"},
+		{"value of the wrong type in the environment", config.Sources{Environ: []string{"ACPHARNESS_LIMITS__MAX_WALL=soon"}}, nil, "ACPHARNESS_LIMITS__MAX_WALL"},
+		{"value of the wrong type", config.Sources{}, []string{"--telemetry.otel=sometimes"}, "telemetry.otel"},
+		{"unknown log level", config.Sources{}, []string{"--telemetry.logs.stderr.level=loud"}, "loud"},
+		{"unknown log format", config.Sources{}, []string{"--telemetry.logs.stderr.format=xml"}, "telemetry.logs.stderr.format"},
+		{"shell timeout over maximum", config.Sources{}, []string{"--tools.shell.timeout=11m"}, "tools.shell.timeout"},
+		{"disabled gate still requires budget", config.Sources{}, []string{"--tools.gate.enabled=false", "--tools.gate.budget_tokens=0"}, "tools.gate.budget_tokens"},
+		{"retry nan", config.Sources{}, []string{"--limits.retry.multiplier=NaN"}, "limits.retry.multiplier"},
+		{"retry infinity", config.Sources{}, []string{"--limits.retry.multiplier=+Inf"}, "limits.retry.multiplier"},
+		{"compaction nan", config.Sources{}, []string{"--compaction.reactive_threshold=NaN"}, "compaction."},
+		{"compaction duration overflow", config.Sources{}, []string{"--compaction.pending_wait_ms=9223372036855"}, "compaction.pending_wait_ms"},
+		{"history shorter than samples", config.Sources{}, []string{"--compaction.history_window=2"}, "compaction.history_window"},
+		{"nested section requires one source", file("section-two.yaml", "context:\n  sections:\n    - name: policy\n      text: rule\n      file: rule.md\n"), nil, "context.sections[0].text"},
+		{"nested hook tool name", file("hook.yaml", "hooks:\n  - event: pre_tool\n    command: ['true']\n    timeout: 1s\n    tools: ['']\n"), nil, "hooks[0].tools[0]"},
+		{"hook tools on an event without a tool", file("hook-stop.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1s\n    tools: [Bash]\n"), nil, "hooks[0].tools"},
+		{"hook with an empty program", file("hook-empty.yaml", "hooks:\n  - event: stop\n    command: ['']\n    timeout: 1s\n"), nil, "hooks[0].command"},
+		{"provider invalid scheme with credentials", file("provider-url.yaml", "providers:\n  - id: gateway\n    kind: chat\n    base_url: ftp://url-user:url-password@example.com?token=url-query-secret\n"), nil, "providers[0].base_url"},
+		{"provider URL parse failure", file("provider-parse.yaml", "providers:\n  - id: gateway\n    kind: chat\n    base_url: https://url-user:url-password@example.com/%zz?token=url-query-secret\n"), nil, "providers[0].base_url"},
+		{"provider URL of the wrong type", file("provider-type.yaml", "providers:\n  - id: gateway\n    kind: chat\n    base_url: [\"https://url-user:url-password@example.com?token=url-query-secret\"]\n"), nil, "providers[0].base_url"},
+		{"embeddings URL query", config.Sources{}, []string{"--embeddings.model=embed", "--embeddings.base_url=https://url-user:url-password@example.com?token=url-query-secret"}, "embeddings.base_url"},
+		{"embeddings URL parse failure", config.Sources{}, []string{"--embeddings.model=embed", "--embeddings.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}, "embeddings.base_url"},
+		{"jev URL without route", config.Sources{}, []string{"--jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}, "jev.base_url"},
+		{"jev URL credentials", config.Sources{}, []string{"--jev.route=custom", "--jev.model=decision", "--jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}, "jev.base_url"},
+		{"jev URL parse failure", config.Sources{}, []string{"--jev.route=custom", "--jev.model=decision", "--jev.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}, "jev.base_url"},
+		{"mcp invalid scheme with credentials", file("mcp-url.yaml", "mcp:\n  servers:\n    - name: remote\n      transport: sse\n      url: ftp://url-user:url-password@example.com?token=url-query-secret\n"), nil, "mcp.servers[0].url"},
+		{"mcp URL parse failure", file("mcp-parse.yaml", "mcp:\n  servers:\n    - name: remote\n      transport: sse\n      url: https://url-user:url-password@example.com/%zz?token=url-query-secret\n"), nil, "mcp.servers[0].url"},
+		{"listed file is missing", config.Sources{Files: []string{filepath.Join(dir, "absent.yaml")}}, nil, "absent.yaml"},
+		{"file of --config is missing", config.Sources{}, []string{"--config", filepath.Join(dir, "gone.yaml")}, "gone.yaml"},
+		{"listed file of an unknown format", file("c.ini", ""), nil, ".ini"},
+		{"listed file of the format that is no longer read", file("c.toml", ""), nil, ".toml"},
+		{"two config files in one directory", config.Sources{UserDir: two}, nil, "more than one"},
+		{"config.toml left in a directory", config.Sources{UserDir: old}, nil, "config.toml"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.Load(tt.src)
+			_, err := config.Load(tt.src, tt.args...)
 			require.ErrorContains(t, err, tt.want)
 			for _, secret := range []string{"url-user", "url-password", "url-query-secret"} {
 				require.NotContains(t, err.Error(), secret)
@@ -117,49 +141,86 @@ func TestInvalidInputIsAnError(t *testing.T) {
 }
 
 func TestOptionalSectionsPreserveLoaderPolicy(t *testing.T) {
-	path := write(t, filepath.Join(t.TempDir(), "config.toml"), `
-[subagents]
-max_depth = 0
-max_concurrent = 0
-[compaction]
-mode = "off"
-openai_native = "off"
-openai_native_threshold_tokens = -1
-[embeddings]
-base_url = "http://127.0.0.1:11434/v1"
-model = "embedding-model"
-[jev]
-route = "custom"
-base_url = "http://127.0.0.1:8080/v1"
-model = "decision-model"
-[[providers]]
-id = "gateway"
-kind = "chat"
-base_url = "https://example.com/v1?accepted=query#fragment"
-[[hooks]]
-event = "prompt"
-command = ["printf", ""]
-timeout = "1s"
-[[hooks]]
-event = "pre_tool"
-tools = ["Bash"]
-command = ["true"]
-timeout = "10s"
-max_output_bytes = 65536
-[context]
-agents_files = false
-global_dir = ""
-extra_files = ["notes.md"]
-extra_dirs = ["docs"]
-skills_dirs = ["~/a"]
-max_file_bytes = 1000
-max_total_bytes = 5000
-[[context.sections]]
-name = "policy"
-file = "policy.md"
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"), `
+subagents:
+  max_depth: 0
+  max_concurrent: 0
+compaction:
+  mode: "off"
+  openai_native: "off"
+  openai_native_threshold_tokens: -1
+embeddings:
+  base_url: http://127.0.0.1:11434/v1
+  model: embedding-model
+jev:
+  route: custom
+  base_url: http://127.0.0.1:8080/v1
+  model: decision-model
+providers:
+  - id: gateway
+    kind: chat
+    base_url: https://example.com/v1?accepted=query#fragment
+hooks:
+  - event: prompt
+    command: [printf, ""]
+    timeout: 1s
+  - event: pre_tool
+    tools: [Bash]
+    command: ["true"]
+    timeout: 10s
+    max_output_bytes: 65536
+context:
+  agents_files: false
+  global_dir: ""
+  extra_files: ["notes, with a comma.md"]
+  extra_dirs: [docs]
+  skills_dirs: ["~/a"]
+  max_file_bytes: 1000
+  max_total_bytes: 5000
+  sections:
+    - name: policy
+      file: policy.md
 `)
-	_, err := config.Load(config.Sources{Files: []string{path}})
+	got, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
+	// A list item keeps its comma, and an empty value in a file replaces a
+	// default that is not empty.
+	require.Equal(t, []string{"notes, with a comma.md"}, got.Config.Context.ExtraFiles)
+	require.Empty(t, got.Config.Context.GlobalDir)
+	require.Equal(t, path, got.Origin["context.global_dir"])
+}
+
+// A table is one key: a flag or an environment variable gives it as one
+// line of YAML, and it replaces the table of a file whole.
+func TestATableFromTheEnvironmentReplacesTheFilesTable(t *testing.T) {
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"),
+		"hooks:\n  - event: prompt\n    command: [one]\n    timeout: 1s\n  - event: stop\n    command: [two]\n    timeout: 1s\n")
+	got, err := config.Load(config.Sources{
+		Files:   []string{path},
+		Environ: []string{`ACPHARNESS_HOOKS=[{event: stop, command: [three], timeout: 2s}]`},
+	})
+	require.NoError(t, err)
+	require.Len(t, got.Config.Hooks, 1)
+	require.Equal(t, []string{"three"}, got.Config.Hooks[0].Command)
+	require.Equal(t, "environment", got.Origin["hooks"])
+}
+
+// A table of named entries is added to by each file, as a user's models
+// join the system's. A later file changes one member of an entry and leaves
+// the entry's other members alone.
+func TestEachFileAddsToTheModels(t *testing.T) {
+	dir := t.TempDir()
+	system := write(t, filepath.Join(dir, "system.yaml"),
+		"default_model: opus\nmodels:\n  opus:\n    chain: ['claude:work/claude-opus-4-7']\n    context_window: 1000\n    max_output_tokens: 100\n")
+	user := write(t, filepath.Join(dir, "user.yaml"),
+		"models:\n  opus:\n    context_window: 2000\n  gpt:\n    chain: ['codex:chatgpt/gpt-5.5']\n")
+	got, err := config.Load(config.Sources{Files: []string{system, user}})
+	require.NoError(t, err)
+	require.Len(t, got.Config.Models, 2)
+	require.Equal(t, []string{"claude:work/claude-opus-4-7"}, got.Config.Models["opus"].Chain)
+	require.EqualValues(t, 2000, got.Config.Models["opus"].ContextWindow)
+	require.EqualValues(t, 100, got.Config.Models["opus"].MaxOutputTokens)
+	require.Equal(t, system+", "+user, got.Origin["models"])
 }
 
 // An account comes from a config layer, from the auth store, or from a model
@@ -180,8 +241,10 @@ accounts:
     kind: proxied_oauth
 `)
 	got, err := config.Load(config.Sources{
-		Files:          []string{path},
-		StoredAccounts: map[string]string{"work": "claude", "gpt": "codex"},
+		Files: []string{path},
+		StoredAccounts: func() (map[string]string, error) {
+			return map[string]string{"work": "claude", "gpt": "codex"}, nil
+		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, []config.Account{

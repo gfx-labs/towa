@@ -22,22 +22,23 @@ const (
 // the command is sent and what it may answer.
 type Hook struct {
 	// Event is pre_tool, post_tool, prompt or stop.
-	Event string `koanf:"event" validate:"oneof=pre_tool post_tool prompt stop"`
+	Event string `json:"event" validate:"oneof=pre_tool post_tool prompt stop"`
 	// Tools are the tool names, as the model calls them, that the hook
 	// applies to. Empty means every tool. It must be empty for prompt and
 	// stop, which have no tool.
-	Tools []string `koanf:"tools" validate:"dive,required"`
+	Tools []string `json:"tools" validate:"dive,required"`
 	// Command is the program and its arguments. It is run as it is, with no
 	// shell.
-	Command []string `koanf:"command" validate:"min=1"`
+	Command []string `json:"command" validate:"min=1"`
 	// Timeout is how long the command may run before it and everything it
-	// started are killed. It has no default: hooks are a list, and a list
-	// entry gets no defaults, so each hook states its own.
-	Timeout time.Duration `koanf:"timeout" validate:"gt=0"`
+	// started are killed, written as text such as 5s. It has no default:
+	// hooks are a table, and a table's entry gets no defaults, so each hook
+	// states its own.
+	Timeout time.Duration `json:"timeout" validate:"gt=0"`
 	// MaxOutputBytes is the most the command may write to its standard
 	// output. More is a failed hook, not a cut-off answer. Zero means no
 	// limit.
-	MaxOutputBytes int64 `koanf:"max_output_bytes" validate:"gte=0"`
+	MaxOutputBytes int64 `json:"max_output_bytes" validate:"gte=0"`
 }
 
 // validateHookList reports hooks that decode but cannot be run.

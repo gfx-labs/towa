@@ -13,11 +13,11 @@ import (
 	"github.com/gfx-labs/acpharness/src/hosts"
 )
 
-// load resolves a TOML file as the program would.
-func load(t *testing.T, toml string) config.Config {
+// load resolves a YAML file as the program would.
+func load(t *testing.T, yaml string) config.Config {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte(toml), 0o600))
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(yaml), 0o600))
 	loaded, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	return loaded.Config
@@ -33,67 +33,50 @@ func addresses(r hosts.Report) map[string][]string {
 
 func TestListFromAConfigFile(t *testing.T) {
 	cfg := load(t, `
-[telemetry]
-otel = true
-
-[[providers]]
-id = "openrouter"
-kind = "chat"
-base_url = "https://openrouter.ai/api/v1"
-
-[[providers]]
-id = "local"
-kind = "responses"
-base_url = "http://[::1]:8080/v1"
-
-[[accounts]]
-id = "work"
-provider = "claude"
-kind = "oauth"
-
-[[accounts]]
-id = "held"
-provider = "codex"
-kind = "proxied_oauth"
-
-[[accounts]]
-id = "key"
-provider = "openrouter"
-kind = "api_key"
-api_key_env = "OPENROUTER_API_KEY"
-
-[[accounts]]
-id = "codex-key"
-provider = "codex"
-kind = "api_key"
-api_key_env = "OPENAI_API_KEY"
-
-[embeddings]
-base_url = "http://127.0.0.1:8080/v1"
-model = "bge"
-
-[websearch]
-endpoint = "https://search.example/html/"
-
-[jev]
-route = "custom"
-model = "jev-local"
-base_url = "https://jev.internal.example"
-
-[[mcp.servers]]
-name = "docs"
-transport = "streamable_http"
-url = "https://mcp.example.com/mcp"
-
-[[mcp.servers]]
-name = "tickets"
-transport = "sse"
-url = "https://tickets.example.com/sse"
-
-[[mcp.servers]]
-name = "files"
-transport = "stdio"
-command = "mcp-files"
+telemetry:
+  otel: true
+providers:
+  - id: openrouter
+    kind: chat
+    base_url: https://openrouter.ai/api/v1
+  - id: local
+    kind: responses
+    base_url: "http://[::1]:8080/v1"
+accounts:
+  - id: work
+    provider: claude
+    kind: oauth
+  - id: held
+    provider: codex
+    kind: proxied_oauth
+  - id: key
+    provider: openrouter
+    kind: api_key
+    api_key_env: OPENROUTER_API_KEY
+  - id: codex-key
+    provider: codex
+    kind: api_key
+    api_key_env: OPENAI_API_KEY
+embeddings:
+  base_url: http://127.0.0.1:8080/v1
+  model: bge
+websearch:
+  endpoint: https://search.example/html/
+jev:
+  route: custom
+  model: jev-local
+  base_url: https://jev.internal.example
+mcp:
+  servers:
+    - name: docs
+      transport: streamable_http
+      url: https://mcp.example.com/mcp
+    - name: tickets
+      transport: sse
+      url: https://tickets.example.com/sse
+    - name: files
+      transport: stdio
+      command: mcp-files
 `)
 	// The flows are the real ones, pointed at hosts this test names, so
 	// that the test does not repeat the URLs src/auth owns.
@@ -142,13 +125,13 @@ command = "mcp-files"
 // What the configuration turns on and List was given no URL for is an
 // error, not a missing line.
 func TestAnEndpointThatWasNotGivenIsAnError(t *testing.T) {
-	claude := load(t, "[[accounts]]\nid = \"a\"\nprovider = \"claude\"\nkind = \"proxied_api_key\"\n")
+	claude := load(t, "accounts:\n  - id: a\n    provider: claude\n    kind: proxied_api_key\n")
 	_, err := hosts.List(claude, hosts.Inputs{})
 	require.Error(t, err)
 
-	jev := load(t, "[[accounts]]\nid = \"k\"\nprovider = \"or\"\nkind = \"api_key\"\napi_key_env = \"K\"\n"+
-		"[[providers]]\nid = \"or\"\nkind = \"chat\"\nbase_url = \"https://or.example/v1\"\n"+
-		"[jev]\nroute = \"openrouter\"\naccount = \"k\"\n")
+	jev := load(t, "accounts:\n  - id: k\n    provider: or\n    kind: api_key\n    api_key_env: K\n"+
+		"providers:\n  - id: or\n    kind: chat\n    base_url: https://or.example/v1\n"+
+		"jev:\n  route: openrouter\n  account: k\n")
 	_, err = hosts.List(jev, hosts.Inputs{})
 	require.Error(t, err)
 	report, err := hosts.List(jev, hosts.Inputs{JevEndpoint: "https://decisions.example/x"})
@@ -167,19 +150,19 @@ func hostLines(r hosts.Report) []string {
 func TestOTLPIsListedOnlyWhenTurnedOnAndNamed(t *testing.T) {
 	otlp := hosts.OTLP{Endpoint: "http://collector:4318"}
 
-	const noSearch = "[websearch]\nenabled = false\n"
+	const noSearch = "websearch:\n  enabled: false\n"
 	off, err := hosts.List(load(t, noSearch), hosts.Inputs{OTLP: otlp})
 	require.NoError(t, err)
 	require.Empty(t, off.Hosts)
 
 	// On without a variable: the exporter's default is not ours to state,
 	// so each signal is reported as not covered.
-	unnamed, err := hosts.List(load(t, noSearch+"[telemetry]\notel = true\n"), hosts.Inputs{})
+	unnamed, err := hosts.List(load(t, noSearch+"telemetry:\n  otel: true\n"), hosts.Inputs{})
 	require.NoError(t, err)
 	require.Empty(t, unnamed.Hosts)
 	require.Greater(t, len(unnamed.NotCovered), len(off.NotCovered))
 
 	// A value the exporter could not use is an error, not a missing line.
-	_, err = hosts.List(load(t, "[telemetry]\notel = true\n"), hosts.Inputs{OTLP: hosts.OTLP{Endpoint: "collector"}})
+	_, err = hosts.List(load(t, "telemetry:\n  otel: true\n"), hosts.Inputs{OTLP: hosts.OTLP{Endpoint: "collector"}})
 	require.Error(t, err)
 }

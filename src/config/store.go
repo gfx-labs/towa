@@ -11,10 +11,11 @@ import (
 type Store struct {
 	// Root is the directory that holds one directory per session. It is an
 	// absolute path. Empty means the XDG state directory: Dir resolves it.
-	Root string `koanf:"root"`
+	Root string `name:"root" placeholder:"DIR" help:"Absolute directory that holds one directory per session. Empty means acpharness/sessions in the XDG state directory."`
 	// Compression is how the log of a new session is stored. A session
-	// that exists keeps the format it was created with.
-	Compression string `koanf:"compression" validate:"oneof=none zstd"`
+	// that exists keeps the format it was created with. The measurements
+	// behind the default are in docs/notes/2026-11-11-store.md.
+	Compression string `name:"compression" default:"zstd" validate:"oneof=none zstd" help:"How the log of a new session is stored: none or zstd."`
 }
 
 // Values of Store.Compression. They are the names src/store/dir takes.
@@ -24,13 +25,6 @@ const (
 	// StoreCompressionZstd keeps the log as one zstd frame per append.
 	StoreCompressionZstd = "zstd"
 )
-
-// The measurements behind the compression default are in
-// docs/notes/2026-11-11-store.md.
-var storeDefaults = map[string]any{
-	"store.root":        "",
-	"store.compression": StoreCompressionZstd,
-}
 
 func (s Store) validate() error {
 	if s.Root != "" && !filepath.IsAbs(s.Root) {

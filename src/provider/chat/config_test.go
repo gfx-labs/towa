@@ -11,10 +11,10 @@ import (
 	"github.com/gfx-labs/acpharness/src/provider"
 )
 
-func loadProviders(t *testing.T, toml string) (*config.Loaded, error) {
+func loadProviders(t *testing.T, yaml string) (*config.Loaded, error) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte(toml), 0o600))
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(yaml), 0o600))
 	return config.Load(config.Sources{Files: []string{path}})
 }
 
@@ -22,25 +22,22 @@ func loadProviders(t *testing.T, toml string) (*config.Loaded, error) {
 // keys decode into the fields the client reads.
 func TestAConfiguredOpenRouterProviderShapesTheRequest(t *testing.T) {
 	loaded, err := loadProviders(t, `
-[[providers]]
-id = "openrouter"
-kind = "chat"
-base_url = "https://openrouter.ai/api/v1"
-referer = "https://github.com/gfx-labs/acpharness"
-title = "acpharness"
-cache_key_field = "session_id"
-
-[providers.openrouter]
-enabled = true
-
-[providers.openrouter.routing]
-only = ["anthropic"]
-allow_fallbacks = false
-zdr = true
-sort = "price"
-
-[providers.openrouter.routing.max_price]
-prompt = 3.0
+providers:
+  - id: openrouter
+    kind: chat
+    base_url: https://openrouter.ai/api/v1
+    referer: https://github.com/gfx-labs/acpharness
+    title: acpharness
+    cache_key_field: session_id
+    openrouter:
+      enabled: true
+      routing:
+        only: [anthropic]
+        allow_fallbacks: false
+        zdr: true
+        sort: price
+        max_price:
+          prompt: 3.0
 `)
 	require.NoError(t, err)
 	require.Len(t, loaded.Config.Providers, 1)
@@ -55,17 +52,17 @@ prompt = 3.0
 }
 
 func TestProviderConfigThatWouldNotBeSentIsAnError(t *testing.T) {
-	base := "[[providers]]\nid = \"p\"\nbase_url = \"https://example.com/v1\"\n"
+	base := "providers:\n  - id: p\n    base_url: https://example.com/v1\n"
 	cases := map[string]string{
-		"routing without enabled": base + "kind = \"chat\"\n[providers.openrouter.routing]\nsort = \"price\"\n",
-		"openrouter on responses": base + "kind = \"responses\"\n[providers.openrouter]\nenabled = true\n",
-		"unknown sort":            base + "kind = \"chat\"\n[providers.openrouter]\nenabled = true\n[providers.openrouter.routing]\nsort = \"cheapest\"\n",
-		"unknown max price":       base + "kind = \"chat\"\n[providers.openrouter]\nenabled = true\n[providers.openrouter.routing.max_price]\ntokens = 1.0\n",
-		"unknown cache key field": base + "kind = \"chat\"\ncache_key_field = \"user\"\n",
-		"unknown data collection": base + "kind = \"chat\"\n[providers.openrouter]\nenabled = true\n[providers.openrouter.routing]\ndata_collection = \"maybe\"\n",
+		"routing without enabled": base + "    kind: chat\n    openrouter:\n      routing:\n        sort: price\n",
+		"openrouter on responses": base + "    kind: responses\n    openrouter:\n      enabled: true\n",
+		"unknown sort":            base + "    kind: chat\n    openrouter:\n      enabled: true\n      routing:\n        sort: cheapest\n",
+		"unknown max price":       base + "    kind: chat\n    openrouter:\n      enabled: true\n      routing:\n        max_price:\n          tokens: 1.0\n",
+		"unknown cache key field": base + "    kind: chat\n    cache_key_field: user\n",
+		"unknown data collection": base + "    kind: chat\n    openrouter:\n      enabled: true\n      routing:\n        data_collection: maybe\n",
 	}
-	for name, toml := range cases {
-		_, err := loadProviders(t, toml)
+	for name, yaml := range cases {
+		_, err := loadProviders(t, yaml)
 		require.Error(t, err, name)
 	}
 }

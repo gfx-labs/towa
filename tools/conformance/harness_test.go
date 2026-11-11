@@ -176,9 +176,9 @@ type agent struct {
 func start(t *testing.T) *agent {
 	t.Helper()
 	dir := t.TempDir()
-	configFile := filepath.Join(dir, "config.toml")
+	configFile := filepath.Join(dir, "config.yaml")
 	// Only errors on stderr, so that a failure shows what the agent said.
-	require.NoError(t, os.WriteFile(configFile, []byte("[telemetry.logs.stderr]\nlevel = \"error\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(configFile, []byte("telemetry:\n  logs:\n    stderr:\n      level: error\n"), 0o600))
 
 	cmd := exec.Command(binary, "--config", configFile, "serve")
 	// No user or system config, and a state directory of the test's own.

@@ -50,7 +50,7 @@ Packages:
 | `pkg/acp/harness` | what acpharness adds to ACP messages under `_meta.acpharness`, as types a client imports |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
 | `src/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
-| `src/config` | koanf loading and the typed config |
+| `src/config` | the typed config, its flags, and the loader for files, environment and flags |
 | `pkg/acp` | our ACP layer: JSON-RPC connection, types generated from the pinned schema, transports, update mapping |
 | `src/session` | session lifecycle, modes, model switching, cancel |
 | `src/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
@@ -77,21 +77,25 @@ Packages:
 
 ## Configuration
 
-koanf, layered in this order, each later layer overriding earlier:
+One typed config struct is the source of every setting. Each key is a field with its name, default, help and constraints in struct tags, and kong turns each field into a flag, so `acpharness --help` lists every key. Values are layered in this order, each later layer overriding earlier:
 
-1. Built-in defaults.
-2. `/etc/acpharness/config.{toml,yaml,json}`.
-3. `$XDG_CONFIG_HOME/acpharness/config.*`.
+1. Built-in defaults, from the `default` tags.
+2. `/etc/acpharness/config.{yaml,yml,json}`.
+3. `$XDG_CONFIG_HOME/acpharness/config.{yaml,yml,json}`.
 4. Files listed in `ACPHARNESS_CONFIG` (path list, `:`-separated), and `--config` flags (repeatable).
 5. Environment `ACPHARNESS_*`, `__` as the nesting separator (`ACPHARNESS_LIMITS__MAX_TOOL_CALLS=200`).
-6. CLI flags, read from urfave/cli v3 by koanf's `cliflagv3` provider. A repeatable `--set key=value` reaches config keys without dedicated flags. Only explicitly supplied flags override earlier layers.
+6. CLI flags. The flag is the key's own name: `--limits.max_tool_calls=200`.
 7. Per-session overrides from `session/new` `_meta.acpharness` (allowlisted keys only: model, context files, skills dirs, limits, mode, mcp servers, compaction).
 
-koanf decodes the merged tree into one typed config struct. urfave/cli v3 defines commands and flags, and the application reads configuration only from the decoded struct. Flag names and environment names are mapped explicitly to the same canonical config keys. `go-playground/validator/v10` checks field constraints through `validate` tags after decoding. Configuration-specific rules, such as account references, endpoint policies and listener safety, remain explicit checks. Direct section validators use the same field constraints as the loader.
+kong defines the commands and the flags and fills the struct. The loader in `src/config` reads the files with `goccy/go-yaml`, which reads JSON as well, and gives kong each key's value from the files and the environment. The application reads configuration only from the struct. A key that holds a table (`models`, `accounts`, `providers`, `hooks`, `mcp.servers`, `context.sections`) is written as YAML in a file, and as one line of YAML when it is a flag or an environment variable. A list table is one key: a later layer that sets it replaces the earlier layer's list whole. `models` holds named entries, and each file adds to it by name.
+
+Nothing is guessed. These are errors that name the file or the variable: a key the config does not have, a value of the wrong type, a file that does not parse, a listed file that is missing, two config files in one directory, and an `ACPHARNESS_*` variable that is not a key. A file's value must have the key's type, so a number is not taken where a key holds text or a duration.
+
+`go-playground/validator/v10` checks field constraints through `validate` tags after decoding. Configuration-specific rules, such as account references, endpoint policies and listener safety, remain explicit checks. Direct section validators use the same field constraints as the loader.
 
 `acpharness config` prints the resolved config with secrets redacted and the source of each key.
 
-Sketch. The examples in this document are YAML. A TOML or JSON file with the same keys loads the same way:
+Sketch. The examples in this document are YAML. A JSON file with the same keys loads the same way:
 
 ```yaml
 default_model: opus
@@ -437,7 +441,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 - Go 1.27.3 with `CGO_ENABLED=0`. Packages start in `src/`, with deliberate promotion to `pkg/` for external callers.
 - JSON is `encoding/json/v2` with `jsontext`, enforced by lint. Per-message buffers come from `valyala/bytebufferpool` where a benchmark shows it saves memory. The measured behaviour is in `docs/notes/2026-11-11-contracts-and-conventions.md`.
-- urfave/cli v3 plus koanf `cliflagv3` is the selected CLI and configuration integration.
+- kong is the CLI and fills the config struct. Config files are YAML or JSON, read with `goccy/go-yaml`. The reasons and measurements are in `docs/notes/2026-11-11-kong-config.md`.
 - golangci-lint v2.15 with acphost's configuration and gofumpt.
 - Plain Go concurrency: contexts for cancellation, one owner for session state, channels for coordination, and small scoped mutexes for shared state where needed. No blanket lock-free rule.
 - Keep concrete types until a consumer needs an interface. Prefer small consumer-owned interfaces, explicit errors, and valid zero values where meaningful. Model lifecycle transitions explicitly without adding a sum-type framework.
@@ -454,7 +458,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 - Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`.
 - release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
-- Dependencies: koanf with `cliflagv3`, `urfave/cli/v3`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`, `JohannesKaufmann/html-to-markdown/v2` for webfetch. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
+- Dependencies: `alecthomas/kong`, `goccy/go-yaml`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`, `JohannesKaufmann/html-to-markdown/v2` for webfetch. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
 ## Validation
 

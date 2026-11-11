@@ -4,34 +4,37 @@ package config
 // instruction files, skills, extra files and directories. src/agentctx reads
 // it. A path may start with "~/", which stands for the home directory. Any
 // other relative path is taken from the session's working directory.
+//
+// The two size limits default to none: no size has been measured to be the
+// right one, and a file over a limit fails the session.
 type Context struct {
 	// AgentsFiles turns on reading AGENTS.md from the global directory and
 	// from the working directory up to the repository root.
-	AgentsFiles bool `koanf:"agents_files"`
+	AgentsFiles bool `name:"agents_files" default:"true" help:"Read AGENTS.md from the global directory and from the working directory up to the repository root. On by default."`
 	// GlobalDir is the directory that holds the global AGENTS.md. Empty
 	// means there is no global file.
-	GlobalDir string `koanf:"global_dir"`
+	GlobalDir string `name:"global_dir" default:"~/.agents" placeholder:"DIR" help:"Directory that holds the global AGENTS.md. Empty means there is no global file."`
 	// ExtraFiles are read after the instruction files, in this order. Each
 	// must exist.
-	ExtraFiles []string `koanf:"extra_files" validate:"dive,required"`
+	ExtraFiles []string `name:"extra_files" placeholder:"FILE" validate:"dive,required" help:"Files read after the instruction files, in this order. Each must exist."`
 	// ExtraDirs are read after ExtraFiles. Every .md file under each
 	// directory is read, in path order. Each directory must exist.
-	ExtraDirs []string `koanf:"extra_dirs" validate:"dive,required"`
+	ExtraDirs []string `name:"extra_dirs" placeholder:"DIR" validate:"dive,required" help:"Directories whose .md files are read after extra_files, in path order. Each must exist."`
 	// SkillsEnabled exposes the skill-loading extra to the model.
-	SkillsEnabled bool `koanf:"skills_enabled"`
+	SkillsEnabled bool `name:"skills_enabled" default:"true" help:"Give the model the tool that loads a skill. On by default."`
 	// SkillsDirs are searched for directories that hold a SKILL.md. When
 	// two skills have the same name, the one from the earlier directory is
 	// used.
-	SkillsDirs []string `koanf:"skills_dirs" validate:"dive,required"`
+	SkillsDirs []string `name:"skills_dirs" default:"~/.agents/skills" placeholder:"DIR" validate:"dive,required" help:"Directories searched for directories that hold a SKILL.md. The earlier directory wins a name."`
 	// MaxFileBytes is the largest context file or SKILL.md that is
 	// accepted. A larger one is an error, not a truncated file. Zero means
 	// no limit.
-	MaxFileBytes int64 `koanf:"max_file_bytes" validate:"gte=0"`
+	MaxFileBytes int64 `name:"max_file_bytes" default:"0" validate:"gte=0" help:"Largest context file or SKILL.md that is accepted. A larger one is an error. 0 is no limit."`
 	// MaxTotalBytes is the largest sum of the context files' sizes that is
 	// accepted. Zero means no limit.
-	MaxTotalBytes int64 `koanf:"max_total_bytes" validate:"gte=0"`
+	MaxTotalBytes int64 `name:"max_total_bytes" default:"0" validate:"gte=0" help:"Largest sum of the context files' sizes that is accepted. 0 is no limit."`
 	// Sections are added to the end of the system prompt, in this order.
-	Sections []ContextSection `koanf:"sections" validate:"unique=Name,dive"`
+	Sections []ContextSection `name:"sections" type:"table" placeholder:"YAML" validate:"unique=Name,dive" help:"Sections added to the end of the system prompt: name, then text or file. Written in a config file."`
 }
 
 // ContextSection is one system prompt section added by configuration. It
@@ -39,21 +42,10 @@ type Context struct {
 type ContextSection struct {
 	// Name identifies the section. It must differ from every other
 	// section's name, including the built-in ones.
-	Name string `koanf:"name" validate:"required"`
-	Text string `koanf:"text" validate:"required_without=File,excluded_with=File"`
+	Name string `json:"name" validate:"required"`
+	Text string `json:"text" validate:"required_without=File,excluded_with=File"`
 	// File is the path of a file whose content is the section's text.
-	File string `koanf:"file"`
-}
-
-// The limits default to none: no size has been measured to be the right
-// one, and a file over a limit fails the session.
-var contextDefaults = map[string]any{
-	"context.agents_files":    true,
-	"context.global_dir":      "~/.agents",
-	"context.skills_enabled":  true,
-	"context.skills_dirs":     []string{"~/.agents/skills"},
-	"context.max_file_bytes":  0,
-	"context.max_total_bytes": 0,
+	File string `json:"file"`
 }
 
 func (c Context) validate() error {

@@ -7,9 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/urfave/cli/v3"
-
-	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/httpclient"
 	"github.com/gfx-labs/acpharness/src/mcp"
@@ -25,47 +22,25 @@ type mcpEnv struct {
 	openBrowser func(ctx context.Context, url string) error
 }
 
-// mcpCommands returns the mcp command, with login and logout for the OAuth
-// login of a configured remote MCP server.
-func mcpCommands(h Host) []*cli.Command {
-	return mcpCommandsWith(h, mcpEnv{openBrowser: auth.OpenBrowser})
+// mcpCmd holds login and logout for the OAuth login of a configured remote
+// MCP server.
+type mcpCmd struct {
+	Login  mcpLoginCmd  `cmd:"" help:"Log in to a remote MCP server from mcp.servers and store its tokens."`
+	Logout mcpLogoutCmd `cmd:"" help:"Delete a remote MCP server's stored tokens."`
 }
 
-func mcpCommandsWith(h Host, env mcpEnv) []*cli.Command {
-	return []*cli.Command{{
-		Name:  "mcp",
-		Usage: "manage the OAuth logins of remote MCP servers",
-		Commands: []*cli.Command{
-			{
-				Name:      "login",
-				Usage:     "log in to a remote MCP server from mcp.servers and store its tokens",
-				ArgsUsage: "<server>",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{Name: "manual", Usage: "print the page to open and read a pasted address, for a host without a browser"},
-				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return mcpLogin(ctx, cmd, h, env)
-				},
-			},
-			{
-				Name:      "logout",
-				Usage:     "delete a remote MCP server's stored tokens",
-				ArgsUsage: "<server>",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return mcpLogout(ctx, cmd, h)
-				},
-			},
-		},
-	}}
+type mcpLoginCmd struct {
+	Server string `arg:"" help:"The name of the server in mcp.servers."`
+	Manual bool   `help:"Print the page to open and read a pasted address, for a host without a browser."`
 }
 
-// remoteMCPServer finds the server the command names in the configuration
-// and checks that it is remote. It sends nothing.
-func remoteMCPServer(cmd *cli.Command, h Host, cfg config.MCP) (mcp.Server, error) {
-	if cmd.Args().Len() != 1 {
-		return mcp.Server{}, fmt.Errorf("mcp %s takes one server name, and got %d arguments", cmd.Name, cmd.Args().Len())
-	}
-	name := cmd.Args().First()
+type mcpLogoutCmd struct {
+	Server string `arg:"" help:"The name of the server in mcp.servers."`
+}
+
+// remoteMCPServer finds the server of that name in the configuration and
+// checks that it is remote. It sends nothing.
+func remoteMCPServer(name string, h Host, cfg config.MCP) (mcp.Server, error) {
 	lookupEnv := func(variable string) (string, bool) {
 		for _, kv := range slices.Backward(h.Environ) {
 			if k, v, ok := strings.Cut(kv, "="); ok && k == variable {
@@ -89,12 +64,9 @@ func remoteMCPServer(cmd *cli.Command, h Host, cfg config.MCP) (mcp.Server, erro
 	return servers[i], nil
 }
 
-func mcpLogin(ctx context.Context, cmd *cli.Command, h Host, env mcpEnv) error {
-	loaded, err := loadConfig(cmd, h)
-	if err != nil {
-		return err
-	}
-	server, err := remoteMCPServer(cmd, h, loaded.Config.MCP)
+// Run logs in to the server and stores its tokens.
+func (c *mcpLoginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env mcpEnv) error {
+	server, err := remoteMCPServer(c.Server, h, loaded.Config.MCP)
 	if err != nil {
 		return err
 	}
@@ -107,7 +79,7 @@ func mcpLogin(ctx context.Context, cmd *cli.Command, h Host, env mcpEnv) error {
 		Config:        loaded.Config.MCP.OAuth,
 		HTTPClient:    httpclient.New(),
 		Tokens:        store,
-		Manual:        cmd.Bool("manual"),
+		Manual:        c.Manual,
 		OpenURL:       env.openBrowser,
 		In:            h.Stdin,
 		Out:           h.Stderr,
@@ -121,12 +93,9 @@ func mcpLogin(ctx context.Context, cmd *cli.Command, h Host, env mcpEnv) error {
 	return err
 }
 
-func mcpLogout(ctx context.Context, cmd *cli.Command, h Host) error {
-	loaded, err := loadConfig(cmd, h)
-	if err != nil {
-		return err
-	}
-	server, err := remoteMCPServer(cmd, h, loaded.Config.MCP)
+// Run deletes the server's stored login.
+func (c *mcpLogoutCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
+	server, err := remoteMCPServer(c.Server, h, loaded.Config.MCP)
 	if err != nil {
 		return err
 	}

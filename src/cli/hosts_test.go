@@ -2,14 +2,12 @@ package cli
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/hosts"
@@ -19,36 +17,31 @@ import (
 // standard output alone, and what it does not cover on standard error.
 func TestHostsPrintsTheListAndWhatItDoesNotCover(t *testing.T) {
 	dir := t.TempDir()
-	file := filepath.Join(dir, "extra.toml")
+	file := filepath.Join(dir, "extra.yaml")
 	require.NoError(t, os.WriteFile(file, []byte(`
-[[providers]]
-id = "openrouter"
-kind = "chat"
-base_url = "https://openrouter.ai/api/v1"
-
-[[accounts]]
-id = "work"
-provider = "claude"
-kind = "oauth"
-
-[jev]
-route = "custom"
-model = "jev-local"
-base_url = "https://jev.internal.example/v1"
-
-[embeddings]
-base_url = "http://embed.internal:8080/v1"
-model = "bge"
-
-[[mcp.servers]]
-name = "docs"
-transport = "sse"
-url = "http://mcp.internal:9000/sse"
-
-[[mcp.servers]]
-name = "moved"
-transport = "streamable_http"
-url = "https://moved.example/mcp"
+providers:
+  - id: openrouter
+    kind: chat
+    base_url: https://openrouter.ai/api/v1
+accounts:
+  - id: work
+    provider: claude
+    kind: oauth
+jev:
+  route: custom
+  model: jev-local
+  base_url: https://jev.internal.example/v1
+embeddings:
+  base_url: http://embed.internal:8080/v1
+  model: bge
+mcp:
+  servers:
+    - name: docs
+      transport: sse
+      url: http://mcp.internal:9000/sse
+    - name: moved
+      transport: streamable_http
+      url: https://moved.example/mcp
 `), 0o600))
 	flow := auth.ClaudeFlow()
 	flow.AuthorizeURL, flow.TokenURL = "https://login.example/authorize", "https://login.example/token"
@@ -72,17 +65,13 @@ url = "https://moved.example/mcp"
 		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
 		Environ: []string{"OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example:4318", "XDG_STATE_HOME=" + state},
 	}
-	env := hostsEnv{
+	env := builtInEnv()
+	env.hosts = hostsEnv{
 		flows:   map[string]auth.Flow{"claude": flow},
 		builtIn: hosts.BuiltIn{Claude: "https://claude-api.example"},
 	}
-	app := &cli.Command{
-		Name:     "acpharness",
-		Flags:    []cli.Flag{&cli.StringSliceFlag{Name: "config"}, &cli.StringSliceFlag{Name: "set"}},
-		Commands: []*cli.Command{hostsCommandWith(h, env)},
-		Writer:   io.Discard, ErrWriter: io.Discard,
-	}
-	require.NoError(t, app.Run(t.Context(), []string{"acpharness", "--config", file, "--set", "telemetry.otel=true", "--set", "websearch.enabled=false", "hosts"}))
+	// A config key is a flag, before or after the command.
+	require.NoError(t, run(t.Context(), []string{"acpharness", "--config", file, "--telemetry.otel", "hosts", "--websearch.enabled=false"}, h, env))
 
 	// The authorize and token endpoints share a host, which is one line.
 	require.Equal(t, strings.Join([]string{
@@ -111,36 +100,25 @@ url = "https://moved.example/mcp"
 // them, each of which List can read as a host.
 func TestHostsWithTheBuiltInEndpoints(t *testing.T) {
 	dir := t.TempDir()
-	file := filepath.Join(dir, "c.toml")
+	file := filepath.Join(dir, "c.yaml")
 	require.NoError(t, os.WriteFile(file, []byte(`
-[[accounts]]
-id = "a"
-provider = "claude"
-kind = "proxied_oauth"
-
-[[accounts]]
-id = "b"
-provider = "codex"
-kind = "proxied_oauth"
-
-[[accounts]]
-id = "c"
-provider = "codex"
-kind = "proxied_api_key"
-
-[jev]
-route = "typesafe"
-account = "c"
+accounts:
+  - id: a
+    provider: claude
+    kind: proxied_oauth
+  - id: b
+    provider: codex
+    kind: proxied_oauth
+  - id: c
+    provider: codex
+    kind: proxied_api_key
+jev:
+  route: typesafe
+  account: c
 `), 0o600))
 	var stdout, stderr bytes.Buffer
 	h := Host{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, Environ: []string{"XDG_STATE_HOME=" + dir}}
-	app := &cli.Command{
-		Name:     "acpharness",
-		Flags:    []cli.Flag{&cli.StringSliceFlag{Name: "config"}, &cli.StringSliceFlag{Name: "set"}},
-		Commands: []*cli.Command{hostsCommand(h)},
-		Writer:   io.Discard, ErrWriter: io.Discard,
-	}
-	require.NoError(t, app.Run(t.Context(), []string{"acpharness", "--config", file, "hosts"}))
+	require.NoError(t, Run(t.Context(), []string{"acpharness", "--config", file, "hosts"}, h))
 	keys := map[string]int{}
 	for line := range strings.Lines(stdout.String()) {
 		_, key, ok := strings.Cut(strings.TrimSuffix(line, "\n"), "\t")

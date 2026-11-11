@@ -10,34 +10,24 @@ import (
 type Embeddings struct {
 	// BaseURL is the endpoint's root, such as http://127.0.0.1:8080/v1.
 	// "/embeddings" is added to it.
-	BaseURL string `koanf:"base_url"`
+	BaseURL string `name:"base_url" placeholder:"URL" help:"Root of the embeddings endpoint, such as http://127.0.0.1:8080/v1. Empty means there is none."`
 	// Model is the endpoint's own name for the model.
-	Model string `koanf:"model" validate:"required_with=BaseURL,excluded_without=BaseURL"`
+	Model string `name:"model" validate:"required_with=BaseURL,excluded_without=BaseURL" help:"The endpoint's own name for the model."`
 	// Account is the id of the account whose credential is sent. Empty
 	// sends no authorization, which is what a local sidecar wants.
-	Account string `koanf:"account" validate:"excluded_without=BaseURL"`
+	Account string `name:"account" validate:"excluded_without=BaseURL" help:"Id of the account whose credential is sent. Empty sends no authorization."`
 	// Dimensions is the length of vector to ask for. Zero does not ask, and
 	// the model's own length is used. When it is set, a vector of another
 	// length is an error.
-	Dimensions int `koanf:"dimensions" validate:"gte=0"`
-	// BatchSize is the most inputs sent in one request.
-	BatchSize int `koanf:"batch_size" validate:"gt=0"`
-	// TimeoutSeconds bounds one request.
-	TimeoutSeconds int `koanf:"timeout_seconds" validate:"gt=0"`
-}
-
-var embeddingsDefaults = map[string]any{
-	"embeddings.base_url":   "",
-	"embeddings.model":      "",
-	"embeddings.account":    "",
-	"embeddings.dimensions": 0,
-	// The default of --max-client-batch-size in Text Embeddings Inference,
-	// the sidecar the design recommends, from the README of
+	Dimensions int `name:"dimensions" default:"0" validate:"gte=0" help:"Length of vector to ask for. 0 does not ask, and the model's own length is used."`
+	// BatchSize is the most inputs sent in one request. The default is the
+	// default of --max-client-batch-size in Text Embeddings Inference, the
+	// sidecar the design recommends, from the README of
 	// https://github.com/huggingface/text-embeddings-inference.
-	"embeddings.batch_size": 32,
-	// Not measured. It has to cover a sidecar loading its model on the
-	// first request.
-	"embeddings.timeout_seconds": 120,
+	BatchSize int `name:"batch_size" default:"32" validate:"gt=0" help:"Most inputs sent in one request."`
+	// TimeoutSeconds bounds one request. The default is not measured. It
+	// has to cover a sidecar loading its model on the first request.
+	TimeoutSeconds int `name:"timeout_seconds" default:"120" validate:"gt=0" help:"Seconds one request may take."`
 }
 
 func (e Embeddings) validate() error {

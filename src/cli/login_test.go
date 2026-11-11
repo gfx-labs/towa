@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/httpclient"
@@ -41,7 +40,8 @@ func TestLoginAccountsLogout(t *testing.T) {
 
 	flow := auth.ClaudeFlow()
 	flow.AuthorizeURL, flow.TokenURL = provider.URL+"/authorize", provider.URL+"/token"
-	env := loginEnv{
+	env := builtInEnv()
+	env.login = loginEnv{
 		flows: map[string]auth.Flow{"claude": flow},
 		openBrowser: func(ctx context.Context, page string) error {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, page, nil)
@@ -58,28 +58,23 @@ func TestLoginAccountsLogout(t *testing.T) {
 
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "acpharness"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.toml"), []byte(`
-default_model = "opus"
-
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.yaml"), []byte(`
+default_model: opus
 # The chain names an account that no login has made yet.
-[models.opus]
-chain = ["claude:fresh/claude-opus-4-7"]
-
-[[accounts]]
-id = "work"
-provider = "claude"
-kind = "oauth"
-
-[[accounts]]
-id = "held"
-provider = "claude"
-kind = "proxied_oauth"
-
-[[accounts]]
-id = "key"
-provider = "openrouter"
-kind = "api_key"
-api_key_env = "OPENROUTER_API_KEY"
+models:
+  opus:
+    chain: ["claude:fresh/claude-opus-4-7"]
+accounts:
+  - id: work
+    provider: claude
+    kind: oauth
+  - id: held
+    provider: claude
+    kind: proxied_oauth
+  - id: key
+    provider: openrouter
+    kind: api_key
+    api_key_env: OPENROUTER_API_KEY
 `), 0o600))
 
 	var printed bytes.Buffer
@@ -93,14 +88,7 @@ api_key_env = "OPENROUTER_API_KEY"
 				"XDG_STATE_HOME=" + filepath.Join(dir, "state"),
 			},
 		}
-		// The flags loadConfig reads from the root command.
-		app := &cli.Command{
-			Name:     "acpharness",
-			Flags:    []cli.Flag{&cli.StringSliceFlag{Name: "config"}, &cli.StringSliceFlag{Name: "set"}},
-			Commands: accountCommandsWith(h, env),
-			Writer:   io.Discard, ErrWriter: io.Discard,
-		}
-		err := app.Run(t.Context(), append([]string{"acpharness"}, args...))
+		err := run(t.Context(), append([]string{"acpharness"}, args...), h, env)
 		return stdout.String(), err
 	}
 	file := filepath.Join(dir, "state", "acpharness", "auth", "auth.json")
@@ -139,6 +127,9 @@ api_key_env = "OPENROUTER_API_KEY"
 	require.Error(t, err)
 	_, err = run("login", "claude")
 	require.Error(t, err)
+	// The three ways to log in exclude each other, and nothing is sent.
+	_, err = run("login", "claude", "--account", "work", "--manual", "--device")
+	require.ErrorContains(t, err, "--manual and --device")
 	_, err = run("login", "claude", "--code", "the-code#state")
 	require.ErrorIs(t, err, auth.ErrNoPendingLogin)
 	require.Equal(t, int32(1), tokenRequests.Load())

@@ -11,28 +11,33 @@ type MCP struct {
 	// IdleCloseSeconds is how long a connection may go unused before it is
 	// closed. The next use opens it again. Zero keeps connections open
 	// until the session ends, which a stdio server that keeps state between
-	// calls needs.
-	IdleCloseSeconds int64 `koanf:"idle_close_seconds" validate:"gte=0"`
+	// calls needs. Five minutes is a choice, not a measurement: long enough
+	// that a server used every few turns stays up, short enough that a pool
+	// of idle sessions does not hold one process per server each.
+	IdleCloseSeconds int64 `name:"idle_close_seconds" default:"300" validate:"gte=0" help:"Seconds a connection may go unused before it is closed. 0 keeps connections open until the session ends."`
 	// ConnectTimeoutSeconds bounds starting a server and its initialize
-	// exchange.
-	ConnectTimeoutSeconds int64 `koanf:"connect_timeout_seconds" validate:"gt=0"`
+	// exchange. A stdio server started through npx or uvx downloads its
+	// package on first run, which takes longer than a handshake.
+	ConnectTimeoutSeconds int64 `name:"connect_timeout_seconds" default:"30" validate:"gt=0" help:"Seconds starting a server and its initialize exchange may take."`
 	// TerminateGraceSeconds is how long a stdio server has to exit after
 	// its stdin closes before its process group gets SIGTERM, and again
-	// before SIGKILL.
-	TerminateGraceSeconds int64 `koanf:"terminate_grace_seconds" validate:"gt=0"`
+	// before SIGKILL. The default is the grace the MCP Go SDK gives a stdio
+	// server before it signals it.
+	TerminateGraceSeconds int64 `name:"terminate_grace_seconds" default:"5" validate:"gt=0" help:"Seconds a stdio server has to exit after its stdin closes before SIGTERM, and again before SIGKILL."`
 	// SearchResults is the most tools one search of the mcp tool returns
 	// with their schemas. The result says how many more matched.
-	SearchResults int64 `koanf:"search_results" validate:"gt=0"`
+	SearchResults int64 `name:"search_results" default:"10" validate:"gt=0" help:"Most tools one search of the mcp tool returns with their schemas."`
 	// SessionServersDirect says whether a server a client names in
 	// session/new has its tools put in front of the model under their own
 	// names. A session's server replaces a configured server of the same
 	// name whole, so this key and not that entry's direct key applies.
-	SessionServersDirect bool `koanf:"session_servers_direct"`
+	SessionServersDirect bool `name:"session_servers_direct" default:"true" help:"Put the tools of a server a client names in session/new in front of the model under their own names. On by default."`
 	// SessionServersTrustAnnotations says whether a tool of a session's
-	// server that declares readOnlyHint is treated as read-only.
-	SessionServersTrustAnnotations bool        `koanf:"session_servers_trust_annotations"`
-	OAuth                          MCPOAuth    `koanf:"oauth"`
-	Servers                        []MCPServer `koanf:"servers"`
+	// server that declares readOnlyHint is treated as read-only. The client
+	// that adds a server to a session chose it for that session.
+	SessionServersTrustAnnotations bool        `name:"session_servers_trust_annotations" default:"true" help:"Treat a tool of a session's server that declares readOnlyHint as read-only. On by default."`
+	OAuth                          MCPOAuth    `embed:"" prefix:"oauth."`
+	Servers                        []MCPServer `name:"servers" type:"table" placeholder:"YAML" help:"MCP servers: name, transport, then command or url. Written in a config file."`
 }
 
 // MCPOAuth configures the authorization code flow for remote servers.
@@ -41,57 +46,60 @@ type MCPOAuth struct {
 	// for the redirect. Port 0 picks a free port, which works with dynamic
 	// client registration. A pre-registered client needs the port it was
 	// registered with.
-	CallbackAddr string `koanf:"callback_addr"`
+	CallbackAddr string `name:"callback_addr" default:"127.0.0.1:0" help:"Loopback address the login command listens on for the redirect. Port 0 picks a free port."`
 	// CallbackPath is the path of the redirect URL.
-	CallbackPath string `koanf:"callback_path"`
-	// LoginTimeoutSeconds is how long a login waits for the redirect.
-	LoginTimeoutSeconds int64 `koanf:"login_timeout_seconds" validate:"gt=0"`
+	CallbackPath string `name:"callback_path" default:"/callback" help:"Path of the redirect URL."`
+	// LoginTimeoutSeconds is how long a login waits for the redirect. It
+	// and RefreshMarginSeconds default to the values of
+	// auth.login_timeout_seconds and auth.refresh_margin_seconds, which are
+	// jcode's.
+	LoginTimeoutSeconds int64 `name:"login_timeout_seconds" default:"300" validate:"gt=0" help:"Seconds a login waits for the redirect."`
 	// RefreshMarginSeconds is how long before its expiry a token is
 	// refreshed.
-	RefreshMarginSeconds int64 `koanf:"refresh_margin_seconds" validate:"gte=0"`
+	RefreshMarginSeconds int64 `name:"refresh_margin_seconds" default:"60" validate:"gte=0" help:"Seconds before its expiry that a token is refreshed."`
 }
 
 // MCPServer is one server from configuration.
 type MCPServer struct {
-	Name string `koanf:"name" validate:"required"`
+	Name string `json:"name" validate:"required"`
 	// Transport is one of the MCPTransport values.
-	Transport string `koanf:"transport" validate:"oneof=stdio streamable_http sse"`
+	Transport string `json:"transport" validate:"oneof=stdio streamable_http sse"`
 	// Command, Args and Env start a stdio server. Env is added to the
 	// harness's own environment.
-	Command string            `koanf:"command"`
-	Args    []string          `koanf:"args"`
-	Env     map[string]string `koanf:"env"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
 	// URL is the endpoint of a streamable_http or sse server.
-	URL string `koanf:"url"`
+	URL string `json:"url"`
 	// Headers are sent with every request to the server. HeadersEnv maps a
 	// header name to the environment variable that holds its value, for a
 	// value that is a secret.
-	Headers    map[string]string `koanf:"headers"`
-	HeadersEnv map[string]string `koanf:"headers_env"`
+	Headers    map[string]string `json:"headers"`
+	HeadersEnv map[string]string `json:"headers_env"`
 	// Direct puts the server's tools in front of the model under their own
 	// names. Unset means no.
-	Direct *bool `koanf:"direct"`
+	Direct *bool `json:"direct"`
 	// TrustAnnotations treats a tool that declares readOnlyHint as
 	// read-only. Without it every tool of the server counts as one that
 	// executes, because a server can declare anything.
-	TrustAnnotations *bool `koanf:"trust_annotations"`
+	TrustAnnotations *bool `json:"trust_annotations"`
 	// Shared gives the server one connection for the whole process, used by
 	// every session, in place of one per session. A shared stdio server
 	// runs once, in the process's working directory and environment, and
 	// whatever state it keeps is seen by every session. It does not apply
 	// to a server a session names.
-	Shared bool           `koanf:"shared"`
-	OAuth  MCPServerOAuth `koanf:"oauth"`
+	Shared bool           `json:"shared"`
+	OAuth  MCPServerOAuth `json:"oauth"`
 }
 
 // MCPServerOAuth names a client registered with the server's authorization
 // server by hand. When ClientID is empty the client is registered
 // dynamically at login.
 type MCPServerOAuth struct {
-	ClientID string `koanf:"client_id"`
+	ClientID string `json:"client_id"`
 	// ClientSecretEnv names the environment variable that holds the
 	// client's secret. It is empty for a public client.
-	ClientSecretEnv string `koanf:"client_secret_env"`
+	ClientSecretEnv string `json:"client_secret_env"`
 }
 
 // Transports of an MCP server.
@@ -100,28 +108,6 @@ const (
 	MCPTransportStreamableHTTP = "streamable_http"
 	MCPTransportSSE            = "sse"
 )
-
-var mcpDefaults = map[string]any{
-	// Five minutes is a choice, not a measurement: long enough that a
-	// server used every few turns stays up, short enough that a pool of
-	// idle sessions does not hold one process per server each.
-	"mcp.idle_close_seconds": 300,
-	// A stdio server started through npx or uvx downloads its package on
-	// first run, which takes longer than a handshake.
-	"mcp.connect_timeout_seconds": 30,
-	// The grace the MCP Go SDK gives a stdio server before it signals it.
-	"mcp.terminate_grace_seconds": 5,
-	"mcp.search_results":          10,
-	"mcp.session_servers_direct":  true,
-	// The client that adds a server to a session chose it for that session.
-	"mcp.session_servers_trust_annotations": true,
-	"mcp.oauth.callback_addr":               "127.0.0.1:0",
-	"mcp.oauth.callback_path":               "/callback",
-	// The same values as auth.login_timeout_seconds and
-	// auth.refresh_margin_seconds, which are jcode's.
-	"mcp.oauth.login_timeout_seconds":  300,
-	"mcp.oauth.refresh_margin_seconds": 60,
-}
 
 func (m MCP) validate() error {
 	if err := validateFields("mcp", m); err != nil {

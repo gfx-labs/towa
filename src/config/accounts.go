@@ -8,25 +8,19 @@ import (
 	"strings"
 )
 
-// Auth configures how logins are made and kept fresh.
+// Auth configures how logins are made and kept fresh. The defaults are
+// jcode's: its freshness margin, its Claude token request timeout and its
+// longer callback wait, the Codex one.
 type Auth struct {
 	// RefreshMarginSeconds is how long before its expiry an OAuth token is
 	// refreshed, so that a request does not leave with a token that expires
 	// on the way.
-	RefreshMarginSeconds int `koanf:"refresh_margin_seconds" validate:"gte=0"`
+	RefreshMarginSeconds int `name:"refresh_margin_seconds" default:"60" validate:"gte=0" help:"Seconds before its expiry that an OAuth token is refreshed."`
 	// TokenTimeoutSeconds bounds one request to an OAuth token endpoint.
-	TokenTimeoutSeconds int `koanf:"token_timeout_seconds" validate:"gt=0"`
+	TokenTimeoutSeconds int `name:"token_timeout_seconds" default:"15" validate:"gt=0" help:"Seconds one request to an OAuth token endpoint may take."`
 	// LoginTimeoutSeconds is how long login waits for the browser to come
 	// back before it asks for the code to be pasted.
-	LoginTimeoutSeconds int `koanf:"login_timeout_seconds" validate:"gt=0"`
-}
-
-// The values are jcode's: its freshness margin, its Claude token request
-// timeout and its longer callback wait, the Codex one.
-var authDefaults = map[string]any{
-	"auth.refresh_margin_seconds": 60,
-	"auth.token_timeout_seconds":  15,
-	"auth.login_timeout_seconds":  300,
+	LoginTimeoutSeconds int `name:"login_timeout_seconds" default:"300" validate:"gt=0" help:"Seconds login waits for the browser to come back before it asks for the code."`
 }
 
 func (a Auth) validate() error {
@@ -36,22 +30,22 @@ func (a Auth) validate() error {
 // Account is one login or key the harness can send requests with.
 type Account struct {
 	// ID names the account in model chains and in the auth store.
-	ID string `koanf:"id" validate:"required"`
+	ID string `json:"id" validate:"required"`
 	// Provider is the provider the account belongs to, such as "claude",
 	// "codex" or "openrouter".
-	Provider string `koanf:"provider" validate:"required"`
-	Kind     string `koanf:"kind" validate:"oneof=oauth api_key proxied_oauth proxied_api_key"`
+	Provider string `json:"provider" validate:"required"`
+	Kind     string `json:"kind" validate:"oneof=oauth api_key proxied_oauth proxied_api_key"`
 	// APIKeyEnv names the environment variable that holds the key of an
 	// api_key account.
-	APIKeyEnv string `koanf:"api_key_env" validate:"required_if=Kind api_key,excluded_unless=Kind api_key"`
+	APIKeyEnv string `json:"api_key_env" validate:"required_if=Kind api_key,excluded_unless=Kind api_key"`
 	// ChatGPTAccountID is the account id the Codex backend wants in a
 	// header. Only a proxied_oauth account sets it: the proxy replaces the
 	// authorization and nothing else, and the harness has no id token to
 	// read the id from.
-	ChatGPTAccountID string `koanf:"chatgpt_account_id" validate:"excluded_unless=Kind proxied_oauth"`
+	ChatGPTAccountID string `json:"chatgpt_account_id" validate:"excluded_unless=Kind proxied_oauth"`
 	// Stored says no config layer declares the account: it is one of the
 	// auth store, made by a login or named by a model chain ahead of it.
-	Stored bool `koanf:"-"`
+	Stored bool `json:"-"`
 }
 
 // Kinds of an account.

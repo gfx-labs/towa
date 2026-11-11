@@ -9,23 +9,23 @@ import (
 // API. The package that reads it adds the fields it needs here.
 type Provider struct {
 	// ID names the provider in accounts and model chains.
-	ID   string `koanf:"id" validate:"required"`
-	Kind string `koanf:"kind" validate:"oneof=chat responses"`
+	ID   string `json:"id" validate:"required"`
+	Kind string `json:"kind" validate:"oneof=chat responses"`
 	// BaseURL is the endpoint's root, such as https://openrouter.ai/api/v1.
-	BaseURL string `koanf:"base_url"`
+	BaseURL string `json:"base_url"`
 
 	// Referer and Title name the application to the provider. They are sent
 	// as the HTTP-Referer and X-OpenRouter-Title headers, and neither is sent when
 	// empty. OpenRouter uses them for attribution.
-	Referer string `koanf:"referer"`
-	Title   string `koanf:"title"`
+	Referer string `json:"referer"`
+	Title   string `json:"title"`
 	// CacheKeyField is the request body member that carries the session id
 	// for the provider's prompt cache. Nothing is sent when it is empty,
 	// because an endpoint may reject a member it does not know.
-	CacheKeyField string `koanf:"cache_key_field" validate:"omitempty,oneof=prompt_cache_key session_id"`
+	CacheKeyField string `json:"cache_key_field" validate:"omitempty,oneof=prompt_cache_key session_id"`
 	// OpenRouter holds what only OpenRouter understands. It applies to a
 	// provider of kind chat.
-	OpenRouter OpenRouter `koanf:"openrouter"`
+	OpenRouter OpenRouter `json:"openrouter"`
 }
 
 // Kinds of a provider: the wire protocol it speaks.
@@ -48,9 +48,9 @@ type OpenRouter struct {
 	// Enabled says the endpoint is OpenRouter. The reasoning effort is then
 	// sent in OpenRouter's reasoning object, the rate limit reset header is
 	// read as OpenRouter defines it, and a response's cost is reported.
-	Enabled   bool                `koanf:"enabled"`
-	Routing   OpenRouterRouting   `koanf:"routing"`
-	Reasoning OpenRouterReasoning `koanf:"reasoning"`
+	Enabled   bool                `json:"enabled"`
+	Routing   OpenRouterRouting   `json:"routing"`
+	Reasoning OpenRouterReasoning `json:"reasoning"`
 }
 
 // OpenRouterRouting is the request's provider object: which upstream
@@ -58,30 +58,30 @@ type OpenRouter struct {
 // not sent, and OpenRouter's default applies.
 type OpenRouterRouting struct {
 	// Order lists provider slugs to try in order.
-	Order []string `koanf:"order"`
+	Order []string `json:"order"`
 	// Only and Ignore allow and exclude provider slugs.
-	Only   []string `koanf:"only"`
-	Ignore []string `koanf:"ignore"`
+	Only   []string `json:"only"`
+	Ignore []string `json:"ignore"`
 	// AllowFallbacks says whether a provider outside Order may be used.
-	AllowFallbacks *bool `koanf:"allow_fallbacks"`
+	AllowFallbacks *bool `json:"allow_fallbacks"`
 	// RequireParameters limits routing to providers that support every
 	// parameter of the request.
-	RequireParameters *bool `koanf:"require_parameters"`
+	RequireParameters *bool `json:"require_parameters"`
 	// DataCollection is "allow" or "deny".
-	DataCollection string `koanf:"data_collection" validate:"omitempty,oneof=allow deny"`
+	DataCollection string `json:"data_collection" validate:"omitempty,oneof=allow deny"`
 	// ZDR limits routing to zero data retention endpoints.
-	ZDR *bool `koanf:"zdr"`
+	ZDR *bool `json:"zdr"`
 	// Sort is "price", "throughput" or "latency".
-	Sort string `koanf:"sort" validate:"omitempty,oneof=price throughput latency"`
+	Sort string `json:"sort" validate:"omitempty,oneof=price throughput latency"`
 	// Quantizations lists the quantization levels to allow, such as "fp8".
-	Quantizations []string `koanf:"quantizations"`
+	Quantizations []string `json:"quantizations"`
 	// MaxPrice is the most to pay, in USD per million tokens for "prompt"
 	// and "completion" and per unit for "request" and "image".
-	MaxPrice map[string]float64 `koanf:"max_price" validate:"dive,keys,oneof=prompt completion request image,endkeys,gte=0,finite"`
+	MaxPrice map[string]float64 `json:"max_price" validate:"dive,keys,oneof=prompt completion request image,endkeys,gte=0,finite"`
 	// PreferredMinThroughputTPS is in tokens per second and
 	// PreferredMaxLatencySeconds in seconds. Zero is not sent.
-	PreferredMinThroughputTPS  float64 `koanf:"preferred_min_throughput_tps" validate:"gte=0,finite"`
-	PreferredMaxLatencySeconds float64 `koanf:"preferred_max_latency_seconds" validate:"gte=0,finite"`
+	PreferredMinThroughputTPS  float64 `json:"preferred_min_throughput_tps" validate:"gte=0,finite"`
+	PreferredMaxLatencySeconds float64 `json:"preferred_max_latency_seconds" validate:"gte=0,finite"`
 }
 
 // OpenRouterReasoning is the part of the request's reasoning object that
@@ -89,7 +89,7 @@ type OpenRouterRouting struct {
 type OpenRouterReasoning struct {
 	// Exclude asks OpenRouter not to return the reasoning text. The model
 	// still reasons and the tokens are still billed.
-	Exclude bool `koanf:"exclude"`
+	Exclude bool `json:"exclude"`
 }
 
 func (c *Config) validateProviders() error {

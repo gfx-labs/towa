@@ -12,7 +12,8 @@ func TestListenRefusesAnOpenPortThatWasNotAskedFor(t *testing.T) {
 	tls := []string{"listen.tcp.tls.cert_file=/etc/acpharness/cert.pem", "listen.tcp.tls.key_file=/etc/acpharness/key.pem"}
 	tests := []struct {
 		name string
-		set  []string
+		// set holds key=value pairs, each given as the flag --key=value.
+		set []string
 		// want is the key the error names. Empty means the config loads.
 		want string
 	}{
@@ -37,7 +38,11 @@ func TestListenRefusesAnOpenPortThatWasNotAskedFor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.Load(config.Sources{Set: tt.set})
+			var args []string
+			for _, kv := range tt.set {
+				args = append(args, "--"+kv)
+			}
+			_, err := config.Load(config.Sources{}, args...)
 			if tt.want == "" {
 				require.NoError(t, err)
 				return

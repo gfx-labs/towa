@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -15,13 +16,15 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/knadh/koanf/providers/cliflagv3"
-	"github.com/knadh/koanf/v2"
-	"github.com/urfave/cli/v3"
+	"github.com/alecthomas/kong"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/acpharness/src/hosts"
 	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/acpharness/src/provider/anthropic"
+	"github.com/gfx-labs/acpharness/src/provider/openai"
 	"github.com/gfx-labs/acpharness/src/session"
 	"github.com/gfx-labs/acpharness/src/telemetry"
 )
@@ -52,64 +55,135 @@ func OSHost() Host {
 	}
 }
 
+// commandLine is the grammar kong parses: the flags that set the
+// configuration, which every command takes, and the commands. A command is a
+// struct with its own flags and a Run method, which kong calls with the
+// values run binds.
+type commandLine struct {
+	config.Flags
+	Version kong.VersionFlag `name:"version" short:"v" help:"Print the version."`
+
+	Serve    serveCmd    `cmd:"" default:"1" help:"Serve ACP on standard input and output and on the sockets the listen keys name (the default command)."`
+	Show     configCmd   `cmd:"" name:"config" help:"Print every config key with its value and the file, environment, flag or default it comes from."`
+	Login    loginCmd    `cmd:"" help:"Log in to ${login_providers} and store the login in auth.json, creating the account when it is new."`
+	Logout   logoutCmd   `cmd:"" help:"Delete an account's stored login."`
+	Accounts accountsCmd `cmd:"" help:"List the accounts of the configuration and of auth.json, and whether each can be used."`
+	MCP      mcpCmd      `cmd:"" name:"mcp" help:"Manage the OAuth logins of remote MCP servers."`
+	Hosts    hostsCmd    `cmd:"" help:"List the hosts the resolved configuration contacts, one host:port and its config key per line."`
+}
+
+// commandEnv is what the commands take from outside the configuration. A
+// test points it at endpoints it runs and stands in for the browser.
+type commandEnv struct {
+	login loginEnv
+	mcp   mcpEnv
+	hosts hostsEnv
+}
+
+// builtInEnv is the commandEnv of the program: the built-in flows and
+// endpoints, and the desktop's browser.
+func builtInEnv() commandEnv {
+	return commandEnv{
+		login: loginEnv{flows: auth.Flows(), openBrowser: auth.OpenBrowser},
+		mcp:   mcpEnv{openBrowser: auth.OpenBrowser},
+		hosts: hostsEnv{
+			flows: auth.Flows(),
+			builtIn: hosts.BuiltIn{
+				Claude:      anthropic.DefaultBaseURL,
+				CodexAPIKey: openai.DefaultBaseURL,
+				CodexOAuth:  openai.DefaultCodexBaseURL,
+			},
+		},
+	}
+}
+
 // Run runs the command line in args, where args[0] is the program name. It
 // returns when the command has finished or ctx is cancelled.
 func Run(ctx context.Context, args []string, h Host) error {
-	app := &cli.Command{
-		Name:  "acpharness",
-		Usage: "a coding agent that speaks the Agent Client Protocol",
-		Description: "The flags below are not the whole configuration. Every setting is a config key, such as\n" +
-			"telemetry.logs.stderr.level, and \"acpharness config\" lists each key with its value and where\n" +
-			"the value comes from. A key is set by, later ones winning:\n\n" +
-			"  1. " + h.SystemDir + "/config.yaml\n" +
-			"  2. $XDG_CONFIG_HOME/acpharness/config.yaml, or ~/.config/acpharness/config.yaml\n" +
-			"  3. the files in " + config.EnvFiles + " (separated like PATH), then each --config file\n" +
-			"  4. the environment: ACPHARNESS_TELEMETRY__LOGS__STDERR__LEVEL=debug sets telemetry.logs.stderr.level\n" +
-			"  5. the flags below\n" +
-			"  6. --set key=value\n\n" +
-			"A config file may also be config.toml, config.yml or config.json. The sections that hold lists\n" +
-			"and tables (models, accounts, providers, hooks, mcp.servers, context.sections) are written in\n" +
-			"a file, and appear in \"acpharness config\" once they are set.",
-		Version:   version(),
-		Reader:    h.Stdin,
-		Writer:    h.Stdout,
-		ErrWriter: h.Stderr,
-		// --set values may hold commas.
-		DisableSliceFlagSeparator: true,
-		DefaultCommand:            "serve",
-		Flags: []cli.Flag{
-			&cli.StringSliceFlag{Name: "config", Usage: "read this config `file` after the system, user and " + config.EnvFiles + " files (repeatable)"},
-			&cli.StringSliceFlag{Name: "set", Usage: "set a config `key=value` over every other source (repeatable)"},
-			&cli.StringFlag{Name: "log-level", Usage: "stderr log `level`: debug, info, warn or error"},
-			&cli.StringFlag{Name: "log-format", Usage: "stderr log `format`: " + config.FormatText + " or " + config.FormatJSON},
-		},
-		Commands: append([]*cli.Command{
-			{
-				Name:  "serve",
-				Usage: "serve ACP on standard input and output (the default command)",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return serve(ctx, cmd, h)
-				},
-			},
-			{
-				Name:  "config",
-				Usage: "print the resolved configuration and where each value comes from",
-				Description: "Prints one line per config key: the key, its value, and the file, environment variable,\n" +
-					"flag or default it comes from. See \"acpharness --help\" for how a key is set.",
-				Action: func(_ context.Context, cmd *cli.Command) error {
-					return printConfig(cmd, h)
-				},
-			},
-		}, slices.Concat(accountCommands(h), mcpCommands(h), []*cli.Command{hostsCommand(h)})...),
-	}
-	return app.Run(ctx, args)
+	return run(ctx, args, h, builtInEnv())
 }
 
-func serve(ctx context.Context, cmd *cli.Command, h Host) error {
-	loaded, err := loadConfig(cmd, h)
+func run(ctx context.Context, args []string, h Host, env commandEnv) error {
+	var providers, device []string
+	for provider, flow := range env.login.flows {
+		providers = append(providers, provider)
+		if flow.Device.UserCodeURL != "" {
+			device = append(device, provider)
+		}
+	}
+	slices.Sort(providers)
+	slices.Sort(device)
+
+	var line commandLine
+	// --help and --version print and ask kong to exit. Nothing runs after
+	// either, whatever the rest of the command line or the files hold.
+	printed := false
+	parsed, loaded, err := config.Parse(sources(h), &line, &line.Flags, args[1:],
+		kong.Name("acpharness"),
+		kong.Description("A coding agent that speaks the Agent Client Protocol.\n\n"+
+			"Every setting is a config key, and every key is a flag below: --limits.max_wall=30m sets\n"+
+			"limits.max_wall. \"acpharness config\" lists each key with its value and where the value\n"+
+			"comes from. A key is set by, later ones winning:\n\n"+
+			"  1. "+filepath.Join(h.SystemDir, "config.yaml")+"\n"+
+			"  2. $$XDG_CONFIG_HOME/acpharness/config.yaml, or ~/.config/acpharness/config.yaml\n"+
+			"  3. the files in "+config.EnvFiles+" (separated like PATH), then each --config file\n"+
+			"  4. the environment: ACPHARNESS_LIMITS__MAX_WALL=30m sets limits.max_wall\n"+
+			"  5. the flags\n\n"+
+			"A config file is YAML, and may also be config.yml or config.json. The keys that hold tables\n"+
+			"(models, accounts, providers, hooks, mcp.servers, context.sections) are written in a file.\n"+
+			"As a flag or in the environment, a table is one line of YAML."),
+		kong.Writers(h.Stdout, h.Stderr),
+		kong.Exit(func(int) { printed = true }),
+		kong.ConfigureHelp(kong.HelpOptions{Compact: true, NoAppDescFormat: true}),
+		kong.Vars{
+			"version":          version(),
+			"login_providers":  strings.Join(providers, " or "),
+			"device_providers": strings.Join(device, ", "),
+		},
+	)
+	if printed {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
+	parsed.BindTo(ctx, (*context.Context)(nil))
+	return parsed.Run(loaded, h, env.login, env.mcp, env.hosts)
+}
+
+// sources names the config layers this host has. The files of --config are
+// the command line's, which config.Parse reads.
+func sources(h Host) config.Sources {
+	src := config.Sources{
+		SystemDir: h.SystemDir,
+		Environ:   h.Environ,
+		Files:     filepath.SplitList(lookup(h.Environ, config.EnvFiles)),
+	}
+	// The accounts that logins made. Without XDG_STATE_HOME and HOME there
+	// is no auth store, so there are none.
+	if lookup(h.Environ, "XDG_STATE_HOME") != "" || lookup(h.Environ, "HOME") != "" {
+		src.StoredAccounts = func() (map[string]string, error) {
+			store, err := authStore(h)
+			if err != nil {
+				return nil, err
+			}
+			return store.Accounts()
+		}
+	}
+	// The user's config directory, by the XDG rule. Without XDG_CONFIG_HOME
+	// and HOME there is no such directory, so that layer is empty.
+	if dir := lookup(h.Environ, "XDG_CONFIG_HOME"); dir != "" {
+		src.UserDir = filepath.Join(dir, "acpharness")
+	} else if home := lookup(h.Environ, "HOME"); home != "" {
+		src.UserDir = filepath.Join(home, ".config", "acpharness")
+	}
+	return src
+}
+
+type serveCmd struct{}
+
+// Run serves until the client closes standard input or ctx is cancelled.
+func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
 	tel, err := telemetry.Start(ctx, loaded.Config.Telemetry, version(), h.Stderr)
 	if err != nil {
 		return err
@@ -154,67 +228,18 @@ func serve(ctx context.Context, cmd *cli.Command, h Host) error {
 	return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
 }
 
-// printConfig prints every config key with its value and the layer that set it.
-func printConfig(cmd *cli.Command, h Host) error {
-	loaded, err := loadConfig(cmd, h)
-	if err != nil {
-		return err
-	}
-	keys := make([]string, 0, len(loaded.Values))
-	for key := range loaded.Values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
+type configCmd struct{}
+
+// Run prints every config key with its value and the layer that set it. A
+// value is written as a YAML file takes it.
+func (configCmd) Run(loaded *config.Loaded, h Host) error {
 	w := tabwriter.NewWriter(h.Stdout, 0, 0, 2, ' ', 0)
-	for _, key := range keys {
-		if _, err := fmt.Fprintf(w, "%s = %v\t# %s\n", key, loaded.Values[key], loaded.Origin[key]); err != nil {
+	for _, key := range slices.Sorted(maps.Keys(loaded.Values)) {
+		if _, err := fmt.Fprintf(w, "%s = %s\t# %s\n", key, loaded.Values[key], loaded.Origin[key]); err != nil {
 			return err
 		}
 	}
 	return w.Flush()
-}
-
-// loadConfig gathers the config layers of this invocation and loads them.
-func loadConfig(cmd *cli.Command, h Host) (*config.Loaded, error) {
-	src := config.Sources{
-		SystemDir: h.SystemDir,
-		Environ:   h.Environ,
-		Flags:     map[string]any{},
-		Set:       cmd.StringSlice("set"),
-	}
-	// The accounts that logins made. Without XDG_STATE_HOME and HOME there
-	// is no auth store, so there are none.
-	if lookup(h.Environ, "XDG_STATE_HOME") != "" || lookup(h.Environ, "HOME") != "" {
-		store, err := authStore(h)
-		if err != nil {
-			return nil, err
-		}
-		if src.StoredAccounts, err = store.Accounts(); err != nil {
-			return nil, err
-		}
-	}
-	// The user's config directory, by the XDG rule. Without XDG_CONFIG_HOME
-	// and HOME there is no such directory, so that layer is empty.
-	if dir := lookup(h.Environ, "XDG_CONFIG_HOME"); dir != "" {
-		src.UserDir = filepath.Join(dir, "acpharness")
-	} else if home := lookup(h.Environ, "HOME"); home != "" {
-		src.UserDir = filepath.Join(home, ".config", "acpharness")
-	}
-	src.Files = append(filepath.SplitList(lookup(h.Environ, config.EnvFiles)), cmd.StringSlice("config")...)
-
-	// The provider yields the flags that were given, under the names of the
-	// commands that declare them.
-	given := koanf.New(".")
-	if err := given.Load(cliflagv3.Provider(cmd, "."), nil); err != nil {
-		return nil, err
-	}
-	for path, value := range given.All() {
-		name := path[strings.LastIndex(path, ".")+1:]
-		if key, ok := config.FlagKeys[name]; ok {
-			src.Flags[key] = value
-		}
-	}
-	return config.Load(src)
 }
 
 // lookup returns the value of name in environ, or "" when it is not set.

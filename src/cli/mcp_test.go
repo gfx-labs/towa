@@ -15,7 +15,6 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/httpclient"
@@ -29,7 +28,8 @@ import (
 func TestMCPLoginLogout(t *testing.T) {
 	protected := mcptest.StartProtected(t, sdk.NewServer(&sdk.Implementation{Name: "test", Version: "1"}, nil), false)
 	client := httpclient.New()
-	env := mcpEnv{openBrowser: func(ctx context.Context, page string) error {
+	env := builtInEnv()
+	env.mcp = mcpEnv{openBrowser: func(ctx context.Context, page string) error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, page, nil)
 		if err != nil {
 			return err
@@ -43,16 +43,15 @@ func TestMCPLoginLogout(t *testing.T) {
 
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "acpharness"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.toml"), []byte(`
-[[mcp.servers]]
-name = "tracker"
-transport = "streamable_http"
-url = "`+protected.URL+`"
-
-[[mcp.servers]]
-name = "files"
-transport = "stdio"
-command = "/bin/false"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.yaml"), []byte(`
+mcp:
+  servers:
+    - name: tracker
+      transport: streamable_http
+      url: "`+protected.URL+`"
+    - name: files
+      transport: stdio
+      command: /bin/false
 `), 0o600))
 
 	run := func(stdin io.Reader, stderr io.Writer, args ...string) (string, error) {
@@ -64,14 +63,7 @@ command = "/bin/false"
 				"XDG_STATE_HOME=" + filepath.Join(dir, "state"),
 			},
 		}
-		// The flags loadConfig reads from the root command.
-		app := &cli.Command{
-			Name:     "acpharness",
-			Flags:    []cli.Flag{&cli.StringSliceFlag{Name: "config"}, &cli.StringSliceFlag{Name: "set"}},
-			Commands: mcpCommandsWith(h, env),
-			Writer:   io.Discard, ErrWriter: io.Discard,
-		}
-		err := app.Run(t.Context(), append([]string{"acpharness"}, args...))
+		err := run(t.Context(), append([]string{"acpharness"}, args...), h, env)
 		return stdout.String(), err
 	}
 	store := auth.NewStore(filepath.Join(dir, "state", "acpharness", "auth"))

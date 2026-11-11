@@ -5,11 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"text/tabwriter"
 	"time"
-
-	"github.com/urfave/cli/v3"
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/config"
@@ -24,54 +21,20 @@ type loginEnv struct {
 	openBrowser func(ctx context.Context, url string) error
 }
 
-// accountCommands returns the login, logout and accounts commands.
-func accountCommands(h Host) []*cli.Command {
-	return accountCommandsWith(h, loginEnv{flows: auth.Flows(), openBrowser: auth.OpenBrowser})
+// --manual, --device and --code are three ways to log in, so kong takes one.
+type loginCmd struct {
+	Provider string `arg:"" help:"The provider to log in to: ${login_providers}."`
+	Account  string `placeholder:"ID" help:"The id the account has or gets: a model chain names it as provider:id/model."`
+	Manual   bool   `xor:"way" help:"Open no browser: print the page to open on any device, and take the code it ends on here or in a later run with --code."`
+	Device   bool   `xor:"way" help:"Print a one-time code and the page to enter it on, and wait for the approval (${device_providers})."`
+	Code     string `xor:"way" placeholder:"CODE" help:"Finish the login this provider is waiting on with the code or address its page ended on."`
 }
 
-func accountCommandsWith(h Host, env loginEnv) []*cli.Command {
-	var providers, device []string
-	for provider, flow := range env.flows {
-		providers = append(providers, provider)
-		if flow.Device.UserCodeURL != "" {
-			device = append(device, provider)
-		}
-	}
-	slices.Sort(providers)
-	slices.Sort(device)
-	return []*cli.Command{
-		{
-			Name: "login",
-			Usage: "log in to " + strings.Join(providers, " or ") +
-				" and store the login in auth.json, creating the account when it is new",
-			ArgsUsage: "<provider>",
-			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "account", Usage: "the `id` the account has or gets: a model chain names it as provider:id/model"},
-				&cli.BoolFlag{Name: "manual", Usage: "open no browser: print the page to open on any device, and take the code it ends on here or in a later run with --code"},
-				&cli.BoolFlag{Name: "device", Usage: "print a one-time code and the page to enter it on, and wait for the approval (" + strings.Join(device, ", ") + ")"},
-				&cli.StringFlag{Name: "code", Usage: "finish the login this provider is waiting on with the `code` or address its page ended on"},
-			},
-			Action: func(ctx context.Context, cmd *cli.Command) error {
-				return login(ctx, cmd, h, env)
-			},
-		},
-		{
-			Name:  "logout",
-			Usage: "delete an account's stored login",
-			Flags: []cli.Flag{&cli.StringFlag{Name: "account", Usage: "the `id` of the account", Required: true}},
-			Action: func(ctx context.Context, cmd *cli.Command) error {
-				return logout(ctx, cmd, h)
-			},
-		},
-		{
-			Name:  "accounts",
-			Usage: "list the accounts of the configuration and of auth.json, and whether each can be used",
-			Action: func(_ context.Context, cmd *cli.Command) error {
-				return listAccounts(cmd, h)
-			},
-		},
-	}
+type logoutCmd struct {
+	Account string `required:"" placeholder:"ID" help:"The id of the account."`
 }
+
+type accountsCmd struct{}
 
 // authStore returns the store in the state directory of h's environment.
 func authStore(h Host) (*auth.Store, error) {
@@ -99,29 +62,19 @@ func loginAccount(cfg *config.Config, id string) (account config.Account, ok boo
 	return config.Account{}, false, fmt.Errorf("account %q is of kind %s, which has no login: its key comes from %s", id, a.Kind, a.APIKeyEnv)
 }
 
-func login(ctx context.Context, cmd *cli.Command, h Host, env loginEnv) error {
-	if cmd.Args().Len() != 1 {
-		return fmt.Errorf("login takes one provider, and got %d arguments", cmd.Args().Len())
-	}
-	provider := cmd.Args().First()
+// Run logs in to the provider and stores the login.
+func (c *loginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env loginEnv) error {
+	provider, manual, device, pasted := c.Provider, c.Manual, c.Device, c.Code
 	flow, ok := env.flows[provider]
 	if !ok {
 		return fmt.Errorf("provider %q has no OAuth login", provider)
-	}
-	manual, device, pasted := cmd.Bool("manual"), cmd.Bool("device"), cmd.String("code")
-	if (manual && device) || (pasted != "" && (manual || device)) {
-		return errors.New("--manual, --device and --code are three ways to log in: give one")
-	}
-	loaded, err := loadConfig(cmd, h)
-	if err != nil {
-		return err
 	}
 	store, err := authStore(h)
 	if err != nil {
 		return err
 	}
 
-	id := cmd.String("account")
+	id := c.Account
 	var pending auth.PendingLogin
 	if pasted != "" {
 		// The login that printed the page named its account.
@@ -224,12 +177,9 @@ func login(ctx context.Context, cmd *cli.Command, h Host, env loginEnv) error {
 	return err
 }
 
-func logout(ctx context.Context, cmd *cli.Command, h Host) error {
-	loaded, err := loadConfig(cmd, h)
-	if err != nil {
-		return err
-	}
-	id := cmd.String("account")
+// Run deletes the account's stored login.
+func (c *logoutCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
+	id := c.Account
 	account, exists, err := loginAccount(&loaded.Config, id)
 	if err != nil {
 		return err
@@ -258,12 +208,8 @@ func logout(ctx context.Context, cmd *cli.Command, h Host) error {
 	return err
 }
 
-// listAccounts prints one line per account. It prints no token.
-func listAccounts(cmd *cli.Command, h Host) error {
-	loaded, err := loadConfig(cmd, h)
-	if err != nil {
-		return err
-	}
+// Run prints one line per account. It prints no token.
+func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 	store, err := authStore(h)
 	if err != nil {
 		return err

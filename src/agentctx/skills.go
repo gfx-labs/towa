@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"github.com/goccy/go-yaml"
 )
 
 // skillFile is the file that makes a directory a skill.
@@ -177,7 +177,8 @@ func readSkill(dir, path string, limit int64) (Skill, error) {
 		Description string `yaml:"description"`
 	}
 	if err := yaml.Unmarshal([]byte(front), &meta); err != nil {
-		return Skill{}, fmt.Errorf("agentctx: %s: front matter: %w", path, err)
+		// The library's own text repeats the source over several lines.
+		return Skill{}, fmt.Errorf("agentctx: %s: front matter: %s", path, yaml.FormatError(err, false, false))
 	}
 	name, description := strings.TrimSpace(meta.Name), strings.TrimSpace(meta.Description)
 	if name == "" {

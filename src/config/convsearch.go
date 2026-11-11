@@ -1,27 +1,19 @@
 package config
 
 // ConversationSearch bounds reads of the full stored conversation.
+// docs/design.md makes conversation search available with descendants as
+// the default scope. The four sizes are jcode's at 8e11eb23e,
+// conversation_search.rs:135,306,310,189,201.
 type ConversationSearch struct {
-	Enabled             bool   `koanf:"enabled"`
-	Scope               string `koanf:"scope" validate:"oneof=self descendants store"`
-	MaxHits             int    `koanf:"max_hits" validate:"gt=0"`
-	SnippetContextBytes int    `koanf:"snippet_context_bytes" validate:"gt=0"`
-	MessageBytes        int    `koanf:"message_bytes" validate:"gt=0"`
-	ToolResultBytes     int    `koanf:"tool_result_bytes" validate:"gt=0"`
-	MaxBlobBytes        int64  `koanf:"max_blob_bytes" validate:"gte=0"`
-}
-
-var conversationSearchDefaults = map[string]any{
-	// docs/design.md: conversation search is available, descendants is the default scope.
-	"conversation_search.enabled": true,
-	"conversation_search.scope":   "descendants",
-	// jcode 8e11eb23e, conversation_search.rs:135,306,310,189,201.
-	"conversation_search.max_hits":              10,
-	"conversation_search.snippet_context_bytes": 50,
-	"conversation_search.message_bytes":         1000,
-	"conversation_search.tool_result_bytes":     200,
-	// Stored blobs are opt-in because a store can hold large binary outputs.
-	"conversation_search.max_blob_bytes": 0,
+	Enabled             bool   `name:"enabled" default:"true" help:"Give the model the tool that searches the stored conversation. On by default."`
+	Scope               string `name:"scope" default:"descendants" validate:"oneof=self descendants store" help:"Sessions a search covers: self, descendants or store."`
+	MaxHits             int    `name:"max_hits" default:"10" validate:"gt=0" help:"Most hits one search returns."`
+	SnippetContextBytes int    `name:"snippet_context_bytes" default:"50" validate:"gt=0" help:"Bytes shown on each side of a hit."`
+	MessageBytes        int    `name:"message_bytes" default:"1000" validate:"gt=0" help:"Most bytes of a message that a read returns."`
+	ToolResultBytes     int    `name:"tool_result_bytes" default:"200" validate:"gt=0" help:"Most bytes of a tool result that a read returns."`
+	// MaxBlobBytes is zero by default: stored blobs are opt-in because a
+	// store can hold large binary outputs.
+	MaxBlobBytes int64 `name:"max_blob_bytes" default:"0" validate:"gte=0" help:"Largest stored blob a search reads. 0 reads none."`
 }
 
 func (c ConversationSearch) validate() error {

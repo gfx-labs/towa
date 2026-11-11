@@ -12,23 +12,23 @@ import (
 	"github.com/gfx-labs/acpharness/src/jev"
 )
 
-const account = "[[accounts]]\nid = \"main\"\nprovider = \"openrouter\"\nkind = \"api_key\"\napi_key_env = \"OPENROUTER_API_KEY\"\n"
+const account = "accounts:\n  - id: main\n    provider: openrouter\n    kind: api_key\n    api_key_env: OPENROUTER_API_KEY\n"
 
 func loadConfig(t *testing.T, body string) (*config.Loaded, error) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "c.toml")
+	path := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return config.Load(config.Sources{Files: []string{path}})
 }
 
 // The design's own example, loaded from a file and turned into a client.
 func TestTheJevSectionLoadsAndBuildsAClient(t *testing.T) {
-	got, err := loadConfig(t, "[jev]\nroute = \"openrouter\"\nmodel = \"typesafe/jev-1.13\"\naccount = \"main\"\n\n"+account)
+	got, err := loadConfig(t, "jev:\n  route: openrouter\n  model: typesafe/jev-1.13\n  account: main\n"+account)
 	require.NoError(t, err)
 	_, err = jev.New(jev.Options{Config: got.Config.Jev, HTTPClient: httpclient.New()})
 	require.NoError(t, err)
 
-	// With no [jev] section there is no Jev, and that is valid.
+	// With no jev section there is no Jev, and that is valid.
 	got, err = loadConfig(t, "")
 	require.NoError(t, err)
 	_, err = jev.New(jev.Options{Config: got.Config.Jev, HTTPClient: httpclient.New()})
@@ -37,7 +37,7 @@ func TestTheJevSectionLoadsAndBuildsAClient(t *testing.T) {
 
 func TestTheCustomRouteAcceptsHTTPOnlyOnTheOperatorsNetwork(t *testing.T) {
 	section := func(base string) string {
-		return "[jev]\nroute = \"custom\"\nmodel = \"m\"\nbase_url = \"" + base + "\"\n"
+		return "jev:\n  route: custom\n  model: m\n  base_url: \"" + base + "\"\n"
 	}
 	for _, base := range []string{
 		"https://jev.example.org", "https://jev.example.org/v1",
@@ -60,20 +60,20 @@ func TestTheCustomRouteAcceptsHTTPOnlyOnTheOperatorsNetwork(t *testing.T) {
 
 func TestAJevSectionThatCannotWorkIsRejected(t *testing.T) {
 	for name, body := range map[string]string{
-		"unknown route":                  "[jev]\nroute = \"jcode\"\naccount = \"main\"\n" + account,
-		"model without a route":          "[jev]\nmodel = \"m\"\n",
-		"account without a route":        "[jev]\naccount = \"main\"\n" + account,
-		"fixed route without an account": "[jev]\nroute = \"typesafe\"\n",
-		"account that is not configured": "[jev]\nroute = \"typesafe\"\naccount = \"other\"\n" + account,
-		"fixed route with a base url":    "[jev]\nroute = \"aimlapi\"\naccount = \"main\"\nbase_url = \"https://x.example.org\"\n" + account,
-		"custom without a base url":      "[jev]\nroute = \"custom\"\nmodel = \"m\"\n",
-		"custom without a model":         "[jev]\nroute = \"custom\"\nbase_url = \"https://x.example.org\"\n",
-		"title off openrouter":           "[jev]\nroute = \"typesafe\"\naccount = \"main\"\ntitle = \"App\"\n" + account,
-		"timeout over the maximum":       "[jev]\ntimeout = \"31s\"\n",
-		"zero timeout":                   "[jev]\ntimeout = \"0s\"\n",
-		"zero request limit":             "[jev]\nmax_request_bytes = 0\n",
-		"zero response limit":            "[jev]\nmax_response_bytes = 0\n",
-		"zero text limit":                "[jev]\nmax_text_chars = 0\n",
+		"unknown route":                  "jev:\n  route: jcode\n  account: main\n" + account,
+		"model without a route":          "jev:\n  model: m\n",
+		"account without a route":        "jev:\n  account: main\n" + account,
+		"fixed route without an account": "jev:\n  route: typesafe\n",
+		"account that is not configured": "jev:\n  route: typesafe\n  account: other\n" + account,
+		"fixed route with a base url":    "jev:\n  route: aimlapi\n  account: main\n  base_url: https://x.example.org\n" + account,
+		"custom without a base url":      "jev:\n  route: custom\n  model: m\n",
+		"custom without a model":         "jev:\n  route: custom\n  base_url: https://x.example.org\n",
+		"title off openrouter":           "jev:\n  route: typesafe\n  account: main\n  title: App\n" + account,
+		"timeout over the maximum":       "jev:\n  timeout: 31s\n",
+		"zero timeout":                   "jev:\n  timeout: 0s\n",
+		"zero request limit":             "jev:\n  max_request_bytes: 0\n",
+		"zero response limit":            "jev:\n  max_response_bytes: 0\n",
+		"zero text limit":                "jev:\n  max_text_chars: 0\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadConfig(t, body)

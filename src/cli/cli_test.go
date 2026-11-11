@@ -22,8 +22,8 @@ import (
 func TestServeAnswersAClientOnStdio(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "acpharness"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "acpharness", "config.toml"),
-		[]byte("[telemetry.logs.stderr]\nformat = \"json\"\nlevel = \"error\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "acpharness", "config.yaml"),
+		[]byte("telemetry:\n  logs:\n    stderr:\n      format: json\n      level: error\n"), 0o600))
 
 	w, stdin, stdout := acptest.New(t)
 	var stderr bytes.Buffer

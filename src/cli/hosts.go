@@ -1,18 +1,13 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
-
-	"github.com/urfave/cli/v3"
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/hosts"
 	"github.com/gfx-labs/acpharness/src/jev"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/openai"
 )
 
 // hostsEnv is what the hosts command takes from the packages that own a
@@ -22,67 +17,47 @@ type hostsEnv struct {
 	builtIn hosts.BuiltIn
 }
 
-// hostsCommand returns the hosts command. Standard output holds one
-// "host:port<TAB>key" line per host and nothing else, so that it can be
-// piped into an allowlist. What the list does not cover goes to standard
-// error.
-func hostsCommand(h Host) *cli.Command {
-	return hostsCommandWith(h, hostsEnv{
-		flows: auth.Flows(),
-		builtIn: hosts.BuiltIn{
-			Claude:      anthropic.DefaultBaseURL,
-			CodexAPIKey: openai.DefaultBaseURL,
-			CodexOAuth:  openai.DefaultCodexBaseURL,
-		},
-	})
-}
+type hostsCmd struct{}
 
-func hostsCommandWith(h Host, env hostsEnv) *cli.Command {
-	return &cli.Command{
-		Name:  "hosts",
-		Usage: "list the hosts the resolved configuration contacts, one host:port and its config key per line",
-		Action: func(_ context.Context, cmd *cli.Command) error {
-			loaded, err := loadConfig(cmd, h)
-			if err != nil {
-				return err
-			}
-			cfg := loaded.Config
-			jevEndpoint, err := jevEndpoint(cfg.Jev)
-			if err != nil {
-				return err
-			}
-			tokenEndpoints, err := mcpTokenEndpoints(h, cfg.MCP)
-			if err != nil {
-				return err
-			}
-			report, err := hosts.List(cfg, hosts.Inputs{
-				Flows:   env.flows,
-				BuiltIn: env.builtIn,
-				OTLP: hosts.OTLP{
-					Endpoint:        lookup(h.Environ, hosts.EnvOTLPEndpoint),
-					TracesEndpoint:  lookup(h.Environ, hosts.EnvOTLPTracesEndpoint),
-					MetricsEndpoint: lookup(h.Environ, hosts.EnvOTLPMetricsEndpoint),
-					LogsEndpoint:    lookup(h.Environ, hosts.EnvOTLPLogsEndpoint),
-				},
-				JevEndpoint:       jevEndpoint,
-				MCPTokenEndpoints: tokenEndpoints,
-			})
-			if err != nil {
-				return err
-			}
-			for _, host := range report.Hosts {
-				if _, err := fmt.Fprintf(h.Stdout, "%s\t%s\n", host.Address, host.Key); err != nil {
-					return err
-				}
-			}
-			for _, gap := range report.NotCovered {
-				if _, err := fmt.Fprintf(h.Stderr, "hosts: not covered: %s\n", gap); err != nil {
-					return err
-				}
-			}
-			return nil
-		},
+// Run prints the hosts. Standard output holds one "host:port<TAB>key" line
+// per host and nothing else, so that it can be piped into an allowlist.
+// What the list does not cover goes to standard error.
+func (hostsCmd) Run(loaded *config.Loaded, h Host, env hostsEnv) error {
+	cfg := loaded.Config
+	jevEndpoint, err := jevEndpoint(cfg.Jev)
+	if err != nil {
+		return err
 	}
+	tokenEndpoints, err := mcpTokenEndpoints(h, cfg.MCP)
+	if err != nil {
+		return err
+	}
+	report, err := hosts.List(cfg, hosts.Inputs{
+		Flows:   env.flows,
+		BuiltIn: env.builtIn,
+		OTLP: hosts.OTLP{
+			Endpoint:        lookup(h.Environ, hosts.EnvOTLPEndpoint),
+			TracesEndpoint:  lookup(h.Environ, hosts.EnvOTLPTracesEndpoint),
+			MetricsEndpoint: lookup(h.Environ, hosts.EnvOTLPMetricsEndpoint),
+			LogsEndpoint:    lookup(h.Environ, hosts.EnvOTLPLogsEndpoint),
+		},
+		JevEndpoint:       jevEndpoint,
+		MCPTokenEndpoints: tokenEndpoints,
+	})
+	if err != nil {
+		return err
+	}
+	for _, host := range report.Hosts {
+		if _, err := fmt.Fprintf(h.Stdout, "%s\t%s\n", host.Address, host.Key); err != nil {
+			return err
+		}
+	}
+	for _, gap := range report.NotCovered {
+		if _, err := fmt.Fprintf(h.Stderr, "hosts: not covered: %s\n", gap); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // jevEndpoint returns the route endpoint owned by src/jev, or "" when disabled.
