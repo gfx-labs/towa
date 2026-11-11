@@ -153,7 +153,7 @@ Defaults for limits and compaction thresholds start from jcode's measured defaul
 
 ### Provider interface
 
-One streaming interface returning a normalized event stream: text deltas, thinking deltas (with signatures where the API has them), tool call starts, argument deltas, tool call ends, usage, stop reason, and provider-native items that must round-trip (Anthropic thinking signatures, OpenAI encrypted reasoning, compaction items).
+One streaming interface returning a normalized event stream: text deltas, thinking deltas (with signatures where the API has them), tool call starts, argument deltas, tool call ends, usage, stop reason, and provider-native items that must round-trip (Anthropic thinking signatures, OpenAI encrypted reasoning, compaction items). The stream is a Go iterator (`iter.Seq2[Event, error]`), as in `gfx-labs/sse`. A provider error is classified as one of three: retry the same chain entry, fall back to the next entry, or fail the turn.
 
 Wire clients:
 
@@ -188,7 +188,9 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 | GPT, Codex | `codex` | upstream Codex: shell, apply_patch, update_plan, view_image, web_search, spawn_agent |
 | other | resolved | the dialect of the family the model was distilled from when known, else `generic` |
 
-`generic` is the Claude Code shapes with neutral descriptions. Config can pin a dialect per model. Upstream prompts and schemas are copied into `prompts/<upstream>/<version>/` with the source commit, and a script diffs them against new upstream releases.
+`generic` is the Claude Code shapes with neutral descriptions. Config can pin a dialect per model.
+
+Each capability (read, write, edit, shell, search) has one implementation. A dialect adapter supplies the upstream tool name, schema, output text and error text. An adapter must behave as the upstream tool does, and is checked against outputs recorded from that upstream tool. Upstream prompts and schemas are copied into `prompts/<upstream>/<version>/` with the source commit, and a script diffs them against new upstream releases.
 
 ### Extras (on by default, each can be disabled)
 
@@ -198,7 +200,7 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 - Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
 - Todo: maps to ACP `plan` updates. Uses TodoWrite or update_plan shapes in their dialects.
 - Web: webfetch with HTML to Markdown. Web search uses the provider's built-in server tool (Anthropic web search, OpenAI Responses web search, OpenRouter web plugin). Users who want an external backend add a tool or an MCP server.
-- Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. Keyword matching first. Result and snippet limits come from config.
+- Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. It can also read other sessions by id, so a parent can read the sessions of the subagents it spawned. Scope is a config setting: `self`, `descendants` (the session and every subagent session below it, the default) or `store` (every session in the store, opt-in because a shared store holds other workers' sessions). Keyword matching first. Result and snippet limits come from config.
 - Argument repair: before validation, a tool input is repaired when a list or object argument arrives as a JSON string, a single object arrives where a list is declared, or a number or boolean arrives as a string. Each repair is counted in telemetry and logged, never silent. Anything else that fails the schema is returned to the model as an error.
 - Subagent: see below.
 
@@ -206,7 +208,7 @@ Not in v1: background shell tasks.
 
 ### Subagents
 
-Same model as jcode: the tool runs a child agent loop in the same process. The child shares the tool registry, MCP connections, context and provider pool, and gets its own transcript and compaction state. It may use a different model or chain. The parent receives the child's final message. Depth and concurrency limits come from config. Child activity streams to the client as nested tool call updates under the parent's tool call. Swarm, with separate sessions, comes later on the same session manager.
+Same model as jcode: the tool runs a child agent loop in the same process. The child shares the tool registry, MCP connections, context and provider pool, and gets its own compaction state. Its transcript is stored as its own session, with the parent session id in its metadata, so the parent can read it with conversation search. It may use a different model or chain. The parent receives the child's final message. Depth and concurrency limits come from config. Child activity streams to the client as nested tool call updates under the parent's tool call. Swarm, with separate sessions, comes later on the same session manager.
 
 ### MCP
 
@@ -228,6 +230,12 @@ Config maps an event and a tool set to a command. The command gets the event as 
 
 Per-prompt limits from config or `_meta`: max tool calls, wall time, input and output tokens, subagent depth and concurrency. Hitting a limit ends the turn with a stop reason the client can see. Cancellation through `session/cancel` stops the stream, kills running tool processes by process group, and records the outcome of each in-flight tool as completed, cancelled or unknown.
 
+### Interruption
+
+- A `session/prompt` that arrives while a turn is running cancels that turn and starts the new one, as `acp-go-sdk` v0.13.5 does. The cancelled request returns the `cancelled` stop reason.
+- After a cancel, every in-flight tool call gets a result saying it was cancelled, so no tool call is left without a result.
+- The model is then told the turn was interrupted, with the dialect's upstream interruption message placed before the next user message. Codex: the `<turn_aborted>` message, which says the user interrupted on purpose and that aborted commands may have partly run. Claude Code: its request-interrupted message, to be confirmed against the pinned upstream version. Both texts are pinned with the other upstream prompts.
+
 ## Compaction
 
 Ported from jcode:
@@ -240,7 +248,7 @@ Ported from jcode:
 - `max_context_tokens` caps the budget below the model window.
 - `/compact` triggers manually. Compaction is reported with `compaction_update` when the client advertises `session.compaction`, and as an ordinary agent message otherwise.
 - Compaction appends an entry holding the summary and the id of the first kept entry. It never rewrites or deletes earlier entries, so conversation search can still read them.
-- The summary prompt may tell the model it can search earlier history only when `conversation_search` is enabled.
+- Two summary prompts, selected by `compaction.summary_prompt`: `checkpoint` (default, Pi's structured format with its merge prompt for later compactions) and `short` (jcode's). Either one tells the model it can search earlier history only when `conversation_search` is enabled.
 
 ## Embeddings
 
@@ -298,6 +306,9 @@ type Store interface {
 ```
 
 - Events are the canonical transcript: messages, tool calls and results, provider-native items, model switches, compaction summaries.
+- One internal message format for every provider. Items only one provider understands (thinking signatures, encrypted reasoning) are stored as opaque blobs tagged with that provider, and are sent back only to it.
+- Session and entry ids are UUIDv7 from the Go 1.27 standard library `uuid` package (`uuid.NewV7`). No dependency.
+- Session metadata records the parent session id for a subagent session.
 - Every entry has an `id` and a `parent_id`. `parent_id` is written and nothing reads it yet: it is there so forking later needs no format migration.
 - `Snapshot` stores the compacted state so `Load` reads the latest snapshot plus events after it, not the whole history. `History` reads any range of the full log, including entries before a compaction. Conversation search and `session/load` replay use it.
 - The store benchmark also measures a keyword scan over a long session's full history.
@@ -342,14 +353,11 @@ Adopted:
 - System prompt as named sections (see System prompt). Patching a changed section into the conversation is deferred.
 - Tool input repair (see Extras), widened from Pi's edit tool to every tool.
 - Entries with `id` and `parent_id` (see Sessions and storage). The parent field is written and unused.
+- Compaction summary prompt (see Compaction): Pi's structured checkpoint (Goal, Constraints, Progress, Key Decisions, Next Steps, Critical Context) and its merge prompt are the default, with jcode's short prompt selectable. No measurement compares them yet.
 
 Dropped:
 
 - Steering and follow-up queues. jobshop already holds a message for a busy session until its turn ends, and its interrupt option cancels the turn first. The ACP prompt request has no steering field.
-
-Open:
-
-- Compaction summary prompt. Pi's is a structured checkpoint (Goal, Constraints, Progress, Key Decisions, Next Steps, Critical Context) with a second prompt that merges new messages into the previous summary, and cumulative lists of files read and modified. jcode's is shorter and relies on conversation search for exact details. No measurement compares them.
 
 Later, undecided: MCP exposure levels per tool, virtual models, cache warming, prompt templates.
 
@@ -400,4 +408,5 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Open questions
 
 - Store default, decided by the benchmark in step 6.
+- Claude Code's interruption message text, to be read from the pinned upstream version.
 - Web search for chat providers without a built-in tool: none by default, user-supplied tool or MCP.
