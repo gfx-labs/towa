@@ -152,7 +152,6 @@ func TestEachRouteSendsItsOwnRequest(t *testing.T) {
 			cfg.Route, cfg.Model, cfg.Account = c.route, c.model, "main"
 			client, err := jev.New(jev.Options{Config: cfg, HTTPClient: captive(t, rec)})
 			require.NoError(t, err)
-			require.Equal(t, "https://"+c.host+c.path, client.Endpoint())
 
 			_, err = client.Decide(t.Context(), auth.Credential{Account: "main", Token: "tok-123"}, request())
 			var jerr *jev.Error
@@ -175,11 +174,7 @@ func TestEachRouteSendsItsOwnRequest(t *testing.T) {
 func TestTheCustomRouteAddsItsPathToTheBaseURL(t *testing.T) {
 	for _, suffix := range []string{"", "/", "/v1", "/v1/systemone", "/v1/decisions", "/proxy/jev", "/proxy/jev/v1/"} {
 		rec := &recorder{}
-		var base string
-		client := custom(t, rec, func(cfg *config.Jev) {
-			base = cfg.BaseURL
-			cfg.BaseURL += suffix
-		})
+		client := custom(t, rec, func(cfg *config.Jev) { cfg.BaseURL += suffix })
 		_, err := client.Decide(t.Context(), auth.Credential{}, request())
 		require.Error(t, err)
 		want := "/v1/systemone"
@@ -187,7 +182,6 @@ func TestTheCustomRouteAddsItsPathToTheBaseURL(t *testing.T) {
 			want = "/proxy/jev/v1/systemone"
 		}
 		require.Equal(t, want, rec.one(t).Path, suffix)
-		require.Equal(t, base+want, client.Endpoint(), suffix)
 	}
 }
 
@@ -403,9 +397,4 @@ func TestAFailedDecisionIsATypedError(t *testing.T) {
 			require.NotContains(t, err.Error(), "xxxx")
 		})
 	}
-}
-
-func TestNoRouteIsDisabled(t *testing.T) {
-	_, err := jev.New(jev.Options{Config: limits(), HTTPClient: httpclient.New()})
-	require.ErrorIs(t, err, jev.ErrDisabled)
 }

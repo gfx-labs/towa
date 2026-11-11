@@ -242,12 +242,6 @@ func New(opts Options) (*Client, error) {
 	return c, nil
 }
 
-// Endpoint returns the URL decisions are sent to.
-func (c *Client) Endpoint() string { return c.endpoint }
-
-// Model returns the model decisions are asked of.
-func (c *Client) Model() string { return c.model }
-
 // Decide asks for one decision. cred is the credential of jev.account. It
 // is sent as a bearer token, and nothing is sent when its token is empty.
 //

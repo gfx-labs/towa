@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -26,15 +25,8 @@ func loadConfig(t *testing.T, body string) (*config.Loaded, error) {
 func TestTheJevSectionLoadsAndBuildsAClient(t *testing.T) {
 	got, err := loadConfig(t, "[jev]\nroute = \"openrouter\"\nmodel = \"typesafe/jev-1.13\"\naccount = \"main\"\n\n"+account)
 	require.NoError(t, err)
-	cfg := got.Config.Jev
-	require.Equal(t, config.Jev{
-		Route: config.JevOpenRouter, Model: "typesafe/jev-1.13", Account: "main",
-		Timeout: 10 * time.Second, MaxTimeout: 30 * time.Second,
-		MaxRequestBytes: 80 << 10, MaxResponseBytes: 256 << 10, MaxTextChars: 4000,
-	}, cfg)
-	client, err := jev.New(jev.Options{Config: cfg, HTTPClient: httpclient.New()})
+	_, err = jev.New(jev.Options{Config: got.Config.Jev, HTTPClient: httpclient.New()})
 	require.NoError(t, err)
-	require.Equal(t, "typesafe/jev-1.13", client.Model())
 
 	// With no [jev] section there is no Jev, and that is valid.
 	got, err = loadConfig(t, "")

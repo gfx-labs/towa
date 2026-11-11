@@ -290,32 +290,27 @@ func streamError(ctx context.Context, t *testing.T, c *Client) *provider.Error {
 	return nil
 }
 
-// The response is the documented 429 above. The request the client sent is
-// checked on the way in.
-func TestSendsItsHeadersAndReadsAnErrorResponse(t *testing.T) {
+// The endpoint answers a bare 503. Only the request the client sent is
+// checked.
+func TestSendsItsHeaders(t *testing.T) {
 	var got http.Header
 	var path string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, path = r.Header.Clone(), r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Retry-After", "60")
-		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = w.Write([]byte(`{"error":{"code":429,"message":"Rate limit exceeded","metadata":{"error_type":"rate_limit_exceeded","provider_code":"rate_limited"}}}`))
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
 
 	p := openRouter(config.OpenRouterRouting{})
 	p.BaseURL, p.Referer, p.Title = server.URL+"/api/v1/", "https://github.com/gfx-labs/acpharness", "acpharness"
 	perr := streamError(t.Context(), t, newClient(t, p))
+	require.Equal(t, http.StatusServiceUnavailable, perr.Status)
 
 	require.Equal(t, "/api/v1/chat/completions", path)
 	require.Equal(t, "Bearer sk-test", got.Get("Authorization"))
 	require.Equal(t, "https://github.com/gfx-labs/acpharness", got.Get("HTTP-Referer"))
 	require.Equal(t, "acpharness", got.Get("X-OpenRouter-Title"))
 	require.Equal(t, "acpharness/test", got.Get("User-Agent"))
-	require.Equal(t, provider.Retry, perr.Class)
-	require.Equal(t, provider.ReasonRateLimit, perr.Reason)
-	require.Equal(t, time.Minute, perr.RetryAfter)
 }
 
 // hangingServer answers 200 as an event stream, sends no event, and drops

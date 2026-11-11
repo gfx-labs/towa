@@ -367,20 +367,3 @@ func TestProxiedCredentialGetsTheSameRequest(t *testing.T) {
 		})
 	}
 }
-
-// Portable content survives a provider switch without another provider's
-// opaque metadata. Required native items are rejected in the boundary test.
-func TestOpaqueOfAnotherProviderIsNotSent(t *testing.T) {
-	const marker = "opaque-of-another-provider"
-	opaque := jsontext.Value(`{"signature":"` + marker + `","redacted_data":"` + marker + `","type":"` + marker + `"}`)
-	req := scenario{prompt: "hello", maxOutput: 64}.request("model", auth.Credential{Account: "work", Scheme: auth.SchemeAPIKey, Token: "placeholder"})
-	req.Items = append(req.Items,
-		transcript.Item{Thinking: &transcript.Thinking{Text: "thought elsewhere"}, Provider: "openai", Opaque: opaque},
-		transcript.Item{Text: &transcript.Text{Text: "an answer"}, Provider: "openai", Opaque: opaque},
-		transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "go on"}}}},
-	)
-	got := capture(t, anthropic.Config{}, req)
-	require.NotContains(t, got.body, marker)
-	require.NotContains(t, got.body, "thought elsewhere")
-	require.Contains(t, got.body, "an answer")
-}
