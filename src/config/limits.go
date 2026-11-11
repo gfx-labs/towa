@@ -12,6 +12,7 @@ const (
 	KeyMaxWall         = "limits.max_wall"
 	KeyMaxInputTokens  = "limits.max_input_tokens"
 	KeyMaxOutputTokens = "limits.max_output_tokens"
+	KeyMaxStopDenials  = "limits.max_stop_denials"
 )
 
 // Limits configures what one prompt turn may use, and how a failed model
@@ -27,7 +28,12 @@ type Limits struct {
 	// MaxOutputTokens bounds the tokens the model writes over all of a
 	// turn's requests.
 	MaxOutputTokens int64 `koanf:"max_output_tokens"`
-	Retry           Retry `koanf:"retry"`
+	// MaxStopDenials is how many times in one turn the stop hooks may keep
+	// the turn going by denying its end. The next deny ends the turn. Zero
+	// is not "no limit" here: it ends the turn on the first deny, because a
+	// hook that always denies would otherwise run a turn forever.
+	MaxStopDenials int64 `koanf:"max_stop_denials"`
+	Retry          Retry `koanf:"retry"`
 }
 
 // Retry configures how the router retries a request on one chain entry
@@ -54,11 +60,14 @@ type Retry struct {
 // ones the Anthropic and OpenAI SDKs ship with (their generated clients
 // share them): 2 retries, 0.5s first wait doubling to at most 8s, a wait
 // shortened by up to 25%, and a retry-after honoured up to 60s.
+// max_stop_denials is 3 by choice: no upstream harness bounds it and nothing
+// was measured. It is enough for a hook to ask for a fix and see it made.
 var limitsDefaults = map[string]any{
 	KeyMaxToolCalls:                "0",
 	KeyMaxWall:                     "0s",
 	KeyMaxInputTokens:              "0",
 	KeyMaxOutputTokens:             "0",
+	KeyMaxStopDenials:              "3",
 	"limits.retry.max_retries":     "2",
 	"limits.retry.initial_backoff": "500ms",
 	"limits.retry.max_backoff":     "8s",
@@ -73,9 +82,10 @@ func (l Limits) validate() error {
 		KeyMaxWall:         int64(l.MaxWall),
 		KeyMaxInputTokens:  l.MaxInputTokens,
 		KeyMaxOutputTokens: l.MaxOutputTokens,
+		KeyMaxStopDenials:  l.MaxStopDenials,
 	} {
 		if value < 0 {
-			return fmt.Errorf("%s is negative. 0 means no limit", key)
+			return fmt.Errorf("%s is negative", key)
 		}
 	}
 	return l.Retry.Validate()

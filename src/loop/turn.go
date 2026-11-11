@@ -13,10 +13,12 @@ import (
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/acpharness/src/hooks"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/router"
 	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/acpharness/src/tools/repair"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
@@ -43,14 +45,20 @@ type Options struct {
 	// optional and not sent when zero.
 	MaxOutputTokens int64
 	Effort          string
-	Logger          *slog.Logger
+	// Repair is tools.repair.enabled: fix the known ways a model gets a
+	// tool's argument wrong before validating it.
+	Repair bool
+	// Hooks runs the configured hooks. It may have none.
+	Hooks  *hooks.Runner
+	Logger *slog.Logger
 }
 
 // Loop runs prompt turns. It keeps nothing between turns: a session's
 // conversation is read from the store when a turn starts.
 type Loop struct {
-	o      Options
-	mapper Mapper
+	o       Options
+	mapper  Mapper
+	schemas map[string]*repair.Schema
 }
 
 // New returns a loop over its dependencies.
@@ -66,10 +74,39 @@ func New(o Options) (*Loop, error) {
 		return nil, errors.New("loop: Now is required")
 	case o.Interruption == "":
 		return nil, errors.New("loop: Interruption is required")
+	case o.Hooks == nil:
+		return nil, errors.New("loop: Hooks is required")
 	case o.Logger == nil:
 		return nil, errors.New("loop: Logger is required")
 	}
-	return &Loop{o: o, mapper: Mapper{Tools: o.Tools, ContextSize: o.ContextSize}}, nil
+	schemas, err := Schemas(o.Tools)
+	if err != nil {
+		return nil, err
+	}
+	return &Loop{o: o, mapper: Mapper{Tools: o.Tools, ContextSize: o.ContextSize}, schemas: schemas}, nil
+}
+
+// DeniedError is a prompt a hook denied. The turn did not start.
+type DeniedError struct {
+	// Reason is the hook's reason, for the client.
+	Reason string
+}
+
+func (e *DeniedError) Error() string { return "prompt denied by a hook: " + e.Reason }
+
+// StopReason is the ACP stop reason for a response the model ended. It
+// reports false for tool use, which does not end a turn, and for a reason
+// outside provider's list.
+func StopReason(stop provider.StopReason) (acp.StopReason, bool) {
+	switch stop {
+	case provider.StopEndTurn:
+		return acp.StopReasonEndTurn, true
+	case provider.StopMaxTokens:
+		return acp.StopReasonMaxTokens, true
+	case provider.StopRefusal:
+		return acp.StopReasonRefusal, true
+	}
+	return "", false
 }
 
 // errWall is the cause of a turn's context ending at limits.max_wall.
@@ -150,6 +187,8 @@ type turn struct {
 	items []transcript.Item
 	// parent is the id of the last entry stored.
 	parent uuid.UUID
+	// stopDenials is how often a stop hook kept the turn going.
+	stopDenials int64
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -174,6 +213,13 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 	user, err := UserItem(t.Prompt)
 	if err != nil {
 		return Result{}, err
+	}
+	hookSession := hooks.Session{ID: string(t.SessionID), Cwd: t.Cwd}
+	decision, hookErr := l.o.Hooks.Prompt(ctx, hookSession, user.User.Parts)
+	logHook(ctx, l.o.Logger, t.SessionID, hookErr)
+	if decision.Action != hooks.Allow {
+		// Nothing is stored: the model never saw the prompt.
+		return Result{}, &DeniedError{Reason: decision.Reason}
 	}
 	if err := tn.load(ctx); err != nil {
 		return Result{}, err
@@ -228,19 +274,32 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			return result, err
 		}
 
-		switch resp.Stop {
-		case provider.StopEndTurn:
-			return tn.result(acp.StopReasonEndTurn), nil
-		case provider.StopMaxTokens:
-			return tn.result(acp.StopReasonMaxTokens), nil
-		case provider.StopRefusal:
-			return tn.result(acp.StopReasonRefusal), nil
-		case provider.StopToolUse:
-			if len(calls) == 0 {
-				return Result{}, errors.New("loop: the model stopped for tool use without a tool call")
+		if resp.Stop != provider.StopToolUse {
+			reason, ok := StopReason(resp.Stop)
+			if !ok {
+				return Result{}, fmt.Errorf("loop: the response ended with the stop reason %q", resp.Stop)
 			}
-		default:
-			return Result{}, fmt.Errorf("loop: the response ended with the stop reason %q", resp.Stop)
+			decision, hookErr := l.o.Hooks.Stop(ctx, hookSession, string(reason))
+			if result, done, err := tn.ended(ctx, nil); done {
+				return result, err
+			}
+			logHook(ctx, l.o.Logger, t.SessionID, hookErr)
+			if decision.Action == hooks.Allow {
+				return tn.result(reason), nil
+			}
+			// A hook that always denies must not run the turn forever.
+			if tn.stopDenials >= l.o.Limits.MaxStopDenials {
+				return LimitResult(config.KeyMaxStopDenials, tn.spent), nil
+			}
+			tn.stopDenials++
+			denied := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: decision.Reason}}}}
+			if err := tn.append(ctx, denied); err != nil {
+				return Result{}, err
+			}
+			continue
+		}
+		if len(calls) == 0 {
+			return Result{}, errors.New("loop: the model stopped for tool use without a tool call")
 		}
 
 		left, limited := ToolCallsLeft(l.o.Limits, tn.spent)
@@ -255,9 +314,7 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			PutBlob: func(ctx context.Context, mimeType string, content io.Reader) (transcript.Stored, error) {
 				return l.o.Store.PutBlob(ctx, id, mimeType, content)
 			},
-			Failed: func(call transcript.ToolCall, err error) {
-				l.o.Logger.ErrorContext(ctx, "tool could not be run", "session", t.SessionID, "tool", call.Name, "call", call.ID, "err", err)
-			},
+			Schemas: l.schemas, Repair: l.o.Repair, Hooks: l.o.Hooks, Logger: l.o.Logger,
 		}.Run(ctx, calls)
 		tn.spent.ToolCalls += done.Ran
 		results := make([]transcript.Item, len(done.Results))

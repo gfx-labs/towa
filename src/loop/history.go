@@ -20,6 +20,7 @@ const (
 	textUnknownTool  = "There is no tool named %q."
 	textBadInput     = "The tool call's input was not accepted: %v"
 	textHarnessError = "The tool could not be run: %v"
+	textBadHookInput = "A hook changed the tool call's input to one that was not accepted: %v"
 	textLimit        = "The tool call was not run: the turn reached %s."
 )
 
