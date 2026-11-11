@@ -177,7 +177,12 @@ func (s *Store) append(f *os.File, format logFormat, lines []byte, count int, co
 	if err != nil {
 		// The entries were not stored. Take back what was written, so that
 		// the failure does not leave a torn record for the next Append.
-		return errors.Join(err, f.Truncate(size))
+		rollback := f.Truncate(size)
+		if rollback == nil {
+			s.syncs.Add(1)
+			rollback = f.Sync()
+		}
+		return errors.Join(err, rollback)
 	}
 	return nil
 }
@@ -332,7 +337,17 @@ func (s *Store) repair(f *os.File, format logFormat, dir string) (int64, error) 
 	if _, err := f.ReadAt(torn, end); err != nil {
 		return 0, err
 	}
-	if err := s.replaceFile(dir, "torn-"+strconv.FormatInt(end, 10), torn); err != nil {
+	// A second crash can tear another append at the same offset. A unique
+	// name keeps the bytes from every repair, rather than replacing one.
+	aside, err := os.CreateTemp(dir, "torn-"+strconv.FormatInt(end, 10)+"-*")
+	if err != nil {
+		return 0, err
+	}
+	err = errors.Join(s.writeSync(aside, torn), aside.Close())
+	if err != nil {
+		return 0, err
+	}
+	if err := s.syncDir(dir); err != nil {
 		return 0, err
 	}
 	if err := f.Truncate(end); err != nil {

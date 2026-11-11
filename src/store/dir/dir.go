@@ -159,9 +159,14 @@ func (s *Store) build(ctx context.Context, meta store.Meta, fill func(building s
 	if !filepath.IsAbs(meta.Cwd) {
 		return fmt.Errorf("store/dir: session %s: cwd %q is not an absolute path", meta.ID, meta.Cwd)
 	}
-	if err := os.MkdirAll(s.root, dirMode); err != nil {
+	if err := s.mkdir(s.root); err != nil {
 		return err
 	}
+	root, err := s.lockRoot(syscall.LOCK_EX)
+	if err != nil {
+		return err
+	}
+	defer root.Close() //nolint:errcheck // Closing drops the directory lock.
 	final := s.SessionDir(meta.ID)
 	if _, err := os.Lstat(final); err == nil {
 		return fmt.Errorf("store/dir: session %s: %w", meta.ID, fs.ErrExist)
@@ -226,6 +231,14 @@ func lockDir(path string) (*os.File, error) {
 // call holds is left alone. Nothing calls Sweep on its own: New does no
 // I/O, so the program runs it when it starts.
 func (s *Store) Sweep(ctx context.Context) (int, error) {
+	root, err := s.lockRoot(syscall.LOCK_EX)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer root.Close() //nolint:errcheck // Closing drops the directory lock.
 	names, err := os.ReadDir(s.root)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
@@ -299,69 +312,19 @@ func (s *Store) SetMeta(ctx context.Context, meta store.Meta) error {
 	return s.replaceFile(s.SessionDir(meta.ID), metaName, data)
 }
 
-// List returns the sessions that match filter, oldest id first. Ids are
-// UUIDv7, so that is the order they were created in.
-func (s *Store) List(ctx context.Context, filter store.Filter) ([]store.Meta, error) {
-	names, err := os.ReadDir(s.root)
-	if errors.Is(err, fs.ErrNotExist) {
-		// The root is made by the first Create.
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var metas []store.Meta
-	for _, name := range names {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		// A session being created or deleted. Sweep removes one that a
-		// crash left.
-		if leftover(name.Name()) {
-			continue
-		}
-		id, err := uuid.Parse(name.Name())
-		if err != nil || id.String() != name.Name() {
-			return nil, &CorruptError{Path: filepath.Join(s.root, name.Name()), Err: errors.New("not a session directory")}
-		}
-		v, err := s.snapshot(id)
-		meta := v.meta
-		if errors.Is(err, store.ErrNotFound) {
-			// Deleted since the directory was read.
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if filter.Cwd != "" && meta.Cwd != filter.Cwd {
-			continue
-		}
-		if filter.ParentID != uuid.Nil() && meta.ParentID != filter.ParentID {
-			continue
-		}
-		switch filter.Archived {
-		case store.ArchivedAny:
-		case store.ArchivedExclude:
-			if meta.Archived {
-				continue
-			}
-		case store.ArchivedOnly:
-			if !meta.Archived {
-				continue
-			}
-		default:
-			return nil, fmt.Errorf("store/dir: archived filter %d is not valid", filter.Archived)
-		}
-		metas = append(metas, meta)
-	}
-	return metas, nil
-}
-
 // Delete removes a session and everything in its directory.
 func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	root, err := s.lockRoot(syscall.LOCK_EX)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: %s", store.ErrNotFound, id)
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close() //nolint:errcheck // Closing drops the directory lock.
 	// The lock is held until the files are gone, so that a call waiting
 	// for it finds a log with no name and reports the session as not found.
 	log, _, err := s.openLog(id, os.O_RDONLY, syscall.LOCK_EX)
@@ -515,4 +478,28 @@ func (s *Store) syncDir(path string) error {
 		return errors.Join(err, d.Close())
 	}
 	return d.Close()
+}
+
+// mkdir makes every missing directory in path and syncs its parent's new
+// name. MkdirAll alone would leave a newly made store root nondurable even
+// after Create had synced the session directory below it.
+func (s *Store) mkdir(path string) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("store/dir: %s is not a directory", path)
+		}
+		return nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	parent := filepath.Dir(path)
+	if err := s.mkdir(parent); err != nil {
+		return err
+	}
+	if err := os.Mkdir(path, dirMode); err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	return s.syncDir(parent)
 }

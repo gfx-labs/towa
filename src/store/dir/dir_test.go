@@ -374,6 +374,17 @@ func TestTornAppendIsAbsentAndReported(t *testing.T) {
 			kept, err := os.ReadFile(aside[0])
 			require.NoError(t, err)
 			assert.Equal(t, full[len(intact):len(full)-1], kept)
+			secondTear := []byte("another append cut short")
+			require.NoError(t, os.WriteFile(path, append(bytes.Clone(intact), secondTear...), 0o600))
+			set, err = st.Repair(t.Context(), id)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(secondTear)), set)
+			allAside, err := filepath.Glob(filepath.Join(s.SessionDir(id), "torn-*"))
+			require.NoError(t, err)
+			require.Len(t, allAside, 2)
+			keptAgain, err := os.ReadFile(aside[0])
+			require.NoError(t, err)
+			assert.Equal(t, kept, keptAgain)
 
 			require.NoError(t, s.Append(t.Context(), id, []transcript.Entry{next}))
 			_, entries := load(t, s, id)
@@ -695,7 +706,9 @@ func TestSessions(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrNotFound)
 	names, err := os.ReadDir(root)
 	require.NoError(t, err)
-	require.Len(t, names, 1, "a deleted session leaves nothing under the root")
+	require.Len(t, names, 2, "only the child and the derived index remain")
+	assert.Equal(t, ".index", names[0].Name())
+	assert.Equal(t, child.ID.String(), names[1].Name())
 
 	// An entry the transcript would reject is not stored.
 	require.Error(t, s.Append(t.Context(), child.ID, []transcript.Entry{{ID: uuid.NewV7(), Time: now}}))

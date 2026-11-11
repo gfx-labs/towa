@@ -24,24 +24,25 @@ func (s *Store) Fork(ctx context.Context, source uuid.UUID, meta store.Meta) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// The shared lock holds appends to the source off while it is copied.
-	log, format, err := s.openLog(source, os.O_RDONLY, syscall.LOCK_SH)
-	if err != nil {
-		return err
-	}
-	defer log.Close() //nolint:errcheck // Read only: closing drops the lock and cannot lose data.
-	info, err := log.Stat()
-	if err != nil {
-		return err
-	}
-	end, err := format.end(log, info.Size())
-	if err != nil {
-		return err
-	}
-	if end != info.Size() {
-		return &TornError{Path: log.Name(), Offset: end, Size: info.Size()}
-	}
 	return s.build(ctx, meta, func(building string) error {
+		// build holds the root lock first, as Delete does. Acquiring the
+		// source's log first would invert that order.
+		log, format, err := s.openLog(source, os.O_RDONLY, syscall.LOCK_SH)
+		if err != nil {
+			return err
+		}
+		defer log.Close() //nolint:errcheck // Read only: closing drops the lock.
+		info, err := log.Stat()
+		if err != nil {
+			return err
+		}
+		end, err := format.end(log, info.Size())
+		if err != nil {
+			return err
+		}
+		if end != info.Size() {
+			return &TornError{Path: log.Name(), Offset: end, Size: info.Size()}
+		}
 		if err := s.copyFile(ctx, logPath(building, format), io.NewSectionReader(log, 0, end)); err != nil {
 			return err
 		}
