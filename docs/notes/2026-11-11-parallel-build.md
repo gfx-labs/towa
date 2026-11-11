@@ -57,6 +57,11 @@ A worker that finishes early takes work that needs nothing from the lanes still 
 | `provider-openai` (second task) | `src/provider/openai/**`, `src/config/openai.go` | Recordings of the Responses stream from the local Ollama server, the config section for the client's settings |
 | `tools` (second task) | `src/httpclient/**`, `src/tools/**`, `src/config/tools.go` | Tests that the shared HTTP client goes through `HTTPS_PROXY` and trusts the system CA pool, for plain requests and for a WebSocket. The Codex figures behind the tool defaults checked against the pinned commit |
 | `auth` (third task) | `tools/conformance/**` | A module of its own that starts the built binary and drives it over stdio with `coder/acp-go-sdk` as the client, so a second implementation checks our wire format |
+| `loop` (second task) | `src/loop/**`, `src/provider/router/**`, `src/config/limits.go` | A per-turn resolver from model name to provider and tool set in place of the single provider. A whole turn recorded from the local Ollama server and replayed through a real client, the router, the loop and the directory store. The batch dispatcher, the paused stop reason and the login-required stop |
+| `provider-anthropic` (second task) | `src/compact/**`, `src/config/compaction.go` | Compaction: when to compact in each mode, the two summary prompts with their sources, and the appended entry. No call into the loop yet |
+| `provider-openai` (third task) | `src/tools/convsearch/**` | The conversation search capability over the store's history, with jcode's input shape |
+| `provider-chat` (second task) | `src/tools/codex/**`, `src/tools/patch/**` | The Codex dialect: `tools.Tool` values with the names, schemas and output text of openai/codex at the pinned commit, over the shared capabilities, and the `apply_patch` format |
+| `mcp` (second task) | `src/mcp/**`, `src/cli/mcp.go` | The `mcp login` and `mcp logout` commands, a test of the unknown outcome, and a span per MCP call |
 
 ## Recording without a key
 
