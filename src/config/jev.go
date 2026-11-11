@@ -85,7 +85,7 @@ func (j Jev) validate() error {
 			"model": j.Model, "account": j.Account, "base_url": j.BaseURL, "referer": j.Referer, "title": j.Title,
 		} {
 			if value != "" {
-				return fmt.Errorf("jev.%s is %q and jev.route is empty", key, value)
+				return fmt.Errorf("jev.%s is set and jev.route is empty", key)
 			}
 		}
 		return nil

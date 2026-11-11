@@ -104,6 +104,7 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"provider URL parse failure", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-parse.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='https://url-user:url-password@example.com/%zz?token=url-query-secret'\n")}}, "providers[0].base_url"},
 		{"embeddings URL query", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "embeddings.base_url"},
 		{"embeddings URL parse failure", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}}, "embeddings.base_url"},
+		{"jev URL without route", config.Sources{Set: []string{"jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "jev.base_url"},
 		{"jev URL credentials", config.Sources{Set: []string{"jev.route=custom", "jev.model=decision", "jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "jev.base_url"},
 		{"jev URL parse failure", config.Sources{Set: []string{"jev.route=custom", "jev.model=decision", "jev.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}}, "jev.base_url"},
 		{"mcp invalid scheme with credentials", config.Sources{Files: []string{write(t, filepath.Join(dir, "mcp-url.toml"), "[[mcp.servers]]\nname='remote'\ntransport='sse'\nurl='ftp://url-user:url-password@example.com?token=url-query-secret'\n")}}, "mcp.servers[0].url"},
