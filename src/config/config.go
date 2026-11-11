@@ -32,6 +32,7 @@ type Config struct {
 	Embeddings Embeddings       `koanf:"embeddings"`
 	OpenAI     OpenAI           `koanf:"openai"`
 	WebFetch   WebFetch         `koanf:"webfetch"`
+	Jev        Jev              `koanf:"jev"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -86,7 +87,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults,
+		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults, jevDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -111,6 +112,7 @@ func (c *Config) validate() error {
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
 		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate,
+		c.Jev.validate, c.validateJevAccount,
 		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
@@ -132,4 +134,18 @@ func (c *Config) validateEmbeddingsAccount() error {
 		}
 	}
 	return fmt.Errorf("embeddings.account: %q is not the id of a configured account", c.Embeddings.Account)
+}
+
+// validateJevAccount reports a Jev account that no account entry defines.
+// Whether a route may leave the account empty is the section's own rule.
+func (c *Config) validateJevAccount() error {
+	if c.Jev.Account == "" {
+		return nil
+	}
+	for _, a := range c.Accounts {
+		if a.ID == c.Jev.Account {
+			return nil
+		}
+	}
+	return fmt.Errorf("jev.account: %q is not the id of a configured account", c.Jev.Account)
 }
