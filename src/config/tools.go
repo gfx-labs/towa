@@ -21,6 +21,11 @@ type Tools struct {
 
 // ToolsFiles configures read, write and edit.
 type ToolsFiles struct {
+	// Confine refuses a path outside the session's working directory and
+	// additional directories, for read, write, edit, the directory a
+	// command runs in and the path a search covers. It does not confine
+	// what a command does once it runs.
+	Confine bool `koanf:"confine"`
 	// ReadMaxBytes is the most one read returns. A larger range is an error
 	// that tells the caller to ask for fewer lines.
 	ReadMaxBytes int64 `koanf:"read_max_bytes"`
@@ -82,6 +87,10 @@ var toolsDefaults = map[string]any{
 	// gating budget in bytes, so gating always sees the whole of an output
 	// it would pass, and a runaway command cannot fill memory.
 	"tools.max_output_bytes": 1 << 20,
+	// Off, as upstream: the Read tool's description tells the model it can
+	// read any file on the machine, and the design leaves isolation to the
+	// host.
+	"tools.files.confine": false,
 	// Claude Code's Read: 256 KB per read and 2000 lines by default.
 	"tools.files.read_max_bytes":     256 << 10,
 	"tools.files.read_default_lines": 2000,

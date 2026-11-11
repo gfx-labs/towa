@@ -29,8 +29,8 @@ const readChunk = 64 << 10
 type Input struct {
 	// Command is the text given to the configured shell.
 	Command string
-	// Dir is where the command runs, inside the session's directories. An
-	// empty Dir is the working directory.
+	// Dir is where the command runs. An empty Dir is the working directory,
+	// and a relative one is taken from it.
 	Dir string
 	// Timeout is zero for the configured default.
 	Timeout time.Duration
@@ -132,7 +132,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	if timeout < 0 || timeout > cfg.Shell.MaxTimeout {
 		return Result{}, &Error{Kind: KindTimeout, Limit: cfg.Shell.MaxTimeout}
 	}
-	dir, err := workDir(env, in.Dir)
+	dir, err := workDir(env, cfg.Files, in.Dir)
 	if err != nil {
 		return Result{}, err
 	}
@@ -225,11 +225,11 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 }
 
 // workDir returns the directory a command runs in.
-func workDir(env tools.Env, dir string) (string, error) {
+func workDir(env tools.Env, cfg config.ToolsFiles, dir string) (string, error) {
 	if dir == "" {
 		dir = env.Cwd
 	}
-	resolved, err := fsops.RootsOf(env).Resolve(dir)
+	resolved, err := fsops.RootsOf(env, cfg).Resolve(dir)
 	if err != nil {
 		return "", err
 	}

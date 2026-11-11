@@ -86,7 +86,13 @@ func TestRunReportsOutputAndExitStatus(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, transcript.OutcomeCompleted, res.Outcome())
 
-	_, err = shell.Run(context.Background(), e, cfg, shell.Input{Command: "true", Dir: "/"})
+	// A directory outside the session's is used unless confinement is on.
+	res, err = shell.Run(context.Background(), e, cfg, shell.Input{Command: "pwd", Dir: "/"})
+	require.NoError(t, err)
+	require.Equal(t, "/\n", res.Output)
+	confined := cfg
+	confined.Files.Confine = true
+	_, err = shell.Run(context.Background(), e, confined, shell.Input{Command: "true", Dir: "/"})
 	var outside *fsops.Error
 	require.ErrorAs(t, err, &outside)
 	require.Equal(t, fsops.KindOutside, outside.Kind)

@@ -152,8 +152,15 @@ func TestSearchRefusesWhatItCannotDo(t *testing.T) {
 	require.ErrorAs(t, err, &serr)
 	require.Equal(t, search.KindInvalid, serr.Kind)
 
+	// A path outside the session directories is searched unless
+	// confinement is on.
+	confined := cfg
+	confined.Files.Confine = true
 	for _, path := range []string{"out", "out/secret.txt", filepath.Dir(env.Cwd)} {
-		_, err = search.Grep(ctx, env, cfg, search.GrepInput{Pattern: "Alpha", Filter: search.Filter{Path: path}})
+		res, err := search.Grep(ctx, env, cfg, search.GrepInput{Pattern: "Alpha secret", Filter: search.Filter{Path: path}})
+		require.NoError(t, err, path)
+		require.Len(t, res.Lines, 1, path)
+		_, err = search.Grep(ctx, env, confined, search.GrepInput{Pattern: "Alpha", Filter: search.Filter{Path: path}})
 		require.ErrorAs(t, err, &ferr, path)
 		require.Equal(t, fsops.KindOutside, ferr.Kind)
 	}

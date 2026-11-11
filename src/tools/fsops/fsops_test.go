@@ -53,8 +53,49 @@ func session(t *testing.T) (roots fsops.Roots, outside string) {
 	return fsops.Roots{Cwd: cwd, Dirs: []string{extra}}, outside
 }
 
-func TestPathsAreConfinedToTheSessionDirectories(t *testing.T) {
+// By default nothing is confined: a path outside the session directories is
+// read and written, and a relative path is still taken from Cwd.
+func TestPathsOutsideTheSessionDirectoriesAreAllowedByDefault(t *testing.T) {
 	roots, outside := session(t)
+	cfg, ctx := filesConfig(t), context.Background()
+	require.False(t, cfg.Confine)
+	secret := filepath.Join(outside, "secret.txt")
+	require.NoError(t, os.Symlink(outside, filepath.Join(roots.Cwd, "linkdir")))
+
+	for _, path := range []string{secret, "../outside/secret.txt", "linkdir/secret.txt"} {
+		res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path})
+		require.NoError(t, err, path)
+		require.Equal(t, "secret\n", res.Text)
+		require.Equal(t, secret, res.Path)
+		inside, err := roots.Contains(path)
+		require.NoError(t, err)
+		require.False(t, inside, path)
+	}
+
+	change, err := fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: filepath.Join(outside, "new/deep/file.txt"), Content: "made\n"})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(outside, "new/deep/file.txt"), change.Path)
+	_, err = fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: secret, Content: "open\n"})
+	require.NoError(t, err)
+	_, err = fsops.ApplyEdits(ctx, roots, cfg, fsops.EditInput{Path: "linkdir/secret.txt", Edits: []fsops.Edit{{Old: "open", New: "edited"}}})
+	require.NoError(t, err)
+	got, err := os.ReadFile(secret)
+	require.NoError(t, err)
+	require.Equal(t, "edited\n", string(got))
+
+	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "in.txt"})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(roots.Cwd, "in.txt"), res.Path)
+	for _, path := range []string{"in.txt", "not/yet/there.txt", filepath.Join(roots.Dirs[0], "more.txt")} {
+		inside, err := roots.Contains(path)
+		require.NoError(t, err)
+		require.True(t, inside, path)
+	}
+}
+
+func TestPathsAreConfinedToTheSessionDirectoriesWhenAsked(t *testing.T) {
+	roots, outside := session(t)
+	roots.Confine = true
 	cfg, ctx := filesConfig(t), context.Background()
 	secret := filepath.Join(outside, "secret.txt")
 	require.NoError(t, os.Symlink(secret, filepath.Join(roots.Cwd, "link.txt")))

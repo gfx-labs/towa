@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/tools"
 )
 
@@ -20,8 +21,9 @@ type Kind string
 
 // Kinds of an Error.
 const (
-	// KindOutside: the path is not in the working directory or an
-	// additional directory, once symbolic links are followed.
+	// KindOutside: confinement is on and the path is not in the working
+	// directory or an additional directory, once symbolic links are
+	// followed.
 	KindOutside Kind = "outside"
 	// KindNotFound: the file does not exist.
 	KindNotFound Kind = "not_found"
@@ -85,31 +87,48 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-// Roots are the directories a session may touch.
+// Roots are a session's directories.
 type Roots struct {
 	// Cwd is the working directory. A relative path is taken from it.
 	Cwd string
 	// Dirs are the additional directories.
 	Dirs []string
+	// Confine refuses a path outside Cwd and Dirs. Without it any path is
+	// accepted: isolation is the job of whatever runs the harness.
+	Confine bool
 }
 
 // RootsOf returns the directories of the session a call runs in.
-func RootsOf(env tools.Env) Roots {
-	return Roots{Cwd: env.Cwd, Dirs: env.Dirs}
+func RootsOf(env tools.Env, cfg config.ToolsFiles) Roots {
+	return Roots{Cwd: env.Cwd, Dirs: env.Dirs, Confine: cfg.Confine}
 }
 
-// location is a path inside one root, with every symbolic link that exists
-// already followed.
+// location is a path under a directory that exists, with every symbolic
+// link that exists already followed.
 type location struct {
 	root string
 	rel  string
+	// inside says the path is in a session directory.
+	inside bool
 }
 
 func (l location) abs() string { return filepath.Join(l.root, l.rel) }
 
+// Contains says whether path, once symbolic links are followed, is in the
+// working directory or an additional directory. It does not depend on
+// Confine: it is for telling the user where a call reaches.
+func (r Roots) Contains(path string) (bool, error) {
+	r.Confine = false
+	loc, err := r.locate(path)
+	if err != nil {
+		return false, err
+	}
+	return loc.inside, nil
+}
+
 // Resolve returns the absolute path that path names once symbolic links are
-// followed. The path may name a file that does not exist yet. A path that
-// ends up outside every root is an *Error of KindOutside.
+// followed. The path may name a file that does not exist yet. With Confine,
+// a path that ends up outside every root is an *Error of KindOutside.
 func (r Roots) Resolve(path string) (string, error) {
 	loc, err := r.locate(path)
 	if err != nil {
@@ -129,10 +148,11 @@ func (r Roots) locate(path string) (location, error) {
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(r.Cwd, abs)
 	}
-	resolved, err := resolveExisting(filepath.Clean(abs))
+	existing, rest, err := resolveExisting(filepath.Clean(abs))
 	if err != nil {
 		return location{}, classify(path, err)
 	}
+	resolved := filepath.Join(existing, rest)
 	for _, dir := range append([]string{r.Cwd}, r.Dirs...) {
 		root, err := filepath.EvalSymlinks(dir)
 		if err != nil {
@@ -140,45 +160,57 @@ func (r Roots) locate(path string) (location, error) {
 		}
 		rel, err := filepath.Rel(root, resolved)
 		if err == nil && filepath.IsLocal(rel) {
-			return location{root: root, rel: rel}, nil
+			return location{root: root, rel: rel, inside: true}, nil
 		}
 	}
-	return location{}, &Error{Kind: KindOutside, Path: path}
+	if r.Confine {
+		return location{}, &Error{Kind: KindOutside, Path: path}
+	}
+	// Outside the session directories the path is reached from the deepest
+	// directory that holds it: its parent when it exists, and otherwise the
+	// last directory of it that does.
+	switch {
+	case rest != "":
+		return location{root: existing, rel: rest}, nil
+	case filepath.Dir(existing) == existing:
+		return location{root: existing, rel: "."}, nil
+	default:
+		return location{root: filepath.Dir(existing), rel: filepath.Base(existing)}, nil
+	}
 }
 
 // resolveExisting follows the symbolic links in the part of path that
-// exists and appends the rest unchanged. A link that points nowhere is an
-// error: what it would create cannot be placed in a root.
-func resolveExisting(path string) (string, error) {
-	rest := ""
+// exists and returns it with the rest, which does not exist. A link that
+// points nowhere is an error: what it would create cannot be placed.
+func resolveExisting(path string) (existing, rest string, err error) {
 	for {
 		_, err := os.Lstat(path)
 		if err == nil {
 			resolved, err := filepath.EvalSymlinks(path)
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
-			return filepath.Join(resolved, rest), nil
+			return resolved, rest, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
+			return "", "", err
 		}
 		parent := filepath.Dir(path)
 		if parent == path {
-			return "", err
+			return "", "", err
 		}
 		rest = filepath.Join(filepath.Base(path), rest)
 		path = parent
 	}
 }
 
-// open opens the root of a location. Every later access goes through the
-// returned os.Root, which refuses a path that leaves the root, so a link
-// swapped in after locate cannot lead outside.
+// open opens the directory of a location. Every later access goes through
+// the returned os.Root, which refuses a path that leaves it, so a link
+// swapped in after locate cannot lead out of a session directory.
 func (l location) open() (*os.Root, error) {
 	root, err := os.OpenRoot(l.root)
 	if err != nil {
-		return nil, fmt.Errorf("fsops: session directory: %w", err)
+		return nil, fmt.Errorf("fsops: open directory: %w", err)
 	}
 	return root, nil
 }

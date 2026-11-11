@@ -68,8 +68,8 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Filter narrows the files a search looks at.
 type Filter struct {
-	// Path is a file or directory inside the session's directories. An
-	// empty Path is the working directory.
+	// Path is a file or directory. An empty Path is the working directory,
+	// and a relative one is taken from it.
 	Path string
 	// Globs are rg glob patterns. A pattern starting with "!" excludes.
 	Globs []string
@@ -235,7 +235,7 @@ func (f Filter) run(ctx context.Context, env tools.Env, cfg config.Tools, args [
 	if path == "" {
 		path = env.Cwd
 	}
-	target, err := fsops.RootsOf(env).Resolve(path)
+	target, err := fsops.RootsOf(env, cfg.Files).Resolve(path)
 	if err != nil {
 		return Result{}, err
 	}
