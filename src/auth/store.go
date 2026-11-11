@@ -26,6 +26,12 @@ type Tokens struct {
 	ExpiresAtUnixMs  int64    `json:"expires_at_unix_ms"`
 	Scopes           []string `json:"scopes,omitzero"`
 	ChatGPTAccountID string   `json:"chatgpt_account_id,omitzero"`
+	// RefreshRejectedAtUnixMs is when the token endpoint said the refresh
+	// token is dead, and RefreshRejection the code it gave. While they are
+	// set the login is not used and no refresh is sent. A new login writes
+	// the file without them.
+	RefreshRejectedAtUnixMs int64  `json:"refresh_rejected_at_unix_ms,omitzero"`
+	RefreshRejection        string `json:"refresh_rejection,omitzero"`
 }
 
 // ExpiresAt is when the access token stops working.
@@ -64,40 +70,54 @@ func (s *Store) Load(account string) (Tokens, error) {
 	if err != nil {
 		return Tokens{}, err
 	}
-	f, err := os.Open(path)
+	var t Tokens
+	err = readFile(path, &t)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Tokens{}, fmt.Errorf("account %q: %w", account, ErrNotLoggedIn)
 	}
+	return t, err
+}
+
+// readFile decodes the token file at path into v. A missing file is
+// fs.ErrNotExist.
+func readFile(path string, v any) error {
+	f, err := os.Open(path)
 	if err != nil {
-		return Tokens{}, err
+		return err
 	}
 	defer f.Close() //nolint:errcheck // read only
 	info, err := f.Stat()
 	if err != nil {
-		return Tokens{}, err
+		return err
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return Tokens{}, fmt.Errorf("%s has mode %04o: a token file must be readable by its owner only", path, perm)
+		return fmt.Errorf("%s has mode %04o: a token file must be readable by its owner only", path, perm)
 	}
-	var t Tokens
-	if err := json.UnmarshalRead(f, &t); err != nil {
-		return Tokens{}, fmt.Errorf("%s: %w", path, err)
+	if err := json.UnmarshalRead(f, v); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
 	}
-	return t, nil
+	return nil
 }
 
 // Save replaces the account's file. A reader sees the old file or the new
 // one, never a part of either.
-func (s *Store) Save(account string, t Tokens) (err error) {
+func (s *Store) Save(account string, t Tokens) error {
 	path, err := s.path(account, ".json")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+	return writeFile(path, &t)
+}
+
+// writeFile replaces the token file at path with v, by a temp file in the
+// same directory and a rename.
+func writeFile(path string, v any) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	// CreateTemp makes the file with mode 0600.
-	tmp, err := os.CreateTemp(s.dir, account+".*.tmp")
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
@@ -106,7 +126,7 @@ func (s *Store) Save(account string, t Tokens) (err error) {
 			err = errors.Join(err, tmp.Close(), os.Remove(tmp.Name()))
 		}
 	}()
-	if err := json.MarshalWrite(tmp, &t); err != nil {
+	if err := json.MarshalWrite(tmp, v); err != nil {
 		return err
 	}
 	// Without the sync a crash after the rename can leave an empty file.
@@ -146,7 +166,12 @@ func (s *Store) Lock(ctx context.Context, account string) (unlock func() error, 
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+	return lockFile(ctx, path)
+}
+
+// lockFile takes the exclusive lock on the file at path, making it first.
+func lockFile(ctx context.Context, path string) (unlock func() error, err error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)

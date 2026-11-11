@@ -2,9 +2,11 @@ package auth
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gfx-labs/acpharness/src/config"
@@ -22,6 +24,66 @@ var (
 	// ErrNoKey: the environment variable of an api_key account is not set.
 	ErrNoKey = errors.New("the account's API key variable is not set")
 )
+
+// LoginRequiredError says the account's refresh token is dead: the token
+// endpoint refused it for good. The account stays in the store and nothing
+// is sent for it until a new login.
+type LoginRequiredError struct {
+	Account  string
+	Provider string
+	// RejectedAt is when the endpoint refused the refresh token, and Code
+	// the code it gave.
+	RejectedAt time.Time
+	Code       string
+	// Err is the endpoint's refusal, in the call that received it. Later
+	// calls read the record and have none.
+	Err error
+}
+
+func (e *LoginRequiredError) Error() string {
+	return fmt.Sprintf("account %q: the token endpoint refused the stored %s login (%s) at %s: log in again with \"acpharness login %s --account %s\"",
+		e.Account, e.Provider, e.Code, e.RejectedAt.Format(time.RFC3339), e.Provider, e.Account)
+}
+
+func (e *LoginRequiredError) Unwrap() error { return e.Err }
+
+// deadTokenCodes are the token endpoint's codes that mean the refresh token
+// will never work again. They are the OAuth codes among the markers jcode
+// treats as permanent (crates/jcode-base/src/auth/refresh_state.rs).
+// refresh_token_invalidated is OpenAI's own.
+var deadTokenCodes = []string{"invalid_grant", "refresh_token_invalidated", "unauthorized_client"}
+
+// deadTokenCode returns the code in err that says the refresh token is
+// dead, or "" when err is anything else: a network failure, a 5xx or a
+// refusal the endpoint may take back.
+func deadTokenCode(err error) string {
+	var refusal *TokenError
+	if !errors.As(err, &refusal) || len(refusal.Detail) == 0 {
+		return ""
+	}
+	// The "error" member is the code itself, or an object with the code.
+	var code string
+	if json.Unmarshal(refusal.Detail, &code) != nil {
+		var detail struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(refusal.Detail, &detail) != nil {
+			return ""
+		}
+		code = detail.Code
+	}
+	if slices.Contains(deadTokenCodes, code) {
+		return code
+	}
+	return ""
+}
+
+func loginRequired(a config.Account, t Tokens, err error) *LoginRequiredError {
+	return &LoginRequiredError{
+		Account: a.ID, Provider: a.Provider,
+		RejectedAt: time.UnixMilli(t.RefreshRejectedAtUnixMs), Code: t.RefreshRejection, Err: err,
+	}
+}
 
 // PlaceholderToken is the token sent for a proxy-held account. It is not a
 // secret. The proxy reads the account from it and puts the real one in its place.
@@ -105,6 +167,9 @@ func (s *AccountSource) Credential(ctx context.Context, account string) (Credent
 		if err != nil {
 			return Credential{}, err
 		}
+		if t.RefreshRejectedAtUnixMs != 0 {
+			return Credential{}, loginRequired(a, t, nil)
+		}
 		if s.fresh(t) {
 			return credential(a, t), nil
 		}
@@ -148,12 +213,25 @@ func (s *AccountSource) refresh(ctx context.Context, a config.Account, keep func
 	if err != nil {
 		return Credential{}, err
 	}
+	// Another process may have found the refresh token dead while this one
+	// waited for the lock.
+	if t.RefreshRejectedAtUnixMs != 0 {
+		return Credential{}, loginRequired(a, t, nil)
+	}
 	if keep(t) {
 		return credential(a, t), nil
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, s.opts.TokenTimeout)
 	defer cancel()
-	t, err = s.opts.Flows[a.Provider].Refresh(requestCtx, s.opts.HTTPClient, t)
+	old := t
+	t, err = s.opts.Flows[a.Provider].Refresh(requestCtx, s.opts.HTTPClient, old)
+	if code := deadTokenCode(err); code != "" {
+		old.RefreshRejectedAtUnixMs, old.RefreshRejection = time.Now().UnixMilli(), code
+		if saveErr := s.opts.Store.Save(a.ID, old); saveErr != nil {
+			return Credential{}, fmt.Errorf("account %q: refresh: %w", a.ID, errors.Join(err, saveErr))
+		}
+		return Credential{}, loginRequired(a, old, err)
+	}
 	if err != nil {
 		return Credential{}, fmt.Errorf("account %q: refresh: %w", a.ID, err)
 	}

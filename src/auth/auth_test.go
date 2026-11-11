@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -273,9 +274,107 @@ func TestRefreshAfterRejection(t *testing.T) {
 	require.ErrorAs(t, err, &refusal)
 	require.Equal(t, http.StatusBadRequest, refusal.Status)
 	require.JSONEq(t, `"invalid_grant"`, string(refusal.Detail))
+	var relogin *auth.LoginRequiredError
+	require.ErrorAs(t, err, &relogin)
+	require.Equal(t, "invalid_grant", relogin.Code)
 	stored, err := auth.NewStore(dir).Load("work")
 	require.NoError(t, err)
 	require.Equal(t, "access-1", stored.AccessToken)
+
+	// The refresh token is recorded as dead: neither call sends anything
+	// now, in this process or a new one, and both say to log in again.
+	fresh, err := auth.NewSource(sourceOptions(dir, endpoint.URL+"/token", false))
+	require.NoError(t, err)
+	_, err = fresh.Credential(t.Context(), "work")
+	require.ErrorAs(t, err, &relogin)
+	require.WithinDuration(t, time.Now(), relogin.RejectedAt, time.Minute)
+	_, err = src.Refresh(t.Context(), auth.Credential{Account: "work", Token: "access-1"})
+	require.ErrorAs(t, err, &relogin)
+	requests, _ = endpoint.counts()
+	require.Equal(t, 2, requests)
+
+	// A new login replaces the file, and the account works again.
+	require.NoError(t, auth.NewStore(dir).Save("work", login))
+	cred, err := src.Credential(t.Context(), "work")
+	require.NoError(t, err)
+	require.Equal(t, "access-old", cred.Token)
+}
+
+// An endpoint that is down says nothing about the refresh token, so the
+// next call tries again.
+func TestRefreshIsTriedAgainAfterATransientFailure(t *testing.T) {
+	var requests atomic.Int32
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(down.Close)
+	dir := t.TempDir()
+	require.NoError(t, auth.NewStore(dir).Save("work", expired("refresh-0")))
+	src, err := auth.NewSource(sourceOptions(dir, down.URL, true))
+	require.NoError(t, err)
+	for range 2 {
+		_, err = src.Credential(t.Context(), "work")
+		var refusal *auth.TokenError
+		require.ErrorAs(t, err, &refusal)
+		var relogin *auth.LoginRequiredError
+		require.NotErrorAs(t, err, &relogin)
+	}
+	require.Equal(t, int32(2), requests.Load())
+}
+
+// MCP logins: a server named by a client may have any name, the files are
+// as private as an account's, and the lock excludes a second holder.
+func TestMCPTokenStorage(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "auth")
+	store := auth.NewStore(dir)
+	names := []string{"linear", "Linear", "../../etc/passwd", ".hidden", "a b/c"}
+	for i, name := range names {
+		_, err := store.LoadMCP(name)
+		require.ErrorIs(t, err, auth.ErrNotLoggedIn, name)
+		require.NoError(t, store.SaveMCP(name, auth.MCPTokens{ServerURL: "https://example.test/mcp", AccessToken: fmt.Sprint("access-", i)}))
+	}
+	for i, name := range names {
+		got, err := store.LoadMCP(name)
+		require.NoError(t, err, name)
+		require.Equal(t, fmt.Sprint("access-", i), got.AccessToken, name)
+	}
+	require.Error(t, store.SaveMCP("", auth.MCPTokens{}))
+
+	// Every file is in the one directory, whatever the name held.
+	info, err := os.Stat(filepath.Join(dir, "mcp"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	entries, err := os.ReadDir(filepath.Join(dir, "mcp"))
+	require.NoError(t, err)
+	require.Len(t, entries, len(names))
+	for _, entry := range entries {
+		info, err := entry.Info()
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+	top, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, top, 1)
+
+	unlock, err := store.LockMCP(t.Context(), "linear")
+	require.NoError(t, err)
+	waiting, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	_, err = store.LockMCP(waiting, "linear")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	other, err := store.LockMCP(t.Context(), "Linear")
+	require.NoError(t, err)
+	require.NoError(t, other())
+	require.NoError(t, unlock())
+	again, err := store.LockMCP(t.Context(), "linear")
+	require.NoError(t, err)
+	require.NoError(t, again())
+
+	require.NoError(t, store.DeleteMCP("linear"))
+	require.ErrorIs(t, store.DeleteMCP("linear"), auth.ErrNotLoggedIn)
+	_, err = store.LoadMCP("Linear")
+	require.NoError(t, err)
 }
 
 func TestAccountsWithoutAStoredLogin(t *testing.T) {
