@@ -81,7 +81,9 @@ type ToolsBatch struct {
 	MaxCalls int `koanf:"max_calls"`
 }
 
-// toolsDefaults names where each default comes from.
+// toolsDefaults names where each default comes from. The upstream figures
+// were written from memory of those tools and have not been compared with
+// the captures under prompts/: see docs/notes/2026-11-11-tools.md.
 var toolsDefaults = map[string]any{
 	// No upstream value was checked for this one. It is about ten times the
 	// gating budget in bytes, so gating always sees the whole of an output
