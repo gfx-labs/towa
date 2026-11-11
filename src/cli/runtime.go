@@ -34,6 +34,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/tools/claude"
 	"github.com/gfx-labs/acpharness/src/tools/codex"
 	"github.com/gfx-labs/acpharness/src/tools/extras"
+	"github.com/gfx-labs/acpharness/src/tools/generic"
 	"github.com/gfx-labs/acpharness/src/toolset"
 )
 
@@ -279,6 +280,10 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	switch selected.Dialect {
 	case config.DialectCodex:
 		dialectTools, err = codex.Tools(env, f.cfg.Tools, codex.Deps{ShowPlan: showPlan})
+	case config.DialectClaude:
+		dialectTools, err = claude.Tools(env, f.cfg.Tools, claude.Deps{Reads: reads, ShowPlan: showPlan})
+	case config.DialectGeneric:
+		dialectTools, err = generic.Tools(env, f.cfg.Tools, generic.Deps{Reads: reads, ShowPlan: showPlan})
 	default:
 		return preparedTurn{}, fmt.Errorf("tool dialect %q has no captured adapter yet", selected.Dialect)
 	}
