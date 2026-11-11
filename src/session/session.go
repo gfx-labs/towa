@@ -25,8 +25,14 @@ type session struct {
 	mcpServers   []acp.McpServer
 	// perTurn are the changes the session's _meta overrides make to each
 	// turn.
-	perTurn   []func(*loop.Turn)
-	overrides map[string]any
+	perTurn     []func(*loop.Turn)
+	overrides   map[string]any
+	runtime     Runtime
+	stopRuntime context.CancelFunc
+	finishOpen  func()
+	closeOnce   sync.Once
+	closeDone   chan struct{}
+	closeErr    error
 
 	// slot holds a token while a turn runs.
 	slot chan struct{}
@@ -60,7 +66,7 @@ type session struct {
 func newSession(id acp.SessionId, cwd string) *session {
 	return &session{
 		id: id, cwd: cwd, slot: make(chan struct{}, 1), turns: map[uint64]context.CancelFunc{},
-		allowed: map[string]bool{},
+		allowed: map[string]bool{}, closeDone: make(chan struct{}),
 	}
 }
 
@@ -158,16 +164,33 @@ func (s *session) options() map[acp.SessionConfigId]Value {
 // close cancels every prompt and returns once the running turn has stopped.
 // It keeps the slot, so nothing runs in a closed session.
 func (s *session) close(ctx context.Context) error {
-	s.mu.Lock()
-	s.closed = true
-	for _, cancelTurn := range s.turns {
-		cancelTurn()
-	}
-	s.mu.Unlock()
+	s.beginClose(ctx)
 	select {
-	case s.slot <- struct{}{}:
-		return nil
+	case <-s.closeDone:
+		return s.closeErr
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+func (s *session) beginClose(ctx context.Context) {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
+		for _, cancelTurn := range s.turns {
+			cancelTurn()
+		}
+		s.mu.Unlock()
+		if s.stopRuntime != nil {
+			s.stopRuntime()
+		}
+		// Finish cleanup even if the caller stops waiting for it.
+		go func() {
+			s.slot <- struct{}{}
+			if s.runtime.Close != nil {
+				s.closeErr = s.runtime.Close(context.WithoutCancel(ctx))
+			}
+			close(s.closeDone)
+		}()
+	})
 }

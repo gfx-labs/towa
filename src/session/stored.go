@@ -151,6 +151,11 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	s.values, s.perTurn = values, perTurn
 	s.overrides = overrides(merged)
 	s.title, s.meta = meta.Title, meta
+	attached := false
+	defer a.discard(ctx, s, &attached)
+	if err := a.openRuntime(ctx, s); err != nil {
+		return nil, nil, err
+	}
 	if err := a.persist(ctx, s); err != nil {
 		return nil, nil, err
 	}
@@ -193,6 +198,7 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	if err := a.put(s, a); err != nil {
 		return nil, nil, err
 	}
+	attached = true
 	a.logger.Info("session attached from the store", "session", s.id, "replayed", replay, "was_live", live != nil)
 	return modeState(a.registry.option(ModeOption), values[ModeOption].ID),
 		a.registry.configOptions(values, a.Gate().BooleanOptions()), nil

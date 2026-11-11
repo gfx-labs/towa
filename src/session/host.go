@@ -28,6 +28,7 @@ type Host struct {
 type shared struct {
 	version  string
 	turn     TurnFunc
+	open     func(context.Context, loop.Turn) (Runtime, error)
 	logger   *slog.Logger
 	tracer   trace.Tracer
 	turns    metric.Int64Counter
@@ -39,7 +40,11 @@ type shared struct {
 	// pageSize is session.list_page_size.
 	pageSize int
 
-	liveMu sync.Mutex
+	liveMu   sync.Mutex
+	ending   bool
+	opening  sync.WaitGroup
+	lifetime context.Context
+	stop     context.CancelFunc
 	// live holds the sessions in memory. Each belongs to the agent in its
 	// owner field.
 	live map[acp.SessionId]*session
@@ -55,6 +60,9 @@ type idLock struct {
 
 // NewHost returns a host with no sessions.
 func NewHost(o Options) (*Host, error) {
+	if o.Turn == nil && o.Open == nil {
+		return nil, errors.New("session: Turn or Open is required")
+	}
 	turns, err := o.Meter.Int64Counter("acpharness.turns",
 		metric.WithDescription("Prompt turns finished, by stop reason."),
 		metric.WithUnit("{turn}"))
@@ -86,9 +94,13 @@ func NewHost(o Options) (*Host, error) {
 			return nil, err
 		}
 	}
+	lifetime, stop := context.WithCancel(context.Background())
 	return &Host{&shared{
 		version:  o.Version,
 		turn:     o.Turn,
+		open:     o.Open,
+		lifetime: lifetime,
+		stop:     stop,
 		logger:   o.Logger,
 		tracer:   o.Tracer,
 		turns:    turns,
@@ -106,6 +118,29 @@ func NewHost(o Options) (*Host, error) {
 // NewAgent returns the agent for one connection. Call SetClient before the
 // connection is served, and Close once it has ended.
 func (h *Host) NewAgent() *Agent { return &Agent{shared: h.shared} }
+
+// Close ends the host and releases every live session after cancelling and
+// waiting for its turn. An in-flight Open is cancelled and waited for too.
+func (h *Host) Close(ctx context.Context) error {
+	h.liveMu.Lock()
+	h.ending = true
+	h.stop()
+	var sessions []*session
+	for id, s := range h.live {
+		sessions = append(sessions, s)
+		delete(h.live, id)
+	}
+	h.liveMu.Unlock()
+	var errs []error
+	for _, s := range sessions {
+		s.beginClose(ctx)
+	}
+	for _, s := range sessions {
+		errs = append(errs, s.close(ctx))
+	}
+	h.opening.Wait()
+	return errors.Join(errs...)
+}
 
 // ServeConn serves one connection: newline-delimited JSON-RPC read from and
 // written to rw. It returns when the client hangs up or ctx is cancelled,
@@ -141,6 +176,9 @@ func (a *Agent) Close(ctx context.Context) error {
 	}
 	a.liveMu.Unlock()
 	var errs []error
+	for _, s := range owned {
+		s.beginClose(ctx)
+	}
 	for _, s := range owned {
 		errs = append(errs, s.close(ctx))
 	}
@@ -184,7 +222,7 @@ func (h *shared) takeOwned(owner *Agent, id acp.SessionId) *session {
 func (h *shared) put(s *session, owner *Agent) error {
 	h.liveMu.Lock()
 	defer h.liveMu.Unlock()
-	if owner.ended {
+	if owner.ended || h.ending {
 		return errors.New("session: the connection has ended")
 	}
 	s.owner = owner

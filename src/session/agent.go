@@ -34,6 +34,13 @@ import (
 // the client can act on is a *loop.StopError.
 type TurnFunc func(ctx context.Context, turn loop.Turn) (loop.Result, error)
 
+// Runtime belongs to one attached session. Close runs after its turns stop,
+// including when Open returns both a partial Runtime and an error.
+type Runtime struct {
+	Turn  TurnFunc
+	Close func(context.Context) error
+}
+
 // Client is what the agent calls on the ACP client.
 type Client interface {
 	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
@@ -69,9 +76,15 @@ type Options struct {
 	// Version is reported to the client as the agent's version.
 	Version string
 	Turn    TurnFunc
-	Logger  *slog.Logger
-	Tracer  trace.Tracer
-	Meter   metric.Meter
+	// Open builds a runtime from the session's immutable base turn. The
+	// base has no prompt. Its permission callback uses the calling prompt's
+	// context. The runtime's context lives
+	// until the session closes, not until session/new or load returns.
+	// Nil preserves the process-wide Turn function.
+	Open   func(context.Context, loop.Turn) (Runtime, error)
+	Logger *slog.Logger
+	Tracer trace.Tracer
+	Meter  metric.Meter
 	// Session is the session section of the configuration.
 	Session config.Session
 	// Registry holds the config options, commands and overrides other
@@ -138,6 +151,12 @@ func (a *Agent) Gate() Gate {
 // Initialize records what the client supports and answers with the protocol
 // version and the agent's capabilities.
 func (a *Agent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.InitializeResponse, error) {
+	a.liveMu.Lock()
+	ended := a.ended || a.ending
+	a.liveMu.Unlock()
+	if ended {
+		return acp.InitializeResponse{}, acp.NewInvalidRequest(map[string]any{"error": "connection or host has ended"})
+	}
 	a.mu.Lock()
 	a.initialized = true
 	a.gate = NewGate(p.ClientCapabilities)
@@ -259,6 +278,11 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 	s.dirs, s.systemPrompt, s.mcpServers = p.AdditionalDirectories, p.SystemPrompt, p.McpServers
 	s.values, s.perTurn = values, perTurn
 	s.overrides = overrides(p.Meta)
+	attached := false
+	defer a.discard(ctx, s, &attached)
+	if err := a.openRuntime(ctx, s); err != nil {
+		return acp.NewSessionResponse{}, err
+	}
 	if a.store != nil {
 		// Created here and not by the first turn, so that a session with
 		// no turn yet can be listed, titled and loaded.
@@ -274,6 +298,7 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 	if err := a.put(s, a); err != nil {
 		return acp.NewSessionResponse{}, err
 	}
+	attached = true
 	a.logger.Info("session created", "session", s.id, "cwd", s.cwd)
 	return acp.NewSessionResponse{
 		SessionId:     s.id,
@@ -546,7 +571,7 @@ func (a *Agent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResp
 				},
 			})
 		} else {
-			result, err = a.turn(ctx, turn)
+			result, err = s.runtime.Turn(ctx, turn)
 		}
 		if err != nil && ctx.Err() != nil {
 			// run answers this with the cancelled stop reason. The error
@@ -797,6 +822,12 @@ func (a *Agent) UnstableSetSessionTitle(ctx context.Context, p acp.UnstableSetSe
 
 // ready reports a request that came before initialize.
 func (a *Agent) ready() error {
+	a.liveMu.Lock()
+	ended := a.ended || a.ending
+	a.liveMu.Unlock()
+	if ended {
+		return acp.NewInvalidRequest(map[string]any{"error": "connection or host has ended"})
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.initialized {

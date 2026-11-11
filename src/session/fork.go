@@ -107,6 +107,11 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	s.values, s.perTurn = values, perTurn
 	s.overrides = overrides(merged)
 	s.title = meta.Title
+	attached := false
+	defer a.discard(ctx, s, &attached)
+	if err := a.openRuntime(ctx, s); err != nil {
+		return acp.UnstableForkSessionResponse{}, err
+	}
 	meta.ID, meta.ParentID = id, uuid.Nil()
 	meta.Cwd, meta.Created, meta.Updated, meta.Archived = p.Cwd, time.Now(), time.Now(), false
 	if err := a.fillMeta(s, &meta); err != nil {
@@ -119,6 +124,7 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	if err := a.put(s, a); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
+	attached = true
 	var response acp.UnstableForkSessionResponse
 	err = wireCopy(acp.NewSessionResponse{SessionId: s.id, Modes: modeState(a.registry.option(ModeOption), values[ModeOption].ID), ConfigOptions: a.registry.configOptions(values, a.Gate().BooleanOptions()), Meta: repairMeta(repaired)}, &response)
 	return response, err
