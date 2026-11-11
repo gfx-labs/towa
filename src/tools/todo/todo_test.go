@@ -1,13 +1,11 @@
 package todo_test
 
 import (
-	"encoding/json/v2"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/session"
 	"github.com/gfx-labs/acpharness/src/tools/todo"
 )
 
@@ -32,15 +30,6 @@ func TestCheckReturnsTheListAndItsPlan(t *testing.T) {
 		{Content: "Fix the bug", Status: acp.PlanEntryStatusInProgress, Priority: acp.PlanEntryPriorityMedium},
 		{Content: "Write the note", Status: acp.PlanEntryStatusPending, Priority: acp.PlanEntryPriorityLow},
 	}, got.Entries)
-
-	// An empty list clears the plan. The update must still carry the
-	// entries member, which the schema requires.
-	empty, err := todo.Check(todo.List{})
-	require.NoError(t, err)
-	update := todo.Update(empty.Entries, "", session.NewGate(acp.ClientCapabilities{}).Sendable)
-	encoded, err := json.Marshal(update)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"sessionUpdate":"plan","entries":[]}`, string(encoded))
 }
 
 func TestCheckRefusesWhatTheModelGotWrong(t *testing.T) {
@@ -62,24 +51,5 @@ func TestCheckRefusesWhatTheModelGotWrong(t *testing.T) {
 			require.ErrorAs(t, err, &got)
 			require.Equal(t, tt.want, *got)
 		})
-	}
-}
-
-// The gate is the session's real one: what Turn.Sendable is.
-func TestUpdatePicksTheTypeTheClientTakes(t *testing.T) {
-	entries := []acp.PlanEntry{{Content: "Fix the bug", Status: acp.PlanEntryStatusPending, Priority: acp.PlanEntryPriorityMedium}}
-	old := session.NewGate(acp.ClientCapabilities{}).Sendable
-	withPlans := session.NewGate(acp.ClientCapabilities{Plan: &acp.PlanCapabilities{}}).Sendable
-
-	byID := todo.Update(entries, "main", withPlans)
-	require.Equal(t, acp.PlanId("main"), byID.PlanUpdate.Plan.Items.PlanId)
-	require.Equal(t, entries, byID.PlanUpdate.Plan.Items.Entries)
-
-	for name, update := range map[string]acp.SessionUpdate{
-		"a client that did not advertise plan updates": todo.Update(entries, "main", old),
-		"no plan id": todo.Update(entries, "", withPlans),
-	} {
-		require.Nil(t, update.PlanUpdate, name)
-		require.Equal(t, entries, update.Plan.Entries, name)
 	}
 }

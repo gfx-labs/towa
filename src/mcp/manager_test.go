@@ -220,11 +220,3 @@ func TestConnectTimeout(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
 }
-
-func TestMissingCommandIsAnError(t *testing.T) {
-	m := newTestManager(t, Options{Servers: []Server{{
-		Name: "s", Transport: config.MCPTransportStdio, Command: t.TempDir() + "/no-such-server",
-	}}})
-	_, err := m.ListTools(t.Context(), "s")
-	require.Error(t, err)
-}

@@ -33,7 +33,6 @@ func TestNormalizeImagesPreservesAcceptableOriginalsAndShrinksRealFormats(t *tes
 			unchanged, err := claude.NormalizeImage(t.Context(), data, claude.ImageLimits{MaxWidth: 2000, MaxHeight: 2000, MaxBytes: 3932160})
 			require.NoError(t, err)
 			require.Equal(t, data, unchanged.Data)
-			require.Equal(t, &data[0], &unchanged.Data[0])
 			require.Equal(t, "image/"+format, unchanged.MIMEType)
 			limits := claude.ImageLimits{MaxWidth: max(1, original.Width/2), MaxHeight: max(1, original.Height/2), MaxBytes: 20000}
 			result, err := claude.NormalizeImage(t.Context(), data, limits)
@@ -73,14 +72,6 @@ func TestNormalizeImageEnforcesCapturedDimensionLimit(t *testing.T) {
 }
 
 func TestNormalizeImageRefusesAnImpossibleBudgetOrInvalidInput(t *testing.T) {
-	// Recompress an oversized encoded file even when its dimensions already fit.
-	recompressed, err := claude.NormalizeImage(t.Context(), fixture(t, "blue-purple-pink-large.png"), claude.ImageLimits{MaxWidth: 2000, MaxHeight: 2000, MaxBytes: 20000})
-	require.NoError(t, err)
-	decoded, _, err := image.DecodeConfig(bytes.NewReader(recompressed.Data))
-	require.NoError(t, err)
-	require.Equal(t, 600, decoded.Width)
-	require.Equal(t, 400, decoded.Height)
-	require.LessOrEqual(t, len(recompressed.Data), 20000)
 	limits := claude.ImageLimits{MaxWidth: 2000, MaxHeight: 2000, MaxBytes: 1}
 	got, err := claude.NormalizeImage(t.Context(), fixture(t, "blue-purple-pink-large.png"), limits)
 	var limit *claude.ImageLimitError

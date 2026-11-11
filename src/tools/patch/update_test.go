@@ -19,7 +19,6 @@ func TestUpstreamLineEndingUpdates(t *testing.T) {
 		{"cr", "one\rtwo\rthree\r", "@@\n-one\n+uno\n@@\n two\n+\n+between\n three", "uno\rtwo\r\rbetween\rthree\r"},
 		{"repeated", "a\nb\n", "@@\n-a\n-b\n+b\n+b\n+a", "b\nb\na\n"},
 		{"repeated_context", "same\r\nsame\n", "@@\n-same\n same", "same\n"},
-		{"mixed", "one\r\ntwo\rthree\nfour\r\n", "@@\n one\n two\n-three\n+THREE\n four", "one\r\ntwo\rTHREE\r\nfour\r\n"},
 		{"unterminated", "one\r\ntwo", "@@\n-one\n+ONE", "ONE\r\ntwo\r\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

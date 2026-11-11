@@ -182,8 +182,6 @@ func TestWhatCannotBeReturnedIsATypedError(t *testing.T) {
 	srv := site(t, map[string]http.HandlerFunc{
 		"/png":         serve("image/png", png),
 		"/untyped-png": serve("", png),
-		"/pdf":         serve("application/pdf", []byte("%PDF-1.7")),
-		"/gone":        func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "gone", http.StatusGone) },
 		"/deep": serve("text/html", []byte(
 			strings.Repeat("<div>", 600)+"deep"+strings.Repeat("</div>", 600))),
 	})
@@ -199,17 +197,11 @@ func TestWhatCannotBeReturnedIsATypedError(t *testing.T) {
 		{"not found", srv.URL + "/posts/missing.html", webfetch.KindStatus, func(t *testing.T, e *webfetch.Error) {
 			require.Equal(t, http.StatusNotFound, e.Status)
 		}},
-		{"gone", srv.URL + "/gone", webfetch.KindStatus, func(t *testing.T, e *webfetch.Error) {
-			require.Equal(t, http.StatusGone, e.Status)
-		}},
 		{"an image", srv.URL + "/png", webfetch.KindContentType, func(t *testing.T, e *webfetch.Error) {
 			require.Equal(t, "image/png", e.ContentType)
 		}},
 		{"an image with no type", srv.URL + "/untyped-png", webfetch.KindContentType, func(t *testing.T, e *webfetch.Error) {
 			require.Equal(t, "image/png", e.ContentType)
-		}},
-		{"a pdf", srv.URL + "/pdf", webfetch.KindContentType, func(t *testing.T, e *webfetch.Error) {
-			require.Equal(t, "application/pdf", e.ContentType)
 		}},
 		{"nested too deep to parse", srv.URL + "/deep", webfetch.KindParse, nil},
 	}

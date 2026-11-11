@@ -74,9 +74,9 @@ func TestChildLimitIsAnError(t *testing.T) {
 	f := looptest.Replay(t, scenario)
 	parent := f.Turn(acp.SessionId(uuid.NewV7().String()), func(context.Context, acp.SessionUpdate) error { return nil })
 	parent.Limits = &config.Limits{MaxToolCalls: 1, MaxOutputTokens: 1}
-	s, err := subagent.New(subagent.Options{Config: config.Subagents{MaxDepth: 1}, Loop: f.Loop})
+	s, err := subagent.New(subagent.Options{Config: config.Subagents{MaxDepth: 1}})
 	require.NoError(t, err)
-	_, err = s.Run(t.Context(), subagent.Parent{Turn: parent}, subagent.Input{Prompt: looptest.ReadTurn.Prompt})
+	_, err = s.Run(t.Context(), subagent.Parent{Turn: parent, Loop: f.Loop}, subagent.Input{Prompt: looptest.ReadTurn.Prompt})
 	var failed *subagent.Error
 	require.ErrorAs(t, err, &failed)
 	require.Equal(t, subagent.KindStopped, failed.Kind)

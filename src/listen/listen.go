@@ -32,9 +32,6 @@ type Handler func(ctx context.Context, conn net.Conn) error
 // ErrInUse reports a unix socket path that a live process serves.
 var ErrInUse = errors.New("listen: the unix socket is in use by a live process")
 
-// ErrNoListener reports a config with neither a unix path nor a TCP address.
-var ErrNoListener = errors.New("listen: neither listen.unix.path nor listen.tcp.address is set")
-
 // Listeners are the open listeners of one process.
 type Listeners struct {
 	logger *slog.Logger
@@ -51,16 +48,6 @@ type listener struct {
 	tls *tls.Config
 }
 
-// Serve opens the listeners cfg names and serves them until ctx ends. See
-// Open and Listeners.Serve.
-func Serve(ctx context.Context, cfg config.Listen, handle Handler, logger *slog.Logger) error {
-	l, err := Open(ctx, cfg, logger)
-	if err != nil {
-		return err
-	}
-	return l.Serve(ctx, handle)
-}
-
 // Open opens the listeners cfg names: the unix socket when its path is set
 // and TCP when its address is set. It reads the certificate files once, so
 // that a bad file fails here. A nil logger discards log records. The caller
@@ -70,7 +57,7 @@ func Open(ctx context.Context, cfg config.Listen, logger *slog.Logger) (*Listene
 		logger = slog.New(slog.DiscardHandler)
 	}
 	if cfg.Unix.Path == "" && cfg.TCP.Address == "" {
-		return nil, ErrNoListener
+		return nil, errors.New("listen: neither listen.unix.path nor listen.tcp.address is set")
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err

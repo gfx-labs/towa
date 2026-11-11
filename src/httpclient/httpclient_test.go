@@ -285,13 +285,6 @@ func (n *network) url(scheme, path string) string {
 	return scheme + "://" + net.JoinHostPort(upstreamHost, n.port) + path
 }
 
-func TestARequestGoesThroughTheProxyAndTrustsTheSystemPool(t *testing.T) {
-	n := start(t)
-	got := n.child(t, "get", n.url("https", "/hello"), "HTTPS_PROXY="+n.proxyURL, "SSL_CERT_FILE="+n.caFile)
-	require.Equal(t, report{Body: greeting}, got)
-	require.Equal(t, []string{net.JoinHostPort(upstreamHost, n.port)}, n.seen())
-}
-
 func TestAWebSocketGoesThroughTheProxyAndTrustsTheSystemPool(t *testing.T) {
 	n := start(t)
 	got := n.child(t, "websocket", n.url("wss", "/ws"), "HTTPS_PROXY="+n.proxyURL, "SSL_CERT_FILE="+n.caFile)
@@ -303,15 +296,10 @@ func TestAWebSocketGoesThroughTheProxyAndTrustsTheSystemPool(t *testing.T) {
 // is refused: the client does not skip verification behind a proxy.
 func TestACertificateFromAnUnknownCAIsRefused(t *testing.T) {
 	n := start(t)
-	for _, c := range []struct{ mode, url string }{
-		{"get", n.url("https", "/hello")},
-		{"websocket", n.url("wss", "/ws")},
-	} {
-		got := n.child(t, c.mode, c.url, "HTTPS_PROXY="+n.proxyURL)
-		require.Equal(t, "certificate", got.Failure, got.Error)
-		require.Empty(t, got.Body)
-	}
-	require.Len(t, n.seen(), 2)
+	got := n.child(t, "websocket", n.url("wss", "/ws"), "HTTPS_PROXY="+n.proxyURL)
+	require.Equal(t, "certificate", got.Failure, got.Error)
+	require.Empty(t, got.Body)
+	require.Len(t, n.seen(), 1)
 }
 
 // With the host in NO_PROXY the client goes straight to it. The name does

@@ -198,9 +198,6 @@ func newManager(opts Options, pool bool) (*Manager, error) {
 	return m, nil
 }
 
-// Servers returns the manager's servers in order.
-func (m *Manager) Servers() []Server { return m.servers }
-
 // Connected reports whether the server has a live connection now.
 func (m *Manager) Connected(server string) bool {
 	c, ok := m.conns[server]

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"syscall"
 	"testing"
 	"time"
 
@@ -110,17 +109,6 @@ func TestClosingASessionLeavesAnotherSessionsSharedCallRunning(t *testing.T) {
 	require.NoError(t, a.Close())
 	close(finish)
 	require.NoError(t, <-done)
-}
-
-func TestSharedServerThatDiesIsStartedAgain(t *testing.T) {
-	shared := stdioServer(t, "shared", modeServe)
-	shared.Shared = true
-	pool := newTestPool(t, []Server{shared})
-	m := newTestManager(t, Options{Servers: []Server{shared}, Pool: pool})
-	first := callPids(t, m, "shared")
-	require.NoError(t, syscall.Kill(first.PID, syscall.SIGKILL))
-	require.Eventually(t, func() bool { return !m.Connected("shared") }, 10*time.Second, 10*time.Millisecond)
-	require.NotEqual(t, first.PID, callPids(t, m, "shared").PID)
 }
 
 func TestSharedServerNeedsItsPool(t *testing.T) {

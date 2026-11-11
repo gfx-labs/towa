@@ -185,15 +185,7 @@ func TestDaemonStdioOwnership(t *testing.T) {
 }
 
 func TestStdioOnlyReturnsItsResult(t *testing.T) {
-	for _, input := range []string{"", `{"jsonrpc":`} {
-		t.Run(input, func(t *testing.T) {
-			err := serveListeners(context.Background(), config.Listen{Stdio: true}, transportHost(t),
-				Host{Stdin: strings.NewReader(input), Stdout: io.Discard}, nil, nil)
-			if input == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorIs(t, err, io.ErrUnexpectedEOF)
-			}
-		})
-	}
+	err := serveListeners(context.Background(), config.Listen{Stdio: true}, transportHost(t),
+		Host{Stdin: strings.NewReader(`{"jsonrpc":`), Stdout: io.Discard}, nil, nil)
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }

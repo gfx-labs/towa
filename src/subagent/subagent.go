@@ -26,16 +26,12 @@ type Runner interface {
 // Options is what a Spawner is built from.
 type Options struct {
 	Config config.Subagents
-	// Loop is an optional default runner. A process-wide spawner serving
-	// different session loops leaves it nil and supplies Parent.Loop.
-	Loop Runner
 }
 
 // Spawner starts subagents. One serves every session of the process, since
 // subagents.max_concurrent counts them together.
 type Spawner struct {
-	cfg  config.Subagents
-	loop Runner
+	cfg config.Subagents
 
 	mu      sync.Mutex
 	running int
@@ -47,7 +43,7 @@ func New(o Options) (*Spawner, error) {
 		return nil, err
 	}
 	o.Config.Models = slices.Clone(o.Config.Models)
-	return &Spawner{cfg: o.Config, loop: o.Loop}, nil
+	return &Spawner{cfg: o.Config}, nil
 }
 
 // Parent is the call that asks for a subagent.
@@ -183,10 +179,7 @@ func depth(ctx context.Context) int {
 func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, error) {
 	runner := parent.Loop
 	if runner == nil {
-		runner = s.loop
-	}
-	if runner == nil {
-		return Result{}, &Error{Kind: KindFailed, Err: errors.New("Parent.Loop or Options.Loop is required")}
+		return Result{}, &Error{Kind: KindFailed, Err: errors.New("Parent.Loop is required")}
 	}
 	if _, err := uuid.Parse(string(parent.Turn.SessionID)); err != nil {
 		return Result{}, &Error{Kind: KindFailed, Err: fmt.Errorf("parent session id: %w", err)}

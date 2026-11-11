@@ -67,9 +67,6 @@ func TestPathsOutsideTheSessionDirectoriesAreAllowedByDefault(t *testing.T) {
 		require.NoError(t, err, path)
 		require.Equal(t, "secret\n", res.Text)
 		require.Equal(t, secret, res.Path)
-		inside, err := roots.Contains(path)
-		require.NoError(t, err)
-		require.False(t, inside, path)
 	}
 
 	change, err := fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: filepath.Join(outside, "new/deep/file.txt"), Content: "made\n"})
@@ -86,11 +83,6 @@ func TestPathsOutsideTheSessionDirectoriesAreAllowedByDefault(t *testing.T) {
 	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "in.txt"})
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(roots.Cwd, "in.txt"), res.Path)
-	for _, path := range []string{"in.txt", "not/yet/there.txt", filepath.Join(roots.Dirs[0], "more.txt")} {
-		inside, err := roots.Contains(path)
-		require.NoError(t, err)
-		require.True(t, inside, path)
-	}
 }
 
 func TestPathsAreConfinedToTheSessionDirectoriesWhenAsked(t *testing.T) {

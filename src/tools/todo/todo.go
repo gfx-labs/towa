@@ -138,22 +138,3 @@ func Check(list List) (Result, error) {
 	}
 	return r, nil
 }
-
-// Update returns the session update that shows the entries to the client.
-//
-// With an id it is a plan_update, which lets a client hold several plans
-// apart, when sendable says the client takes that type (loop.Turn.Sendable).
-// Otherwise it is a plan, which every client takes and which replaces the
-// session's one plan.
-func Update(entries []acp.PlanEntry, id acp.PlanId, sendable func(acp.SessionUpdate) bool) acp.SessionUpdate {
-	if id != "" {
-		byID := acp.SessionUpdate{PlanUpdate: &acp.SessionPlanUpdate{
-			SessionUpdate: "plan_update",
-			Plan:          acp.NewPlanUpdateContentItems(id, entries),
-		}}
-		if sendable(byID) {
-			return byID
-		}
-	}
-	return acp.SessionUpdate{Plan: &acp.SessionUpdatePlan{SessionUpdate: "plan", Entries: entries}}
-}

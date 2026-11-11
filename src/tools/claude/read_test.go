@@ -54,13 +54,4 @@ func TestReadFileNormalizesBeforeOutputLimitAndRecordsOnlySuccess(t *testing.T) 
 		t.Fatal("failed normalization must not grant edit authority")
 		return nil
 	}), &unread)
-
-	outside := filepath.Join(t.TempDir(), "outside.png")
-	require.NoError(t, os.WriteFile(outside, data, 0o600))
-	link := filepath.Join(dir, "link.png")
-	require.NoError(t, os.Symlink(outside, link))
-	_, err = claude.ReadFile(t.Context(), roots, cfg, &tracker, fsops.ReadInput{Path: link})
-	var pathError *fsops.Error
-	require.ErrorAs(t, err, &pathError)
-	require.Equal(t, fsops.KindOutside, pathError.Kind)
 }

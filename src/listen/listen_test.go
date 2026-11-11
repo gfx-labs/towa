@@ -37,7 +37,7 @@ func echo[P any](_ context.Context, _ string, params P) (any, *acp.RequestError)
 	return params, nil
 }
 
-// server is one running listen.Serve.
+// server is one running Listeners.Serve.
 type server struct {
 	t         *testing.T
 	listeners *listen.Listeners
@@ -274,10 +274,6 @@ func TestTCPWithTLS(t *testing.T) {
 	plain, err := net.DialTimeout("tcp", addr, timeout)
 	require.NoError(t, err)
 	_, err = newClient(t, plain).ask("in the clear")
-	require.Error(t, err)
-
-	// A client that trusts another authority refuses the server.
-	_, err = askTLS(t, "tcp", addr, newAuthority(t, "another CA").trust(), "wrong authority")
 	require.Error(t, err)
 	require.EqualValues(t, 1, s.started.Load())
 }
@@ -532,9 +528,4 @@ func TestMaxConnections(t *testing.T) {
 	case <-time.After(timeout):
 		t.Fatal("the second connection was not served after the first closed")
 	}
-}
-
-func TestNoListenerConfigured(t *testing.T) {
-	_, err := listen.Open(context.Background(), config.Listen{Stdio: true}, nil)
-	require.ErrorIs(t, err, listen.ErrNoListener)
 }

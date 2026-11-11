@@ -108,23 +108,9 @@ func RootsOf(env tools.Env, cfg config.ToolsFiles) Roots {
 type location struct {
 	root string
 	rel  string
-	// inside says the path is in a session directory.
-	inside bool
 }
 
 func (l location) abs() string { return filepath.Join(l.root, l.rel) }
-
-// Contains says whether path, once symbolic links are followed, is in the
-// working directory or an additional directory. It does not depend on
-// Confine: it is for telling the user where a call reaches.
-func (r Roots) Contains(path string) (bool, error) {
-	r.Confine = false
-	loc, err := r.locate(path)
-	if err != nil {
-		return false, err
-	}
-	return loc.inside, nil
-}
 
 // Resolve returns the absolute path that path names once symbolic links are
 // followed. The path may name a file that does not exist yet. With Confine,
@@ -160,7 +146,7 @@ func (r Roots) locate(path string) (location, error) {
 		}
 		rel, err := filepath.Rel(root, resolved)
 		if err == nil && filepath.IsLocal(rel) {
-			return location{root: root, rel: rel, inside: true}, nil
+			return location{root: root, rel: rel}, nil
 		}
 	}
 	if r.Confine {
