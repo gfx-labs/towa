@@ -6,7 +6,7 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
 ## Goals
 
-- ACP compliant agent: `initialize`, `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_config_option` (model, mode, thought level), `session/set_mode`, `session/request_permission`, `session/update` with plans, tool calls, thoughts, commands and usage. Method names follow `coder/acp-go-sdk` v0.13.5, which has no `session/set_model`.
+- ACP compliant agent: `initialize`, `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_config_option` (model, mode, thought level), `session/set_mode`, `session/request_permission`, `session/update` with plans, tool calls, thoughts, commands and usage. Method names follow the pinned ACP schema, which has no `session/set_model`.
 - Does real coding tasks locally as well as jcode does in a single session.
 - Low footprint per session: idle sessions use no CPU and little memory.
 - Claude OAuth, Codex OAuth, OpenAI Chat Completions and Responses, OpenRouter.
@@ -18,7 +18,7 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
 ## First milestone
 
-The agent completes coding tasks locally with quality comparable to jcode and passes ACP compliance checks with a real ACP client (acphost and the `acp-go-sdk` client). jobcity integration and footprint comparison come after.
+The agent completes coding tasks locally with quality comparable to jcode and passes ACP compliance checks with real ACP clients (acphost, and jobshop's `acp-go-sdk` v0.13.5 client). jobcity integration and footprint comparison come after.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ Packages:
 |---|---|
 | `cmd/acpharness` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models` |
 | `src/config` | koanf loading and the typed config |
-| `src/acp` | ACP server on `coder/acp-go-sdk`, transports, update mapping |
+| `src/acp` | our ACP layer: JSON-RPC connection, types generated from the pinned schema, transports, update mapping |
 | `src/session` | session lifecycle, modes, model switching, cancel |
 | `src/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
 | `src/provider` | provider interface, router, fallback, retry |
@@ -310,6 +310,33 @@ type Store interface {
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 
+## ACP layer
+
+acpharness implements ACP itself and does not import `coder/acp-go-sdk`.
+
+- Why: SDK v0.13.5 (2026-06-02) is generated from schema 0.13.5 and its master still pins that. The spec is at v1.17.0, schema 1.31.0 (2026-11-10). The SDK has no types for stable `compaction_update`, `compaction_summary_chunk`, `notice` and `systemPrompt`, and none for unstable `subagent_update`, `session/status` and `session/options`.
+- Types: generated from the pinned schema files (`schema.json`, `schema.unstable.json`, `meta.json`) by a vendored copy of the SDK's generator (`cmd/generate`, Apache-2.0, about 3,700 lines, one dependency: `dave/jennifer`). We fix the generator where the new schema breaks it.
+- Generator check, 2026-11-11: run unchanged against schema 1.31.0, it emitted every new type and update variant. One generator bug: `CreateElicitationRequest.Validate` reads a `Message` field that the new union type does not have.
+- Connection: our own JSON-RPC 2.0 code for newline-delimited messages, with request cancellation and ordered notifications.
+- Capability gating: an update type is sent only when the client advertises it. Measured against SDK v0.13.5 on 2026-11-11: it decodes `compaction_summary_chunk` as a user message chunk, and decodes `compaction_update`, `notice` and `subagent_update` as a session info update. All of them pass its validation, so an old client misreads them without an error.
+- The schema version is pinned in the repo. A bump is a reviewed regeneration.
+- ACP v2 is in alpha (schema 2.0.0-alpha.15) and drops `session/load`, `session/set_mode` and `fs/*`. Owning the layer lets one binary serve both versions later.
+
+## Ideas from Pi under consideration
+
+From `earendil-works/pi` (MIT) at commit 4839e41, read 2026-11-11. None of these are decided.
+
+- System prompt as named sections (`preamble`, `tools`, `rules`, `project_context`, `skills`, `cwd`). A changed section is appended to the conversation as a patch, so earlier messages stay cached.
+- Each tool contributes its own one-line snippet and guideline bullets to the prompt, so the prompt lists only the tools that are enabled.
+- Compaction: a structured checkpoint summary (Goal, Constraints, Progress, Key Decisions, Next Steps, Critical Context), an update prompt that merges into the previous summary, cumulative lists of files read and modified, a cut point that never separates a tool result from its call, and a second summary when one user turn alone exceeds the kept budget.
+- Steering and follow-up queues: a message sent during a turn is delivered after the current tool finishes, or after the turn ends.
+- Session entries with `id` and `parentId`, so one file holds a tree and forking needs no copy.
+- Virtual models: a selectable model that routes each request to a physical model and records both.
+- MCP exposure levels per server and per tool: direct, deferred until a tool search loads it, script-only, hidden.
+- Edit tool input repair for models that send the edits array as a JSON string or as a single object.
+- Cache warming: refresh the provider prompt cache before its TTL expires when the expected saving exceeds the cost.
+- Prompt templates: Markdown files that become slash commands with arguments.
+
 ## Telemetry
 
 - OpenTelemetry traces: span per prompt turn, provider request (model, account, tokens, retries, fallback), tool call, MCP call, compaction, subagent.
@@ -331,11 +358,11 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 
 - Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`.
 - release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
-- Dependencies: `coder/acp-go-sdk` (jobshop's v0.13.5 line), koanf with `cliflagv3`, `urfave/cli/v3`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
+- Dependencies: koanf with `cliflagv3`, `urfave/cli/v3`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
 ## Validation
 
-- ACP compliance: a conformance suite driving the agent through `acp-go-sdk` as a client over each transport (initialize, new, prompt, cancel mid-tool, load and replay, set_config_option for model and mode, set_mode, permission in ask mode).
+- ACP compliance: a conformance suite driving the agent over each transport, with our own client and with `acp-go-sdk` v0.13.5 as the client jobshop uses today (initialize, new, prompt, cancel mid-tool, load and replay, set_config_option for model and mode, set_mode, permission in ask mode).
 - Providers: recorded real responses per provider for the stream parser, plus live smoke checks behind an env flag.
 - Task quality: a set of local coding tasks run against acpharness and jcode with the same model, comparing completion, turns, tokens and wall time.
 - Footprint: RSS and CPU for 1, 10 and 200 idle and active sessions, compared with jcode, measured by a reproducible script.
