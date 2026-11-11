@@ -17,8 +17,8 @@ type turnLimitError struct{ key string }
 
 func (e *turnLimitError) Error() string { return "loop: the turn reached " + e.key }
 
-func (tn *turn) contextItems(ctx context.Context, name, interruption, role string) ([]transcript.Item, error) {
-	items, err := compact.Items(tn.entries, name)
+func (tn *turn) contextItems(ctx context.Context, name, interruption, role string, origin transcript.Origin) ([]transcript.Item, error) {
+	items, err := compact.Items(tn.entries, name, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,8 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 			}
 		}
 	}
-	items, err := tn.contextItems(ctx, name, interruption, role)
+	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
+	items, err := tn.contextItems(ctx, name, interruption, role, origin)
 	if err != nil {
 		var unreadable *compact.UnreadableError
 		if tn.compactor == nil || !errors.As(err, &unreadable) {
@@ -68,7 +69,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 	req.Items = items
 	if tn.compactor != nil {
 		effects, err := tn.compactor.Before(ctx, compact.BeforeInput{
-			Entries: tn.entries, Request: req, ProviderName: name, ContextWindow: window,
+			Entries: tn.entries, Request: req, ProviderName: name, ContextWindow: window, Origin: origin,
 		})
 		if err != nil {
 			return provider.Request{}, StopFor(err)
@@ -76,7 +77,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		if err := tn.applyCompaction(ctx, effects); err != nil {
 			return provider.Request{}, err
 		}
-		req.Items, err = tn.contextItems(ctx, name, interruption, role)
+		req.Items, err = tn.contextItems(ctx, name, interruption, role, origin)
 		if err != nil {
 			return provider.Request{}, err
 		}

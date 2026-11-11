@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/stretchr/testify/require"
@@ -16,8 +17,10 @@ import (
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/httpclient"
 	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/anthropic"
 	"github.com/gfx-labs/acpharness/src/provider/providertest"
+	"github.com/gfx-labs/acpharness/src/provider/router"
 	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
@@ -52,12 +55,29 @@ func TestCompactedTurn(t *testing.T) {
 	summaryReplay := providertest.Replay(t, filepath.Join(filepath.Dir(RecordingPath(scenario, 1)), "../../../compact/testdata/ollama_summary.json"))
 	summary, err := anthropic.New(anthropic.Config{HTTPClient: summaryHTTP, BaseURL: summaryReplay.URL, Version: "recording", Provider: ProviderID})
 	require.NoError(t, err)
+	source, err := auth.NewSource(auth.Options{
+		Accounts: []config.Account{{ID: Account, Provider: ProviderID, Kind: config.AccountAPIKey, APIKeyEnv: "SUMMARY_TEST_KEY"}},
+		Store:    auth.NewStore(t.TempDir()), HTTPClient: httpclient.New(),
+		Getenv: func(string) string { return "compaction-test-key" }, TokenTimeout: time.Minute,
+	})
+	require.NoError(t, err)
+	summaryRouter, err := router.New(router.Options{
+		Auth: source, Retry: f.Config.Limits.Retry, Rand: func() float64 { return 0.5 },
+		Chain: []router.Entry{{
+			Provider: summary, ProviderID: ProviderID, Account: Account, Model: Model,
+			Preparation: &router.Preparation{
+				ContextWindow: ContextSize, MaxOutputTokens: 1024,
+				System: []provider.SystemBlock{{Name: "unused", Text: "Do not replace the checkpoint prompt."}},
+			},
+		}},
+	})
+	require.NoError(t, err)
 	cfg := f.Config.Compaction
 	cfg.Mode, cfg.SummaryPrompt, cfg.OpenAINative = config.CompactionReactive, config.SummaryShort, config.NativeOff
 	cfg.KeepRecentMessages, cfg.EmergencyKeepRecentMessages, cfg.ReactiveThresholdTokens = 0, 0, 1
 	controller, err := compact.NewController(compact.ControllerOptions{
-		Config: cfg, Summary: summary, SummaryContextWindow: ContextSize,
-		SummaryInput: compact.SummaryInput{Model: Model, MaxOutputTokens: 1024, Credential: auth.Credential{Scheme: auth.SchemeAPIKey, Token: "compaction-test-key"}},
+		Config: cfg, Summary: summaryRouter, SummaryContextWindow: ContextSize,
+		SummaryInput: compact.SummaryInput{Model: Model, MaxOutputTokens: 2048, Credential: auth.Credential{Scheme: auth.SchemeAPIKey, Token: "compaction-test-key"}},
 	})
 	require.NoError(t, err)
 	defer controller.Close()

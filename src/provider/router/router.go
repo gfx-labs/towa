@@ -137,6 +137,9 @@ func New(o Options) (*Router, error) {
 		if e.Provider == nil || e.Account == "" || e.Model == "" {
 			return nil, fmt.Errorf("router: chain entry %d (%s) needs a provider, an account and a model", i, e)
 		}
+		if e.Preparation != nil && (e.Preparation.ContextWindow <= 0 || e.Preparation.MaxOutputTokens <= 0) {
+			return nil, fmt.Errorf("router: chain entry %d (%s) needs positive context and output allowances", i, e)
+		}
 	}
 	if o.Auth == nil || o.Rand == nil {
 		return nil, errors.New("router: Auth and Rand are required")
@@ -188,6 +191,11 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 					return
 				}
 				req = prepared
+			}
+			// A summary router has no prepare hook and keeps its own prompt,
+			// but the actual endpoint's output allowance still applies.
+			if selected := entry.Preparation; selected != nil && (req.MaxOutputTokens == 0 || req.MaxOutputTokens > selected.MaxOutputTokens) {
+				req.MaxOutputTokens = selected.MaxOutputTokens
 			}
 			refreshed := false
 			for retries := 0; ; {
