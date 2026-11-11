@@ -39,6 +39,10 @@ func StopKind(reason provider.Reason) (harness.StopKind, bool) {
 func StopFor(err error) error {
 	var perr *provider.Error
 	if !errors.As(err, &perr) {
+		var login *auth.LoginRequiredError
+		if errors.As(err, &login) {
+			return &StopError{Stop: harness.Stop{Kind: harness.StopAuth, Account: login.Account, Message: login.Error()}, Err: err}
+		}
 		return err
 	}
 	kind, ok := StopKind(perr.Reason)

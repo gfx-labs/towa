@@ -23,6 +23,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/acpharness/src/tools/batch"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
@@ -189,6 +190,52 @@ func outcomes(d loop.Dispatched) map[string]transcript.Outcome {
 		out[r.CallID] = r.Outcome
 	}
 	return out
+}
+
+func TestBatchUsesTheTurnsPermissionValidationAndBudget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		b := newBench(t)
+		set := b.set()
+		var items []batch.Item
+		set.Tools = append(set.Tools, tools.Tool{
+			Spec: provider.Tool{Name: "batch", InputSchema: jsontext.Value(`{"type":"object"}`)}, Effect: tools.Executes,
+			Describe: func(jsontext.Value) (tools.Description, error) { return tools.Description{Title: "Batch"}, nil },
+			Run: func(ctx context.Context, _ tools.Call) (tools.Result, error) {
+				dispatch, ok := loop.BatchDispatcher(ctx)
+				if !ok {
+					return tools.Result{}, errors.New("loop did not supply the batch dispatcher")
+				}
+				var err error
+				items, err = batch.Run(ctx, config.ToolsBatch{MaxCalls: 8}, dispatch, []batch.Call{
+					{Name: "write", Input: call("", "", benchInput{Path: b.path("denied"), Text: "no"}).Input},
+					{Name: "write", Input: call("", "", benchInput{Path: b.path("x"), Text: "1"}).Input},
+					{Name: "read", Input: call("", "", benchInput{Path: b.path("x")}).Input},
+					{Name: "write", Input: call("", "", benchInput{Path: b.path("x"), Text: "2"}).Input},
+					{Name: "batch", Input: jsontext.Value(`{}`)},
+					{Name: "write", Input: jsontext.Value(`{"path":3}`)},
+					{Name: "write", Input: call("", "", benchInput{Path: b.path("limit"), Text: "no"}).Input},
+				})
+				return tools.Result{Outcome: transcript.OutcomeCompleted}, err
+			},
+		})
+		d := b.dispatcher(set)
+		d.Limited, d.Left = true, 4
+		d.Permit = func(_ context.Context, _ string, _ tools.Effect, update acp.ToolCallUpdate) (bool, error) {
+			return update.Title == nil || *update.Title != "Write "+b.path("denied"), nil
+		}
+		done := d.Run(t.Context(), []transcript.ToolCall{{ID: "b", Name: "batch", Input: jsontext.Value(`{}`)}})
+		require.Len(t, items, 7)
+		assert.Equal(t, "1", items[2].Result.Parts[0].Text)
+		data, err := os.ReadFile(b.path("x"))
+		require.NoError(t, err)
+		assert.Equal(t, "12", string(data))
+		for _, i := range []int{0, 4, 5, 6} {
+			assert.False(t, items[i].Started)
+			assert.Error(t, items[i].Err)
+		}
+		assert.EqualValues(t, 4, done.Ran)
+		assert.True(t, done.OverLimit)
+	})
 }
 
 func TestCallsRunTogetherUnlessTheyConflict(t *testing.T) {
