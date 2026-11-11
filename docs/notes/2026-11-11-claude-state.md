@@ -47,3 +47,23 @@ Using the real x/image 600 by 400 `blue-purple-pink-large` fixtures and encoding
 | lossy WebP, ApproxBiLinear resize, JPEG | 683800 |
 
 These are one-shot allocation deltas, not peak or retained heap. ApproxBiLinear avoids CatmullRom's larger temporary workspace in this check. The experiment exercises real decoding and shrinking but does not implement the full dimension and byte-budget policy, nor validate animation, orientation or upstream output parity.
+
+## Implemented image normalization
+
+`claude.NormalizeImage(ctx, data, ImageLimits)` now implements the output dimension and file-byte policy with x/image WebP decoding, ApproxBiLinear scaling and stdlib PNG/JPEG encoding. Limits are explicit input. The adapter supplies captured dimensions of 2000 by 2000 and the configured file-byte budget. A header-only fast path returns acceptable PNG/JPEG/GIF/WebP bytes unchanged without a full pixel decode. The returned slice aliases the input on that path.
+
+Images requiring normalization are decoded, fitted proportionally without enlargement, then encoded. PNG first tries best-compression PNG. JPEG qualities 80, 60, 40 and 20 follow. The final upstream-shaped fallback caps width at 1000 and uses JPEG quality 20. If that is still too large, `ImageLimitError` returns the size and budget and no image bytes. The encoder's pooled buffer is copied before being returned to its pool.
+
+Real fixtures from x/image v0.48.0 and Go 1.27.3 test PNG, JPEG, GIF, lossy WebP and lossless WebP. Every unchanged path preserves original bytes. Actual decoded resized outputs stay within dimensions and bytes. A 3000 by 2000 enlargement of the upstream PNG becomes 2000 by 1333 under captured dimension limits. An impossible one-byte budget fails instead of returning an oversized payload. Cancellation before processing and malformed input are refused. Provenance and licenses are in `src/tools/claude/testdata/images`.
+
+The encoder-buffer benchmark used `go test -run '^$' -bench BenchmarkNormalizeImage -benchmem -benchtime=10x` on the same 600 by 400 upstream PNG. Before pooling, resize allocated 2736131 B/op with 251 allocs/op. With pooling it allocated 2699881 B/op with 254 allocs/op. The PNG encoder has its own pools, so short runs include noise. Timing was 60 ms/op before and 77 ms/op after in these runs, not evidence of a speed improvement. Unchanged was 6115 B/op with 6 allocs/op in both. The pool is used for the project's one-message buffer ownership convention, with a modest observed byte reduction, not as a CPU improvement claim.
+
+### Remaining upstream differences
+
+- PNG palette quantization used by sharp is not reproduced. Stdlib best-compression PNG is tried, then JPEG. Encoded bytes are not claimed to match sharp.
+- Existing GIF/WebP bytes are preserved only on the unchanged path. Resized GIF becomes a still frame. Animated WebP support is whatever the pinned decoder accepts, not full animation parity.
+- EXIF orientation is not applied. Metadata and alpha handling can differ from sharp when converting to JPEG.
+- Only PNG/JPEG/GIF/WebP are accepted. The upstream sharp path can also decode other formats and convert them to PNG.
+- The fast path checks headers and budgets, not full image integrity. Cancellation cannot interrupt a stdlib codec call already running.
+- Full source decoding allocates according to source pixel count before resizing. No new arbitrary source-pixel cap is invented here. This is not a bounded-source-memory claim.
+- Image normalization is not yet wired into captured Read tools. The existing `fsops.Read` refuses source images over its image-byte limit before this normalizer could shrink them. The adapter must arrange an appropriate source read, rather than claiming that the unchanged capability already shrinks images.
