@@ -1,7 +1,7 @@
 // Package fsops reads, writes and edits files inside a session's
 // directories. Each function is one capability with typed input and a typed
-// result. A dialect adapter turns a result or an *Error into the upstream
-// tool's words.
+// result. The tool that calls it turns a result or an *Error into the text
+// the model reads.
 package fsops
 
 import (

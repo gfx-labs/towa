@@ -1,9 +1,9 @@
 // Package convsearch reads a session's stored history: a keyword search, a
 // range of entries, and totals. It reads every entry ever appended,
 // including the ones before a compaction, and the sessions of subagents.
-// Each function is one capability with typed input and a typed result. A
-// dialect adapter turns a result or an *Error into the upstream tool's
-// words.
+// Each function is one capability with typed input and a typed result. The
+// tool that calls it turns a result or an *Error into the text the model
+// reads.
 package convsearch
 
 import (

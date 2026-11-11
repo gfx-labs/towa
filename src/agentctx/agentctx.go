@@ -17,15 +17,8 @@ import (
 	"github.com/gfx-labs/acpharness/src/provider"
 )
 
-// DialectClaude is the dialect in which CLAUDE.md is read beside AGENTS.md.
-// It is the value of tools.Set.Dialect for Claude models.
-const DialectClaude = "claude"
-
-// Names of the instruction files.
-const (
-	agentsFile = "AGENTS.md"
-	claudeFile = "CLAUDE.md"
-)
+// agentsFile is the name of an instruction file.
+const agentsFile = "AGENTS.md"
 
 // Request says what to load for one session.
 type Request struct {
@@ -35,8 +28,6 @@ type Request struct {
 	// HomeDir replaces a leading "~" in a configured path. It may be empty
 	// when no configured path starts with "~".
 	HomeDir string
-	// Dialect is the tool dialect of the session's model.
-	Dialect string
 }
 
 // Loaded is what Load read.
@@ -93,21 +84,21 @@ func Load(req Request) (*Loaded, error) {
 // LoadFiles reads the context files in this order, which is the order they
 // take in the prompt:
 //
-//  1. the global directory's AGENTS.md, then its CLAUDE.md;
-//  2. each directory from the repository root down to the working
-//     directory, AGENTS.md then CLAUDE.md, so that the file nearest the
-//     working directory comes last;
+//  1. the global directory's AGENTS.md;
+//  2. the AGENTS.md of each directory from the repository root down to the
+//     working directory, so that the file nearest the working directory
+//     comes last;
 //  3. the configured extra files, in config order;
 //  4. the .md files under each configured extra directory, in path order.
 //
-// CLAUDE.md is read only in the claude dialect. Steps 1 and 2 are skipped
+// Steps 1 and 2 are skipped
 // when context.agents_files is off. The repository root is the nearest
 // directory, from the working directory upwards, that holds a ".git" entry.
 // When there is none, only the working directory is searched.
 //
-// An AGENTS.md or CLAUDE.md that does not exist is not an error. Any other
+// An AGENTS.md that does not exist is not an error. Any other
 // failure is, including an extra file or directory that does not exist. A
-// file reached twice, such as a CLAUDE.md that is a symlink to AGENTS.md, is
+// file reached twice, such as an extra file that is also an AGENTS.md, is
 // read once, at its first position.
 func LoadFiles(req Request) ([]File, error) {
 	workDir, err := checkWorkDir(req.WorkDir)
@@ -117,10 +108,6 @@ func LoadFiles(req Request) ([]File, error) {
 	l := &fileLoader{cfg: req.Config, seen: map[string]bool{}}
 
 	if req.Config.AgentsFiles {
-		names := []string{agentsFile}
-		if req.Dialect == DialectClaude {
-			names = append(names, claudeFile)
-		}
 		var dirs []string
 		if req.Config.GlobalDir != "" {
 			global, err := resolvePath(req.Config.GlobalDir, workDir, req.HomeDir)
@@ -134,10 +121,8 @@ func LoadFiles(req Request) ([]File, error) {
 			return nil, err
 		}
 		for _, dir := range append(dirs, chain...) {
-			for _, name := range names {
-				if err := l.add(filepath.Join(dir, name), true); err != nil {
-					return nil, err
-				}
+			if err := l.add(filepath.Join(dir, agentsFile), true); err != nil {
+				return nil, err
 			}
 		}
 	}

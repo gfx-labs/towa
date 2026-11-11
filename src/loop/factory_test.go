@@ -52,7 +52,7 @@ func (b *processStderr) String() string {
 }
 
 // TestFactoryWriteProcess uses the built executable, actual runtime factory,
-// dialect adapter and durable store. The relay has exactly two slots, not a
+// core tools and durable store. The relay has exactly two slots, not a
 // scripted model. Its replay only substitutes the test-owned working root.
 func TestFactoryWriteProcess(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
@@ -161,7 +161,6 @@ kind = "api_key"
 api_key_env = "FACTORY_TEST_KEY"
 [models.local]
 chain = ["ollama:local/llama3.2:3b"]
-dialect = "generic"
 context_window = 131072
 max_output_tokens = 256
 [store]
@@ -230,7 +229,7 @@ level = "error"
 	require.Nil(t, responses["1"].Error, "stderr: %s", stderr.String())
 	var created acp.NewSessionResponse
 	require.NoError(t, json.Unmarshal(responses["1"].Result, &created))
-	prompt := fmt.Sprintf("Call the Write tool exactly once to create the new file %s with content exactly factory acceptance 7421 and no trailing newline. The file does not exist. Do not call another tool. After the successful tool result, reply with a short plain-text acknowledgment. Never emit tool syntax in your final answer.", filepath.Join(cwd, "factory-result.txt"))
+	prompt := fmt.Sprintf("Call the write tool exactly once to create the new file %s with content exactly factory acceptance 7421 and no trailing newline. The file does not exist. Do not call another tool. After the successful tool result, reply with a short plain-text acknowledgment. Never emit tool syntax in your final answer.", filepath.Join(cwd, "factory-result.txt"))
 	send(2, "session/prompt", map[string]any{"sessionId": created.SessionId, "prompt": []acp.ContentBlock{{Text: &acp.ContentBlockText{Type: "text", Text: prompt}}}})
 	responses, notifications := wire.Await("2")
 	if recording {
@@ -289,7 +288,7 @@ level = "error"
 			users++
 		case item.ToolCall != nil:
 			calls++
-			require.Equal(t, "Write", item.ToolCall.Name)
+			require.Equal(t, "write", item.ToolCall.Name)
 		case item.ToolResult != nil:
 			results++
 			require.Equal(t, transcript.OutcomeCompleted, item.ToolResult.Outcome)

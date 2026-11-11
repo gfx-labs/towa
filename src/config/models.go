@@ -18,19 +18,7 @@ type Model struct {
 	// MaxOutputTokens is the most tokens one response may hold. Zero takes
 	// the built-in figure.
 	MaxOutputTokens int64 `koanf:"max_output_tokens" validate:"gte=0"`
-	// Family names what the model is, such as "claude" or "gpt". It decides
-	// the tool dialect when Dialect is empty.
-	Family string `koanf:"family"`
-	// Dialect pins the tool dialect: one of the Dialect values.
-	Dialect string `koanf:"dialect" validate:"omitempty,oneof=claude codex generic"`
 }
-
-// Tool dialects.
-const (
-	DialectClaude  = "claude"
-	DialectCodex   = "codex"
-	DialectGeneric = "generic"
-)
 
 // Providers that need no [[providers]] entry: the harness has their
 // endpoints and their OAuth flows built in.

@@ -21,7 +21,7 @@ import (
 )
 
 // session dispatches batch calls to the real capabilities, the way the loop
-// will through the dialect adapters.
+// does through the tools.
 type session struct {
 	cfg config.Tools
 	env tools.Env

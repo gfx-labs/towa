@@ -7,8 +7,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
-// Texts the model gets for a call the loop answered itself. The dialect
-// adapters replace them with the upstream wording when they exist.
+// Texts the model gets for a call the loop answered itself.
 const (
 	textInterrupted  = "The tool call was cancelled before it ran."
 	textNotRun       = "The tool call was not run because the model's response did not finish."
@@ -40,12 +39,7 @@ func result(call transcript.ToolCall, outcome transcript.Outcome, text string) t
 // without a result is one a process died on: nothing says whether it took
 // effect, so it gets the unknown outcome and is not run again.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
-	return ConversationWithRole(history, interruption, "")
-}
-
-// ConversationWithRole presents interruptions with the dialect's message role.
-func ConversationWithRole(history []transcript.Item, interruption, role string) (items []transcript.Item, repairs []transcript.Item, err error) {
-	interrupted := transcript.Item{User: &transcript.User{Role: role, Parts: []transcript.Part{{Text: interruption}}}}
+	interrupted := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: interruption}}}}
 	if err := interrupted.Validate(); err != nil {
 		return nil, nil, err
 	}

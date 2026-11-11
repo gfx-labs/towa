@@ -15,7 +15,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
-// NameSubagent is the child-turn tool's name in every dialect.
+// NameSubagent is the child-turn tool's name.
 const NameSubagent = "subagent"
 
 // Subagent adapts process-wide child admission to one tool. Each invocation

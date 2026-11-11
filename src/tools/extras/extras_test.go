@@ -200,7 +200,7 @@ func TestBatchRunsRealToolsThroughLoopAndRejectsNesting(t *testing.T) {
 	skill := skillTool(t)
 	bt, err := extras.Batch(config.ToolsBatch{Enabled: true, MaxCalls: 10}, loop.BatchDispatcher)
 	require.NoError(t, err)
-	set := tools.Set{Dialect: "generic", Tools: []tools.Tool{skill, bt}}
+	set := tools.Set{Tools: []tools.Tool{skill, bt}}
 	schemas, err := loop.Schemas(set)
 	require.NoError(t, err)
 	var shown strings.Builder

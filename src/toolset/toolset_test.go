@@ -22,14 +22,14 @@ import (
 )
 
 // strict is a schema that refuses a member it does not declare, as the
-// upstream tool schemas do.
+// core tool schemas do.
 const strict = `{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}`
 
 func tool(name, schema string) tools.Tool {
 	return tools.Tool{Spec: provider.Tool{Name: name, InputSchema: jsontext.Value(schema)}}
 }
 
-func dialect(list ...tools.Tool) func() ([]tools.Tool, error) {
+func core(list ...tools.Tool) func() ([]tools.Tool, error) {
 	return func() ([]tools.Tool, error) { return list, nil }
 }
 
@@ -83,11 +83,10 @@ func mcpTools(t *testing.T, toolName string) []tools.Tool {
 	return list
 }
 
-func TestAssembleJoinsDialectExtrasAndMCPInOrder(t *testing.T) {
+func TestAssembleJoinsCoreExtrasAndMCPInOrder(t *testing.T) {
 	ctx := context.Background()
 	in := toolset.Input{
-		Dialect: "generic",
-		Tools:   dialect(tool("Read", strict), tool("Bash", strict)),
+		Tools: core(tool("Read", strict), tool("Bash", strict)),
 		Extras: []toolset.Extra{
 			{Name: "webfetch", Tools: []tools.Tool{tool("webfetch", strict)}},
 			{Name: "batch", Tools: []tools.Tool{tool("batch", strict)}},
@@ -98,7 +97,6 @@ func TestAssembleJoinsDialectExtrasAndMCPInOrder(t *testing.T) {
 	}
 	got, err := toolset.Assemble(ctx, in)
 	require.NoError(t, err)
-	require.Equal(t, "generic", got.Set.Dialect)
 	// The disabled extra is left out and the rest keep their order.
 	require.Equal(t, []string{"Read", "Bash", "batch", "echo"}, names(got.Set))
 
@@ -149,45 +147,41 @@ func TestAssembleRefusesASetThatCannotBeUsed(t *testing.T) {
 	ctx := context.Background()
 	gateCfg := gateOn(t)
 
-	// An extra with the name of a dialect tool.
+	// An extra with the name of a core tool.
 	_, err := toolset.Assemble(ctx, toolset.Input{
-		Dialect: "generic",
-		Tools:   dialect(tool("Read", strict)),
-		Extras:  []toolset.Extra{{Name: "search", Tools: []tools.Tool{tool("Read", strict)}}},
+		Tools:  core(tool("Read", strict)),
+		Extras: []toolset.Extra{{Name: "search", Tools: []tools.Tool{tool("Read", strict)}}},
 	})
 	var collision *toolset.CollisionError
 	require.ErrorAs(t, err, &collision)
-	require.Equal(t, toolset.CollisionError{Name: "Read", First: "dialect", Second: "extra search"}, *collision)
+	require.Equal(t, toolset.CollisionError{Name: "Read", First: "core", Second: "extra search"}, *collision)
 
 	// Disabling the extra removes the collision with it.
 	got, err := toolset.Assemble(ctx, toolset.Input{
-		Dialect:  "generic",
-		Tools:    dialect(tool("Read", strict)),
+		Tools:    core(tool("Read", strict)),
 		Extras:   []toolset.Extra{{Name: "search", Tools: []tools.Tool{tool("Read", strict)}}},
 		Disabled: []string{"search"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"Read"}, names(got.Set))
 
-	// Two tools of one name inside the dialect.
-	_, err = toolset.Assemble(ctx, toolset.Input{Dialect: "generic", Tools: dialect(tool("Read", strict), tool("Read", strict))})
+	// Two core tools of one name.
+	_, err = toolset.Assemble(ctx, toolset.Input{Tools: core(tool("Read", strict), tool("Read", strict))})
 	require.ErrorAs(t, err, &collision)
-	require.Equal(t, "dialect", collision.Second)
+	require.Equal(t, "core", collision.Second)
 
-	// An MCP server's tool with the name of a dialect tool: the MCP
+	// An MCP server's tool with the name of a core tool: the MCP
 	// manager's own error, which names the server.
 	_, err = toolset.Assemble(ctx, toolset.Input{
-		Dialect: "generic",
-		Tools:   dialect(tool("echo", strict)),
-		MCP:     mcpTools(t, "echo"),
+		Tools: core(tool("echo", strict)),
+		MCP:   mcpTools(t, "echo"),
 	})
 	require.ErrorAs(t, err, &collision)
 	require.Equal(t, "mcp", collision.Second)
 
 	// A misspelt name in the disabled list.
 	_, err = toolset.Assemble(ctx, toolset.Input{
-		Dialect:  "generic",
-		Tools:    dialect(tool("Read", strict)),
+		Tools:    core(tool("Read", strict)),
 		Extras:   []toolset.Extra{{Name: "batch"}},
 		Disabled: []string{"bacth"},
 	})
@@ -199,9 +193,8 @@ func TestAssembleRefusesASetThatCannotBeUsed(t *testing.T) {
 	var schemaErr *toolset.SchemaError
 	for _, g := range []config.ToolsGate{gateCfg, {}} {
 		_, err = toolset.Assemble(ctx, toolset.Input{
-			Dialect: "generic",
-			Tools:   dialect(tool("Read", strict), tool("Bad", `{"type":"object","properties":{"a":{"$ref":"#/$defs/missing"}}}`)),
-			Gate:    g,
+			Tools: core(tool("Read", strict), tool("Bad", `{"type":"object","properties":{"a":{"$ref":"#/$defs/missing"}}}`)),
+			Gate:  g,
 		})
 		require.ErrorAs(t, err, &schemaErr)
 		require.Equal(t, "Bad", schemaErr.Tool)
@@ -209,11 +202,11 @@ func TestAssembleRefusesASetThatCannotBeUsed(t *testing.T) {
 
 	// A tool with its own member of the gate's name would never see it.
 	own := `{"type":"object","properties":{"accept_large_output":{"type":"string"}}}`
-	_, err = toolset.Assemble(ctx, toolset.Input{Dialect: "generic", Tools: dialect(tool("Own", own)), Gate: gateCfg})
+	_, err = toolset.Assemble(ctx, toolset.Input{Tools: core(tool("Own", own)), Gate: gateCfg})
 	require.ErrorAs(t, err, &schemaErr)
 	require.ErrorIs(t, err, toolset.ErrAcceptDeclared)
 	// With the gate off nothing takes the member out, so the tool is fine.
-	_, err = toolset.Assemble(ctx, toolset.Input{Dialect: "generic", Tools: dialect(tool("Own", own))})
+	_, err = toolset.Assemble(ctx, toolset.Input{Tools: core(tool("Own", own))})
 	require.NoError(t, err)
 }
 
@@ -223,9 +216,8 @@ func TestAssembleLeavesANativeToolAsItIs(t *testing.T) {
 		Native: jsontext.Value(`{"type":"custom","name":"apply_patch","format":{"type":"grammar","syntax":"lark","definition":"start: /.+/"}}`),
 	}}
 	got, err := toolset.Assemble(context.Background(), toolset.Input{
-		Dialect: "codex",
-		Tools:   dialect(native, tool("shell", `{"type":"object"}`)),
-		Gate:    gateOn(t),
+		Tools: core(native, tool("shell", `{"type":"object"}`)),
+		Gate:  gateOn(t),
 	})
 	require.NoError(t, err)
 	patch, ok := got.Set.Lookup("apply_patch")

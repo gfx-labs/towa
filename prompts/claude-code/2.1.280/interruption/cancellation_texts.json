@@ -1,8 +1,0 @@
-[
-  "[Request interrupted by user]",
-  "[Request interrupted by user for tool use]",
-  "[Tool call did not complete: the turn was ended to deliver the message that follows. Nothing refused it; re-run it if still needed.]",
-  "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.",
-  "[Tool call skipped: the turn was stopped before this call ran, by the check whose denial is on another call in this batch. Nothing refused this call and it had no effects; re-run it if still needed.]",
-  "[Tool call skipped: the turn ended to deliver the message that follows before this call ran. Nothing refused it; re-run it if still needed.]"
-]

@@ -5,12 +5,11 @@ package config
 // it. A path may start with "~/", which stands for the home directory. Any
 // other relative path is taken from the session's working directory.
 type Context struct {
-	// AgentsFiles turns on reading AGENTS.md, and CLAUDE.md in the claude
-	// dialect, from the global directory and from the working directory up
-	// to the repository root.
+	// AgentsFiles turns on reading AGENTS.md from the global directory and
+	// from the working directory up to the repository root.
 	AgentsFiles bool `koanf:"agents_files"`
-	// GlobalDir is the directory that holds the global AGENTS.md and
-	// CLAUDE.md. Empty means there is no global file.
+	// GlobalDir is the directory that holds the global AGENTS.md. Empty
+	// means there is no global file.
 	GlobalDir string `koanf:"global_dir"`
 	// ExtraFiles are read after the instruction files, in this order. Each
 	// must exist.

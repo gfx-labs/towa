@@ -12,7 +12,7 @@ import (
 // Sections added by configuration follow them, and a system prompt the
 // client appended comes last.
 const (
-	// SectionPrompt is the dialect's upstream system prompt.
+	// SectionPrompt is the harness's instructions.
 	SectionPrompt = "prompt"
 	// SectionTools is the guidance about the tools.
 	SectionTools = "tools"
@@ -35,10 +35,9 @@ var builtinSections = []string{
 // Prompt is what the system prompt is built from. A section whose text is
 // empty is left out.
 type Prompt struct {
-	// Upstream is the dialect's upstream system prompt, as captured under
-	// prompts/. It is used unchanged.
-	Upstream string
-	// Tools is the guidance about the tools, from the dialect.
+	// Instructions is the text of the prompt section.
+	Instructions string
+	// Tools is the guidance about the tools.
 	Tools string
 	// Rules is the harness's own rules.
 	Rules string
@@ -92,7 +91,7 @@ func Capabilities() *acp.SessionSystemPromptCapabilities {
 	}
 }
 
-// Build returns the system prompt's sections in order: the upstream prompt,
+// Build returns the system prompt's sections in order: the instructions,
 // tools, rules, project context, skills, working directory, the sections
 // added by configuration, and the client's appended prompt.
 //
@@ -117,7 +116,7 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 	if override {
 		add(SectionClient, client)
 	} else {
-		add(SectionPrompt, p.Upstream)
+		add(SectionPrompt, p.Instructions)
 		add(SectionTools, p.Tools)
 		add(SectionRules, p.Rules)
 	}

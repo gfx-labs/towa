@@ -17,12 +17,12 @@ type turnLimitError struct{ key string }
 
 func (e *turnLimitError) Error() string { return "loop: the turn reached " + e.key }
 
-func (tn *turn) contextItems(ctx context.Context, name, interruption, role string, origin transcript.Origin) ([]transcript.Item, error) {
+func (tn *turn) contextItems(ctx context.Context, name, interruption string, origin transcript.Origin) ([]transcript.Item, error) {
 	items, err := compact.Items(tn.entries, name, origin)
 	if err != nil {
 		return nil, err
 	}
-	items, repairs, err := ConversationWithRole(items, interruption, role)
+	items, repairs, err := Conversation(items, interruption)
 	if err != nil {
 		return nil, err
 	}
@@ -33,16 +33,13 @@ func (tn *turn) contextItems(ctx context.Context, name, interruption, role strin
 }
 
 func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req provider.Request) (provider.Request, error) {
-	window, interruption, role := tn.model.ContextSize, tn.model.Interruption, tn.model.InterruptionRole
+	window, interruption := tn.model.ContextSize, tn.model.Interruption
 	if selected := entry.Preparation; selected != nil {
 		if selected.ContextWindow <= 0 || selected.MaxOutputTokens <= 0 {
 			return provider.Request{}, errors.New("loop: selected entry needs positive context and output allowances")
 		}
-		window, interruption, role = selected.ContextWindow, selected.Interruption, selected.InterruptionRole
+		window, interruption = selected.ContextWindow, selected.Interruption
 		req.System, req.MaxOutputTokens = selected.System, selected.MaxOutputTokens
-	}
-	if _, _, err := ConversationWithRole(nil, interruption, role); err != nil {
-		return provider.Request{}, err
 	}
 	if window > 0 {
 		tn.mapper.ContextSize = func(string) (int, bool) { return int(window), true }
@@ -59,7 +56,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		}
 	}
 	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
-	items, err := tn.contextItems(ctx, name, interruption, role, origin)
+	items, err := tn.contextItems(ctx, name, interruption, origin)
 	if err != nil {
 		var unreadable *compact.UnreadableError
 		if tn.compactor == nil || !errors.As(err, &unreadable) {
@@ -79,7 +76,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		if err := tn.applyCompaction(ctx, effects); err != nil {
 			return provider.Request{}, err
 		}
-		req.Items, err = tn.contextItems(ctx, name, interruption, role, origin)
+		req.Items, err = tn.contextItems(ctx, name, interruption, origin)
 		if err != nil {
 			return provider.Request{}, err
 		}

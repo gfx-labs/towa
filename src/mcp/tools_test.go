@@ -123,7 +123,7 @@ func TestDirectAndMetaTools(t *testing.T) {
 	require.NoError(t, err)
 	m := newTestManager(t, Options{Config: cfg, Servers: servers, HTTPClient: newCountingClient().Client})
 
-	set := tools.Set{Dialect: "generic"}
+	set := tools.Set{}
 	set.Tools, err = m.Tools(t.Context(), []string{"read", "shell"})
 	require.NoError(t, err)
 	names := make([]string, len(set.Tools))

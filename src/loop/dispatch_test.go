@@ -87,7 +87,7 @@ func (b *bench) set() tools.Set {
 	done := func(text string) (tools.Result, error) {
 		return tools.Result{Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: text}}}, nil
 	}
-	return tools.Set{Dialect: "generic", Tools: []tools.Tool{
+	return tools.Set{Tools: []tools.Tool{
 		{
 			Spec:   provider.Tool{Name: "read", InputSchema: schema("path")},
 			Effect: tools.ReadOnly,

@@ -1,0 +1,15 @@
+{
+  "name": "edit",
+  "description": "Replace exact text in a file. Read the file in this session first. old_string must occur once unless replace_all is true. An empty old_string creates a missing or empty file.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {"type": "string", "description": "Absolute path of the file."},
+      "old_string": {"type": "string", "description": "Text to replace, exactly as it is in the file, without line numbers."},
+      "new_string": {"type": "string", "description": "Replacement text. It must differ from old_string."},
+      "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence."}
+    },
+    "required": ["file_path", "old_string", "new_string"],
+    "additionalProperties": false
+  }
+}

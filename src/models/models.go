@@ -1,6 +1,5 @@
 // Package models turns the configured models into what a turn needs: the
-// chain of router entries a request goes down, and each entry's metadata
-// and the model's tool dialect.
+// chain of router entries a request goes down and each entry's metadata.
 package models
 
 import (
@@ -12,21 +11,12 @@ import (
 	"github.com/gfx-labs/acpharness/src/provider/router"
 )
 
-// Families the dialect rule knows. A family is otherwise any text.
-const (
-	FamilyClaude = "claude"
-	FamilyGPT    = "gpt"
-	FamilyCodex  = "codex"
-)
-
 // Metadata is what is known about one chain entry's model.
 type Metadata struct {
 	// ContextWindow is the context size in tokens.
 	ContextWindow int64
 	// MaxOutputTokens is the most tokens one response may hold.
 	MaxOutputTokens int64
-	// Family names what the model is.
-	Family string
 }
 
 // Entry is one parsed chain entry with its metadata.
@@ -43,10 +33,6 @@ type Model struct {
 	// request to an entry with a smaller context window, so each has its
 	// own metadata.
 	Entries []Entry
-	// Dialect is the tool dialect, one of the config.Dialect values. It is
-	// one value for the whole chain, because a fallback happens inside a
-	// turn and the tools cannot change there.
-	Dialect string
 }
 
 // NoModelError reports a selection when no model is configured.
@@ -77,19 +63,6 @@ func (e *MetadataError) Error() string {
 		e.Name, e.Entry, e.Name, strings.Join(e.Missing, " and models."+e.Name+"."))
 }
 
-// DialectError reports a chain whose entries resolve to different tool
-// dialects and no configured dialect to settle it.
-type DialectError struct {
-	Name string
-	// Dialects are the dialects of the entries, in chain order.
-	Dialects []string
-}
-
-func (e *DialectError) Error() string {
-	return fmt.Sprintf("models: %s: the chain's entries use different tool dialects %q: set models.%s.dialect",
-		e.Name, e.Dialects, e.Name)
-}
-
 // ProviderError reports a chain entry whose provider has no client.
 type ProviderError struct {
 	Name     string
@@ -118,13 +91,11 @@ func Select(defaultModel string, configured map[string]config.Model, name string
 	return Resolve(name, cfg)
 }
 
-// Resolve parses a model's chain and resolves each entry's metadata and
-// the model's dialect. A figure in the configuration replaces the built-in
-// one for every entry of the chain.
+// Resolve parses a model's chain and resolves each entry's metadata. A
+// figure in the configuration replaces the built-in one for every entry of
+// the chain.
 func Resolve(name string, cfg config.Model) (Model, error) {
-	m := Model{Name: name, Dialect: cfg.Dialect}
-	var dialects []string
-	mixed := false
+	m := Model{Name: name}
 	for _, raw := range cfg.Chain {
 		parsed, err := config.ParseChainEntry(raw)
 		if err != nil {
@@ -137,9 +108,6 @@ func Resolve(name string, cfg config.Model) (Model, error) {
 		if cfg.MaxOutputTokens != 0 {
 			meta.MaxOutputTokens = cfg.MaxOutputTokens
 		}
-		if cfg.Family != "" {
-			meta.Family = cfg.Family
-		}
 		var missing []string
 		if meta.ContextWindow == 0 {
 			missing = append(missing, "context_window")
@@ -147,43 +115,15 @@ func Resolve(name string, cfg config.Model) (Model, error) {
 		if meta.MaxOutputTokens == 0 {
 			missing = append(missing, "max_output_tokens")
 		}
-		// The family is needed only to choose a dialect.
-		if meta.Family == "" && cfg.Dialect == "" {
-			missing = append(missing, "family")
-		}
 		if len(missing) > 0 {
 			return Model{}, &MetadataError{Name: name, Entry: raw, Missing: missing}
 		}
 		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta})
-		dialect := DialectOf(meta.Family)
-		mixed = mixed || (len(dialects) > 0 && dialect != dialects[0])
-		dialects = append(dialects, dialect)
 	}
 	if len(m.Entries) == 0 {
 		return Model{}, fmt.Errorf("models: %s: the chain is empty", name)
 	}
-	if m.Dialect == "" {
-		if mixed {
-			return Model{}, &DialectError{Name: name, Dialects: dialects}
-		}
-		m.Dialect = dialects[0]
-	}
 	return m, nil
-}
-
-// DialectOf returns the tool dialect of a model family, as the design's
-// dialect table gives it: Claude models use claude, GPT and Codex models
-// use codex, and any other family uses generic. The table's "distilled
-// from" case has no entry here, because no source for one was read: such a
-// model gets its dialect from models.<name>.dialect.
-func DialectOf(family string) string {
-	switch family {
-	case FamilyClaude:
-		return config.DialectClaude
-	case FamilyGPT, FamilyCodex:
-		return config.DialectCodex
-	}
-	return config.DialectGeneric
 }
 
 // Chain returns the model's entries as the router takes them. clients

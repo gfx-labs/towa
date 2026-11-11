@@ -60,7 +60,7 @@ const (
 	// ProviderID tags the items the client produces.
 	ProviderID = "ollama"
 	// Interruption is what the fixture's resolver gives as the
-	// interruption text. No dialect is on master to take one from.
+	// interruption text.
 	Interruption = "The previous turn was interrupted by the user."
 )
 
@@ -257,7 +257,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 
 	var set tools.Set
 	if s.Tools {
-		set = tools.Set{Dialect: config.DialectGeneric, Tools: []tools.Tool{ReadTool(cfg.Tools.Files)}}
+		set = tools.Set{Tools: []tools.Tool{ReadTool(cfg.Tools.Files)}}
 	}
 	opts := loop.Options{
 		Resolve: func(_ context.Context, model string) (loop.Resolved, error) {
@@ -292,7 +292,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 const ReadToolName = "read_file"
 
 // ReadTool is a read of one text file, on the shared file capability. It
-// is not a dialect's tool: its name, schema and output are this package's.
+// is not the core read tool: its name, schema and output are this package's.
 func ReadTool(cfg config.ToolsFiles) tools.Tool {
 	type input struct {
 		Path string `json:"path"`

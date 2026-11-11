@@ -22,7 +22,6 @@ import (
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/mcp"
 	"github.com/gfx-labs/acpharness/src/models"
-	"github.com/gfx-labs/acpharness/src/prompts"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/openai"
 	"github.com/gfx-labs/acpharness/src/provider/router"
@@ -31,10 +30,8 @@ import (
 	"github.com/gfx-labs/acpharness/src/subagent"
 	"github.com/gfx-labs/acpharness/src/telemetry"
 	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/claude"
-	"github.com/gfx-labs/acpharness/src/tools/codex"
+	"github.com/gfx-labs/acpharness/src/tools/core"
 	"github.com/gfx-labs/acpharness/src/tools/extras"
-	"github.com/gfx-labs/acpharness/src/tools/generic"
 	"github.com/gfx-labs/acpharness/src/toolset"
 )
 
@@ -56,7 +53,7 @@ type sessionRuntime struct {
 	factory        *runtimeFactory
 	manager        *mcp.Manager
 	frozen         []tools.Tool
-	reads          *claude.ReadTracker
+	reads          *core.ReadTracker
 	mapper         loop.Mapper
 	compactor      *compact.Controller
 	compactorModel string
@@ -159,7 +156,7 @@ func (f *runtimeFactory) Open(ctx context.Context, base loop.Turn) (session.Runt
 }
 
 func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRuntime, error) {
-	r := &sessionRuntime{factory: f, reads: &claude.ReadTracker{}}
+	r := &sessionRuntime{factory: f, reads: &core.ReadTracker{}}
 	var taken []string
 	if len(f.cfg.Models) != 0 {
 		prepared, err := f.prepare(ctx, base, nil, r.reads)
@@ -249,7 +246,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 	return l.Run(ctx, turn)
 }
 
-func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *claude.ReadTracker) (preparedTurn, error) {
+func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *core.ReadTracker) (preparedTurn, error) {
 	if reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
@@ -264,7 +261,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	contextConfig := f.cfg.Context
 	contextConfig.ExtraFiles = append(slices.Clone(contextConfig.ExtraFiles), turn.ContextFiles...)
 	contextConfig.SkillsDirs = append(slices.Clone(contextConfig.SkillsDirs), turn.SkillsDirs...)
-	loaded, err := agentctx.Load(agentctx.Request{Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME"), Dialect: selected.Dialect})
+	loaded, err := agentctx.Load(agentctx.Request{Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME")})
 	if err != nil {
 		return preparedTurn{}, err
 	}
@@ -276,17 +273,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		}
 		return current.Turn.Update(ctx, acp.SessionUpdate{Plan: &acp.SessionUpdatePlan{Entries: entries}})
 	}
-	var dialectTools []tools.Tool
-	switch selected.Dialect {
-	case config.DialectCodex:
-		dialectTools, err = codex.Tools(env, f.cfg.Tools, codex.Deps{ShowPlan: showPlan})
-	case config.DialectClaude:
-		dialectTools, err = claude.Tools(env, f.cfg.Tools, claude.Deps{Reads: reads, ShowPlan: showPlan})
-	case config.DialectGeneric:
-		dialectTools, err = generic.Tools(env, f.cfg.Tools, generic.Deps{Reads: reads, ShowPlan: showPlan})
-	default:
-		return preparedTurn{}, fmt.Errorf("tool dialect %q has no captured adapter yet", selected.Dialect)
-	}
+	coreTools, err := core.Tools(env, f.cfg.Tools, core.Deps{Reads: reads, ShowPlan: showPlan})
 	if err != nil {
 		return preparedTurn{}, err
 	}
@@ -295,7 +282,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		return preparedTurn{}, err
 	}
 	assembled, err := toolset.Assemble(ctx, toolset.Input{
-		Dialect: selected.Dialect, Tools: func() ([]tools.Tool, error) { return dialectTools, nil },
+		Tools:  func() ([]tools.Tool, error) { return coreTools, nil },
 		Extras: additional, MCP: frozen, Gate: f.cfg.Tools.Gate,
 	})
 	if err != nil {
@@ -306,20 +293,15 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		summaryWindow: selected.Entries[0].Metadata.ContextWindow,
 		summaryOutput: selected.Entries[0].Metadata.MaxOutputTokens,
 	}
-	var firstPrompt prompts.Prompt
 	for i, entry := range selected.Entries {
 		result.summaryWindow = min(result.summaryWindow, entry.Metadata.ContextWindow)
 		result.summaryOutput = min(result.summaryOutput, entry.Metadata.MaxOutputTokens)
-		prompt, err := prompts.Lookup(selected.Dialect, entry.Model)
-		if err != nil {
-			return preparedTurn{}, err
-		}
 		skillTool := ""
 		if f.cfg.Context.SkillsEnabled {
 			skillTool = extras.NameSkill
 		}
 		system, err := agentctx.Build(agentctx.Prompt{
-			Upstream: prompt.System, Tools: prompt.Tools, Loaded: loaded,
+			Instructions: agentctx.Instructions, Tools: agentctx.ToolGuidance, Loaded: loaded,
 			WorkDir: turn.Cwd, AdditionalDirs: turn.Dirs, SkillTool: skillTool, Client: turn.SystemPrompt,
 		})
 		if err != nil {
@@ -327,10 +309,10 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		}
 		chain[i].Preparation = &router.Preparation{
 			ContextWindow: entry.Metadata.ContextWindow, MaxOutputTokens: entry.Metadata.MaxOutputTokens,
-			Interruption: prompt.Interruption, InterruptionRole: prompt.InterruptionRole, System: system,
+			Interruption: agentctx.Interruption, System: system,
 		}
 		if i == 0 {
-			firstPrompt, result.system = prompt, system
+			result.system = system
 		}
 		if client, ok := chain[i].Provider.(*openai.Client); ok {
 			scheme, err := f.accountScheme(entry.Account)
@@ -361,7 +343,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	result.resolved = loop.Resolved{
 		Provider: routed, Tools: assembled.Set, Model: first.Model,
 		ProviderName: first.Provider, ContextSize: first.Metadata.ContextWindow, MaxOutputTokens: first.Metadata.MaxOutputTokens,
-		Interruption: firstPrompt.Interruption, InterruptionRole: firstPrompt.InterruptionRole,
+		Interruption: agentctx.Interruption,
 	}
 	result.mapper = loop.Mapper{
 		Tools: assembled.Set,

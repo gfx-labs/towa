@@ -1,0 +1,25 @@
+{
+  "name": "todo",
+  "description": "Replace the session's task list. The client shows it as the plan. Send the whole list on every call, keep one item in_progress at a time, and mark an item completed when it is done.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "todos": {
+        "type": "array",
+        "description": "The whole list, in order.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "content": {"type": "string", "minLength": 1, "description": "What is to be done."},
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+            "activeForm": {"type": "string", "minLength": 1, "description": "Wording shown while the item is in progress, such as \"Running the tests\"."}
+          },
+          "required": ["content", "status", "activeForm"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["todos"],
+    "additionalProperties": false
+  }
+}

@@ -32,11 +32,10 @@ type Entry struct {
 // Preparation is supplied by model wiring for each actual chain entry.
 // A non-nil value must have positive context and output allowances.
 type Preparation struct {
-	ContextWindow    int64
-	MaxOutputTokens  int64
-	Interruption     string
-	InterruptionRole string
-	System           []provider.SystemBlock
+	ContextWindow   int64
+	MaxOutputTokens int64
+	Interruption    string
+	System          []provider.SystemBlock
 }
 
 // String returns the entry as a chain names it: provider:account/model.

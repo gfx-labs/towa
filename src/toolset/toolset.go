@@ -1,10 +1,11 @@
-// Package toolset joins the tools of one session: the dialect's, the
+// Package toolset joins the tools of one session: the core tools, the
 // extras and the MCP servers'. It holds the rules that belong to no single
-// tool. It imports no dialect: the caller passes the dialect's tools in.
+// tool. It imports no tool package: the caller passes the tools in.
 package toolset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -22,17 +23,14 @@ type Extra struct {
 
 // Input is what one session's tool set is made from.
 type Input struct {
-	// Dialect is "claude", "codex" or "generic". It names the set and is
-	// not looked up.
-	Dialect string
-	// Tools returns the dialect's tools, in the order the model is told
-	// about them.
+	// Tools returns the core tools, in the order the model is told about
+	// them.
 	Tools func() ([]tools.Tool, error)
-	// Extras follow the dialect's tools, in the order given.
+	// Extras follow the core tools, in the order given.
 	Extras []Extra
 	// Disabled are the names of the extras to leave out.
 	Disabled []string
-	// MCP is discovered once per session and reused across dialect changes.
+	// MCP is discovered once per session.
 	MCP []tools.Tool
 	// Gate is tools.gate. When it is enabled every tool's schema gets the
 	// member that asks for a withheld result.
@@ -52,7 +50,7 @@ type Result struct {
 // from a prompt that names it, so the session cannot start.
 type CollisionError struct {
 	Name string
-	// First and Second say where the two tools come from: "dialect", or
+	// First and Second say where the two tools come from: "core", "mcp", or
 	// "extra " and the extra's name.
 	First, Second string
 }
@@ -84,14 +82,14 @@ func (e *SchemaError) Error() string {
 
 func (e *SchemaError) Unwrap() error { return e.Err }
 
-const fromDialect = "dialect"
+const fromCore = "core"
 
-// Assemble returns the session's tools: the dialect's, then the extras that
+// Assemble returns the session's tools: the core tools, then the extras that
 // are not disabled, then the frozen MCP tools. MCP discovery belongs to the
-// session owner, not to dialect assembly.
+// session owner, not to assembly.
 func Assemble(ctx context.Context, in Input) (Result, error) {
 	if in.Tools == nil {
-		return Result{}, fmt.Errorf("toolset: dialect %q has no tools function", in.Dialect)
+		return Result{}, errors.New("toolset: there is no core tools function")
 	}
 	known := make([]string, len(in.Extras))
 	for i, e := range in.Extras {
@@ -103,7 +101,7 @@ func Assemble(ctx context.Context, in Input) (Result, error) {
 		}
 	}
 
-	set := tools.Set{Dialect: in.Dialect}
+	var set tools.Set
 	// owner maps a tool's name to where the tool comes from.
 	owner := map[string]string{}
 	add := func(from string, list []tools.Tool) error {
@@ -122,9 +120,9 @@ func Assemble(ctx context.Context, in Input) (Result, error) {
 
 	list, err := in.Tools()
 	if err != nil {
-		return Result{}, fmt.Errorf("toolset: dialect %q: %w", in.Dialect, err)
+		return Result{}, fmt.Errorf("toolset: core tools: %w", err)
 	}
-	if err := add(fromDialect, list); err != nil {
+	if err := add(fromCore, list); err != nil {
 		return Result{}, err
 	}
 	for _, e := range in.Extras {

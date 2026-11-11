@@ -1,7 +1,7 @@
 // Package tools is the contract between the agent loop and the tools a
-// model can call. The tool sets are in its subpackages: one implementation
-// per capability, with an adapter per dialect that gives it the upstream
-// name, schema, output text and error text.
+// model can call. The tools are in its subpackages: one package per
+// capability, and core, which gives each capability its name, schema,
+// output text and error text.
 package tools
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
-// Tool is one tool as one dialect presents it.
+// Tool is one tool as the model is offered it.
 type Tool struct {
 	// Spec is what the model is told about the tool.
 	Spec provider.Tool
@@ -95,12 +95,9 @@ type Result struct {
 	Content []acp.ToolCallContent
 }
 
-// Set is the tools one dialect offers, in the order the model is told about
-// them.
+// Set is a session's tools, in the order the model is told about them.
 type Set struct {
-	// Dialect is "claude", "codex" or "generic".
-	Dialect string
-	Tools   []Tool
+	Tools []Tool
 }
 
 // Lookup returns the tool with the given name.

@@ -1,0 +1,24 @@
+{
+  "name": "grep",
+  "description": "Search file contents with a ripgrep regular expression. Returns matching paths by default. Escape literal braces.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "pattern": {"type": "string", "description": "The regular expression."},
+      "path": {"type": "string", "description": "File or directory to search. Omit for the working directory."},
+      "glob": {"type": "string", "description": "Only search files matching this glob, such as \"*.go\"."},
+      "type": {"type": "string", "description": "Only search files of this ripgrep type, such as go, py or rust."},
+      "output_mode": {"type": "string", "enum": ["content", "files_with_matches", "count"], "description": "content returns matching lines, files_with_matches returns paths (the default), count returns matches per file."},
+      "-B": {"type": "integer", "minimum": 0, "description": "Lines to show before each match, in content mode."},
+      "-A": {"type": "integer", "minimum": 0, "description": "Lines to show after each match, in content mode."},
+      "context": {"type": "integer", "minimum": 0, "description": "Lines to show before and after each match, in content mode."},
+      "-n": {"type": "boolean", "description": "Show line numbers in content mode. Defaults to true."},
+      "-i": {"type": "boolean", "description": "Ignore case."},
+      "multiline": {"type": "boolean", "description": "Let a pattern span lines, with . matching a line break."},
+      "head_limit": {"type": "integer", "minimum": 0, "description": "Return at most this many lines or entries. Defaults to 250. 0 means no limit."},
+      "offset": {"type": "integer", "minimum": 0, "description": "Skip this many lines or entries first."}
+    },
+    "required": ["pattern"],
+    "additionalProperties": false
+  }
+}

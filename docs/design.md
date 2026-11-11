@@ -1,6 +1,6 @@
 # acpharness design
 
-acpharness is a Go coding agent that speaks the Agent Client Protocol (ACP). It runs Claude and Codex models with their upstream tool shapes over the user's subscriptions, other models over OpenAI-compatible APIs, and adds a small set of jcode harness features. It targets hundreds of concurrent sessions per Linux host, run directly or behind acphost.
+acpharness is a Go coding agent that speaks the Agent Client Protocol (ACP). It runs Claude and GPT models over the user's subscriptions and other models over OpenAI-compatible APIs, with one tool set and one system prompt of its own, and adds a small set of jcode harness features. It targets hundreds of concurrent sessions per Linux host, run directly or behind acphost.
 
 Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
@@ -10,7 +10,7 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 - Does real coding tasks locally as well as jcode does in a single session.
 - Low footprint per session: idle sessions use no CPU and little memory.
 - Claude OAuth, Codex OAuth, OpenAI Chat Completions and Responses, OpenRouter.
-- Upstream tool shapes and system prompts per model family, pinned by version.
+- One tool set and one system prompt, written in this repo and sent to every model.
 
 ## Non-goals (v1)
 
@@ -33,7 +33,7 @@ flowchart LR
   prov --> oai[openai responses / codex oauth]
   prov --> cc[chat completions / openrouter]
   loop --> tools[tool registry]
-  tools --> dialect[dialects: claude, codex, generic]
+  tools --> core[core tools]
   tools --> extras[extras: batch, gate, search, todo, web, subagent]
   tools --> mcp[mcp meta-tool]
   loop --> compact[compaction]
@@ -57,14 +57,14 @@ Packages:
 | `src/provider` | provider interface, router, fallback, retry |
 | `src/provider/{anthropic,openai,chat}` | wire clients |
 | `src/auth` | account store, OAuth login and refresh, file locking |
-| `src/tools` | registry, dialect selection, output gating |
-| `src/tools/{claude,codex,generic,extras}` | tool sets |
+| `src/tools` | registry, output gating |
+| `src/tools/{core,extras}` | tool sets |
+| `src/tools/patch` | the apply_patch format: parser and applier |
 | `src/mcp` | MCP client: stdio, streamable HTTP, legacy SSE, OAuth |
 | `src/compact` | reactive, proactive, semantic, OpenAI native |
 | `src/agentctx` | AGENTS.md, skills, extra files and directories |
 | `src/store` | store interface and backends |
 | `src/telemetry` | OTel traces and metrics, slog handlers |
-| `prompts/` | pinned upstream prompts and tool schemas, embedded |
 
 `src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. `pkg/acp` moved on 2026-11-11: protocol7's worker imports it as the client side, so both ends share schema 1.31.0.
 
@@ -106,7 +106,6 @@ models:
     # know, so the model states its figures.
     context_window: 1000000
     max_output_tokens: 128000
-    family: claude
   gpt:
     chain:
       - "codex:chatgpt/gpt-5.5"
@@ -185,10 +184,10 @@ One streaming interface returning a normalized event stream: text deltas, thinki
 Wire clients:
 
 - `anthropic`: Messages API, streaming, OAuth or API key. OAuth identity follows jcode's code and its probe (`docs/ANTHROPIC_OAUTH_IDENTITY_PROBE_2026_11_05.md` in jcode). The one required piece is the `x-anthropic-billing-header` text sent as the first system block (`cc_version=2.1.280; cc_entrypoint=...; cch=33f85;`), which Anthropic strips server-side, with jcode's OAuth beta header set. Without that block, Opus and Sonnet OAuth requests get HTTP 429. jcode sends its own user agent (`jcode/<version>`) and no `x-app`, `X-Stainless-*` or Claude Code session headers, because the probe found none of them are needed. acpharness sends `acpharness/<version>`, and the prompt names the agent as acpharness. jcode's branches differ on `cc_entrypoint` (`sdk-cli` on origin/master 8e11eb23e, `jcode` on build 037163c7b), so step 3 re-runs the probe before choosing.
-- `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with the Codex instructions. jcode's 2026-11-05 probe found the backend accepts any `originator`, so acpharness sends `acpharness`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
+- `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with acpharness's own instructions and function tools, as jcode does. jcode's 2026-11-05 probe found the backend accepts any `originator`, so acpharness sends `acpharness`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
 - `chat`: Chat Completions, streaming, for OpenRouter, z.ai, DeepSeek, OpenCode Go and others. OpenRouter extras: provider routing preferences, reasoning parameters, `HTTP-Referer` and `X-OpenRouter-Title` (the header OpenRouter's app attribution page documents).
 
-Model metadata (context window, max output, reasoning support, family, tool dialect) comes from a pinned table plus provider model listings (`/models` on OpenRouter), with config overrides. An unknown model with no metadata is an error at selection time, not a silent default.
+Model metadata (context window, max output) comes from a pinned table plus provider model listings (`/models` on OpenRouter), with config overrides. An unknown model with no metadata is an error at selection time, not a silent default.
 
 ### Accounts and fallback
 
@@ -211,19 +210,24 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 
 ## Tools
 
-### Dialects
+### Core tools
 
-| family | dialect | tools |
-|---|---|---|
-| Claude | `claude` | the tools captured from the pinned Claude Code version |
-| GPT, Codex | `codex` | the tools captured from the pinned Codex version |
-| other | resolved | the dialect of the family the model was distilled from when known, else `generic` |
+Every model gets the same tools and the same instructions. There is no per-family tool shape: jcode sends its own tool names and instructions to the Claude and ChatGPT subscription backends and both accept them, so copies of Claude Code's and Codex's prompts and schemas bought nothing and cost a capture pipeline, three adapters and a rule that a chain could not mix families (`docs/notes/2026-11-11-drop-dialects.md`).
 
-`generic` uses captured Claude Code shapes with explicitly harness-authored neutral descriptions and system instructions. Config can pin a dialect per model. Generic instructions accept the exact configured wire model without aliasing it to an upstream model. Pinned upstream prompt lookup remains exact and refuses unavailable variants.
+| tool | does |
+|---|---|
+| `read` | a text file with line numbers, or an image |
+| `write` | create or replace a whole file |
+| `edit` | replace one exact string in a file |
+| `apply_patch` | add, update, move and delete files from one patch |
+| `bash` | run a shell command |
+| `glob` | files by name pattern |
+| `grep` | file contents by regular expression, through `rg` |
+| `todo` | the plan, sent to the client as ACP `plan` updates |
 
-Each capability (read, write, edit, shell, search) has one implementation. A dialect adapter supplies the upstream tool name, schema, output text and error text. An adapter must behave as the upstream tool does, and is checked against outputs recorded from that upstream tool. Upstream prompts and schemas are copied into `prompts/<upstream>/<version>/` with the source commit, and a script diffs them against new upstream releases.
+Names, descriptions and schemas are in `src/tools/core/specs`. The instructions are `agentctx.Instructions`. A tool's limits come from `[tools]` configuration.
 
-Upstream pins follow jcode: Claude Code 2.1.280, the version its billing block names, and openai/codex ce0323f2 (2026-10-17), the newest commit it cites for the OAuth contract. jcode sends its own tool names on the Claude OAuth path and carries no captured upstream tool schemas, so acpharness captures tool names, descriptions, schemas and system prompts from those two versions in steps 3 and 4. nanocode holds captures for Claude Code 2.1.304 and openai/codex c6e4438a with a verification script, usable as a cross-check.
+`write` and `edit` refuse a file the session has not read, or one that changed since. `apply_patch` does not need the read: the hunk's context lines must match the file, which is the same check.
 
 ### Extras (on by default, each can be disabled)
 
@@ -231,7 +235,7 @@ Upstream pins follow jcode: Claude Code 2.1.280, the version its billing block n
 - `batch`: run several independent tool calls in one call, for models that do not emit parallel calls.
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
 - Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
-- Todo: maps to ACP `plan` updates. Uses TodoWrite or update_plan shapes in their dialects.
+- Todo: the `todo` tool maps to ACP `plan` updates.
 - Web: webfetch with HTML to Markdown. Web search uses the provider's built-in server tool (Anthropic web search, OpenAI Responses web search, OpenRouter web plugin). Users who want an external backend add a tool or an MCP server.
 - Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. It can also read other sessions by id, so a parent can read the sessions of the subagents it spawned. Scope is a config setting: `self`, `descendants` (the session and every subagent session below it, the default) or `store` (every session in the store, opt-in because a shared store holds other workers' sessions). Keyword matching first. Result and snippet limits come from config.
 - Argument repair: before validation, a tool input is repaired when a list or object argument arrives as a JSON string, a single object arrives where a list is declared, or a number or boolean arrives as a string. Each repair is counted in telemetry and logged, never silent. Anything else that fails the schema is returned to the model as an error.
@@ -268,7 +272,7 @@ Per-prompt limits from config or `_meta`: max tool calls, wall time, input and o
 
 - A `session/prompt` that arrives while a turn is running cancels that turn and starts the new one, as `acp-go-sdk` v0.13.5 does. The cancelled request returns the `cancelled` stop reason.
 - After a cancel, every in-flight tool call gets a result saying it was cancelled, so no tool call is left without a result.
-- The model is then told the turn was interrupted, with the dialect's upstream interruption message placed before the next user message. Codex: the `<turn_aborted>` message, which says the user interrupted on purpose and that aborted commands may have partly run. Claude Code: its request-interrupted message, to be confirmed against the pinned upstream version. Both texts are pinned with the other upstream prompts.
+- The model is then told the turn was interrupted: `agentctx.Interruption` is placed as a user message before the next user message. It says the user interrupted on purpose and that a running command may have partly run.
 
 ## Compaction
 
@@ -315,11 +319,11 @@ jev:
 
 ## System prompt
 
-The prompt is built from named sections in a fixed order: the dialect's upstream prompt, tools, rules, project context, skills, working directory, and any sections added by config. ACP `systemPrompt` on `session/new` maps onto them: `append` adds a section, and `override` replaces the default instruction sections and leaves tools, MCP servers and permissions alone. An unsupported mode is an error. Appending a changed section mid-session to keep the prompt cache is deferred until a measurement shows sections change mid-session.
+The prompt is built from named sections in a fixed order: the instructions, tools, rules, project context, skills, working directory, and any sections added by config. ACP `systemPrompt` on `session/new` maps onto them: `append` adds a section, and `override` replaces the default instruction sections and leaves tools, MCP servers and permissions alone. An unsupported mode is an error. Appending a changed section mid-session to keep the prompt cache is deferred until a measurement shows sections change mid-session.
 
 ## Context loading
 
-- AGENTS.md (and CLAUDE.md for Claude dialect) from the working directory up to the repository root, plus the global file.
+- AGENTS.md from the working directory up to the repository root, plus the global file.
 - Skills: directories with `SKILL.md`, listed by name and description in the system prompt and loaded on demand by a `skill` tool.
 - Extra files and directories from config or `_meta`.
 
@@ -454,7 +458,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 - ACP compliance: a conformance suite driving the agent over each transport, with our own client and with `acp-go-sdk` v0.13.5 as the client jobshop uses today (initialize, new, prompt, cancel mid-tool, load and replay, set_config_option for model and mode, set_mode, permission in ask mode).
 - Providers: recorded real responses per provider for the stream parser. Live checks against real subscriptions run by hand behind an env flag, not in CI. No tests against mocked providers.
-- Tools: each dialect adapter is checked against outputs recorded from the pinned upstream CLI.
+- Tools: each tool runs against real files, a real shell and the real `rg` in a temporary directory.
 - Tests use testify, as acphost does.
 - Task quality: about 10 real closed issues from acphost and jobshop, run on acpharness and jcode with the same model, comparing completion, turns, tokens and wall time.
 - Footprint: RSS and CPU for 1, 10 and 200 idle and active sessions, compared with jcode, measured by a reproducible script.
@@ -462,9 +466,9 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Implementation order
 
 1. Repo scaffold, config, slog and OTel, ACP server on stdio with `initialize`, `session/new`, `session/prompt`, `session/cancel`, and a stub loop. Done 2026-11-11: `docs/notes/2026-11-11-acp-layer.md` and `docs/notes/2026-11-11-config-telemetry-server.md`.
-2. Chat Completions provider (OpenRouter), generic dialect, agent loop with parallel tools, limits, cancellation. First real tasks run here.
-3. Anthropic provider with OAuth login, refresh and locking, Claude dialect with pinned prompts.
-4. Responses provider with Codex OAuth, Codex dialect, native compaction.
+2. Chat Completions provider (OpenRouter), core tools, agent loop with parallel tools, limits, cancellation. First real tasks run here.
+3. Anthropic provider with OAuth login, refresh and locking.
+4. Responses provider with Codex OAuth, native compaction.
 5. Model chains, fallback, retries, model switching through `session/set_config_option`, usage and cost reporting.
 6. Session store interface with a first backend, `session/load`, store benchmark.
 7. Extras: batch, output gating, search, todo and plan, web, subagents.
@@ -479,5 +483,4 @@ jobshop (origin/master 2b42e5fd, 2026-11-11) uses `acp-go-sdk` v0.13.5 and calls
 
 ## Open questions
 
-- Claude Code's interruption message text, to be read from the pinned upstream version.
 - Web search for chat providers without a built-in tool: none by default, user-supplied tool or MCP.

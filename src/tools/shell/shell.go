@@ -31,7 +31,7 @@ type Input struct {
 	Command string
 	// Program overrides the configured shell. Empty uses the configured one.
 	Program string
-	// Login runs the shell with -l. The dialect chooses its default.
+	// Login runs the shell with -l.
 	Login bool
 	// Dir is where the command runs. An empty Dir is the working directory,
 	// and a relative one is taken from it.

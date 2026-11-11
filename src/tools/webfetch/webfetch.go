@@ -1,7 +1,7 @@
 // Package webfetch fetches one URL and returns its content as text a model
 // can read: Markdown for an HTML page, the text itself for a text type. It
-// is one capability with typed input and a typed result. A dialect adapter
-// turns a result or an *Error into the upstream tool's words.
+// is one capability with typed input and a typed result. The tool that calls
+// it turns a result or an *Error into the text the model reads.
 package webfetch
 
 import (

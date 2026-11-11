@@ -1,0 +1,14 @@
+{
+  "name": "bash",
+  "description": "Run a shell command in the session's working directory and wait for it to finish. Output is limited. A command that runs past its timeout is stopped with its process group. Commands run without an operating system sandbox.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {"type": "string", "description": "The command to run."},
+      "timeout": {"type": "number", "description": "Timeout in milliseconds. It must be positive and within the configured maximum."},
+      "description": {"type": "string", "description": "A few plain words saying what the command does. The user sees this."}
+    },
+    "required": ["command"],
+    "additionalProperties": false
+  }
+}

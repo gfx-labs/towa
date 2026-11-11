@@ -17,7 +17,7 @@ import (
 )
 
 // AcceptMember is the member of a tool's argument that asks for a result
-// whatever its size. The design fixes the name for every dialect.
+// whatever its size. Every tool has it under this name.
 const AcceptMember = "accept_large_output"
 
 // ErrAcceptNotBoolean reports an AcceptMember that is not true or false.
@@ -25,8 +25,8 @@ var ErrAcceptNotBoolean = errors.New("gate: " + AcceptMember + " is not a boolea
 
 // Split takes AcceptMember out of a tool's argument and returns the rest
 // and the member's value. An argument that is not an object, or has no such
-// member, is returned as it is. A dialect whose schemas declare the member
-// runs repair first, so that "true" sent as a string is repaired there.
+// member, is returned as it is. The schemas declare the member and repair
+// runs first, so that "true" sent as a string is repaired there.
 func Split(input jsontext.Value) (rest jsontext.Value, accept bool, err error) {
 	if input.Kind() != '{' || !bytes.Contains(input, []byte(AcceptMember)) {
 		return input, false, nil
@@ -95,7 +95,7 @@ type Summary struct {
 	StoreErr error
 }
 
-// Text is the summary in plain words, for a dialect with none of its own.
+// Text is the summary in plain words.
 func (s Summary) Text() string {
 	return fmt.Sprintf(
 		"The result is about %d tokens (%d bytes, %d lines), over the limit of %d tokens, and was withheld. "+

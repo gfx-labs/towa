@@ -5,8 +5,6 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -110,8 +108,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 			require.Equal(t, provider.ReasonRequest, got.Reason)
 			require.Equal(t, before, requests.Load())
 			req.Credential = cred
-			native, err := os.ReadFile(filepath.Join("..", "tools", "codex", "specs", "apply_patch.json"))
-			require.NoError(t, err)
+			native := jsontext.Value(`{"type":"custom","name":"apply_patch","description":"Apply a patch. The input is the patch text."}`)
 			ownAPI := map[string]provider.NativeAPI{"responses": provider.NativeAPIResponses, "messages": provider.NativeAPIMessages, "chat": provider.NativeAPIChatCompletions}[api]
 			for _, tag := range []provider.NativeAPI{"", provider.NativeAPIResponses, provider.NativeAPIMessages, provider.NativeAPIChatCompletions} {
 				if tag == ownAPI {

@@ -56,7 +56,7 @@ type Resolved struct {
 	// Provider answers the turn's model requests. It is the router over the
 	// model's chain, which sets each request's model and credential.
 	Provider provider.Provider
-	// Tools is the tool set of the model's dialect.
+	// Tools is the session's tool set.
 	Tools tools.Set
 	// Model is the provider's own name for the model, of the chain's first
 	// entry. It is for logs: the router names the model of each request.
@@ -71,11 +71,9 @@ type Resolved struct {
 	// when zero.
 	MaxOutputTokens int64
 	Effort          string
-	// Interruption is the dialect's text that tells the model the turn
-	// before was interrupted. It is required.
+	// Interruption is the text that tells the model the turn before was
+	// interrupted. It is required.
 	Interruption string
-	// InterruptionRole is empty or user for a user message, or developer.
-	InterruptionRole string
 }
 
 // Loop runs prompt turns. It keeps nothing between turns: a session's
@@ -508,9 +506,6 @@ func (tn *turn) resolve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := ConversationWithRole(nil, model.Interruption, model.InterruptionRole); err != nil {
-		return fmt.Errorf("loop: model %q interruption role: %w", tn.t.Model, err)
-	}
 	tn.model, tn.schemas = model, schemas
 	tn.mapper = Mapper{Tools: model.Tools}
 	if model.ContextSize > 0 {
@@ -553,7 +548,7 @@ func (tn *turn) load(ctx context.Context) error {
 		}
 		tn.parent = entry.ID
 	}
-	_, repairs, err := ConversationWithRole(history, tn.model.Interruption, tn.model.InterruptionRole)
+	_, repairs, err := Conversation(history, tn.model.Interruption)
 	if err != nil {
 		return err
 	}

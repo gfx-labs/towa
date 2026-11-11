@@ -1,9 +1,8 @@
 // Package todo is the todo list capability: it checks one list from the
 // model and returns it with the plan a client is shown. It holds no state,
-// because the upstream tools it serves (Claude Code's TodoWrite and Codex's
-// update_plan) send the whole list on every call. A dialect adapter turns
-// the upstream input into a List and a Result or an *Error into the
-// upstream tool's words.
+// because the model sends the whole list on every call. The tool in
+// src/tools/core turns its input into a List and a Result or an *Error into
+// the text the model reads.
 package todo
 
 import (

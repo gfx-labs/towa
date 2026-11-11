@@ -2,8 +2,8 @@ package models
 
 // builtin holds the models whose figures were read from a source, by the
 // provider's own model id. A model that is not here needs its figures in
-// the configuration (models.<name>.context_window, max_output_tokens and
-// family or dialect). Add a row only with the source it was read from.
+// the configuration (models.<name>.context_window and max_output_tokens).
+// Add a row only with the source it was read from.
 //
 // A name a gateway gives a model ("anthropic/claude-opus-4.7" on
 // OpenRouter) is a different id and is not matched: the window that counts
@@ -26,19 +26,19 @@ package models
 //	    and, for Haiku 4.5, 64K, "per the published model comparison
 //	    table").
 var builtin = map[string]Metadata{
-	"claude-fable-5-2":  {ContextWindow: 1_000_000, MaxOutputTokens: 128_000, Family: FamilyClaude}, // [A]
-	"claude-opus-5-5":   {ContextWindow: 1_000_000, MaxOutputTokens: 128_000, Family: FamilyClaude}, // [A]
-	"claude-sonnet-5-5": {ContextWindow: 1_000_000, MaxOutputTokens: 128_000, Family: FamilyClaude}, // [A]
-	"claude-haiku-5-5":  {ContextWindow: 1_000_000, MaxOutputTokens: 128_000, Family: FamilyClaude}, // [A]
+	"claude-fable-5-2":  {ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, // [A]
+	"claude-opus-5-5":   {ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, // [A]
+	"claude-sonnet-5-5": {ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, // [A]
+	"claude-haiku-5-5":  {ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, // [A]
 
-	"claude-opus-4-8":   {ContextWindow: 1_000_000, MaxOutputTokens: 128_000, Family: FamilyClaude}, // [J]
-	"claude-opus-4-7":   {ContextWindow: 1_000_000, MaxOutputTokens: 128_000, Family: FamilyClaude}, // [J]
-	"claude-opus-4-6":   {ContextWindow: 200_000, MaxOutputTokens: 128_000, Family: FamilyClaude},   // [J]
-	"claude-sonnet-4-6": {ContextWindow: 200_000, MaxOutputTokens: 128_000, Family: FamilyClaude},   // [J]
-	"claude-haiku-4-5":  {ContextWindow: 200_000, MaxOutputTokens: 64_000, Family: FamilyClaude},    // [J]
+	"claude-opus-4-8":   {ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, // [J]
+	"claude-opus-4-7":   {ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, // [J]
+	"claude-opus-4-6":   {ContextWindow: 200_000, MaxOutputTokens: 128_000},   // [J]
+	"claude-sonnet-4-6": {ContextWindow: 200_000, MaxOutputTokens: 128_000},   // [J]
+	"claude-haiku-4-5":  {ContextWindow: 200_000, MaxOutputTokens: 64_000},    // [J]
 
-	"gpt-6-astra":   {ContextWindow: 1_050_000, MaxOutputTokens: 128_000, Family: FamilyGPT}, // [O]
-	"gpt-6.1-sol":   {ContextWindow: 1_050_000, MaxOutputTokens: 128_000, Family: FamilyGPT}, // [O]
-	"gpt-6.1-terra": {ContextWindow: 1_050_000, MaxOutputTokens: 128_000, Family: FamilyGPT}, // [O]
-	"gpt-6-luna":    {ContextWindow: 1_050_000, MaxOutputTokens: 128_000, Family: FamilyGPT}, // [O]
+	"gpt-6-astra":   {ContextWindow: 1_050_000, MaxOutputTokens: 128_000}, // [O]
+	"gpt-6.1-sol":   {ContextWindow: 1_050_000, MaxOutputTokens: 128_000}, // [O]
+	"gpt-6.1-terra": {ContextWindow: 1_050_000, MaxOutputTokens: 128_000}, // [O]
+	"gpt-6-luna":    {ContextWindow: 1_050_000, MaxOutputTokens: 128_000}, // [O]
 }

@@ -198,9 +198,8 @@ type Compaction struct {
 	Mode string `json:"mode"`
 }
 
-// Interrupted marks that the turn before it was cancelled. The dialect
-// renders it as the upstream interruption message when the next request is
-// built.
+// Interrupted marks that the turn before it was cancelled. It is rendered
+// as the interruption message when the next request is built.
 type Interrupted struct{}
 
 // Part is one piece of content in a user message or a tool result. Exactly

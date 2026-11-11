@@ -1,0 +1,13 @@
+{
+  "name": "write",
+  "description": "Create a file or replace its whole content. Read an existing file in this session before overwriting it. Use edit or apply_patch for a partial change.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {"type": "string", "description": "Absolute path of the file."},
+      "content": {"type": "string", "description": "The file's new content."}
+    },
+    "required": ["file_path", "content"],
+    "additionalProperties": false
+  }
+}

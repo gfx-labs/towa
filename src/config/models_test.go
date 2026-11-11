@@ -34,7 +34,6 @@ func TestValidateModelSet(t *testing.T) {
 		"a default that names no model":              {"gpt", chain("claude:work/claude-opus-4-7")},
 		"no default beside configured models":        {"", chain("claude:work/claude-opus-4-7")},
 		"a default without any model":                {"opus", nil},
-		"a dialect that does not exist":              {"opus", map[string]Model{"opus": {Chain: []string{"claude:work/x"}, Dialect: "gemini"}}},
 		"a negative context window":                  {"opus", map[string]Model{"opus": {Chain: []string{"claude:work/x"}, ContextWindow: -1}}},
 		"a negative output limit":                    {"opus", map[string]Model{"opus": {Chain: []string{"claude:work/x"}, MaxOutputTokens: -1}}},
 		"a second model that is wrong, default fine": {"opus", map[string]Model{"opus": {Chain: []string{"claude:work/x"}}, "other": {}}},

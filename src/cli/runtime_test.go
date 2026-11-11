@@ -20,7 +20,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/models"
 	"github.com/gfx-labs/acpharness/src/telemetry"
 	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/claude"
+	"github.com/gfx-labs/acpharness/src/tools/core"
 	"github.com/gfx-labs/acpharness/src/tools/fsops"
 	"github.com/gfx-labs/acpharness/src/transcript"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -73,9 +73,9 @@ func TestRuntimeOwnsMCPInventoryAndReadAuthority(t *testing.T) {
 	path := filepath.Join(home, "authority.txt")
 	require.NoError(t, os.WriteFile(path, []byte("before\n"), 0o600))
 	roots := fsops.RootsOf(tools.Env{Cwd: home}, cfg.Tools.Files)
-	_, err = claude.ReadFile(t.Context(), roots, cfg.Tools.Files, parent.reads, fsops.ReadInput{Path: path})
+	_, err = core.ReadFile(t.Context(), roots, cfg.Tools.Files, parent.reads, fsops.ReadInput{Path: path})
 	require.NoError(t, err)
-	var unread *claude.UnreadError
+	var unread *core.UnreadError
 	err = child.reads.Edit(t.Context(), path, func() error { return os.WriteFile(path, []byte("child\n"), 0o600) })
 	require.ErrorAs(t, err, &unread)
 	body, err := os.ReadFile(path)

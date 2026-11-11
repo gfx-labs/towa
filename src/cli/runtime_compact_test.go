@@ -48,7 +48,7 @@ func TestRuntimeRetainsSemanticEmbeddingAcrossTurns(t *testing.T) {
 	cfg := loaded.Config
 	cfg.DefaultModel = "first"
 	model := config.Model{
-		Chain: []string{"abort:local/gpt-5.5"}, Dialect: config.DialectCodex,
+		Chain:         []string{"abort:local/gpt-5.5"},
 		ContextWindow: looptest.ContextSize, MaxOutputTokens: 1024,
 	}
 	cfg.Models = map[string]config.Model{"first": model, "second": model}

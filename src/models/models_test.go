@@ -32,22 +32,20 @@ func TestResolveAModelFromItsChain(t *testing.T) {
 	var unknown *models.MetadataError
 	require.ErrorAs(t, err, &unknown)
 	require.Equal(t, "openrouter:main/anthropic/claude-opus-4.7", unknown.Entry)
-	require.Equal(t, []string{"context_window", "max_output_tokens", "family"}, unknown.Missing)
+	require.Equal(t, []string{"context_window", "max_output_tokens"}, unknown.Missing)
 
 	// The first two entries alone resolve from the table.
 	direct, err := models.Resolve("opus", config.Model{Chain: chain[:2]})
 	require.NoError(t, err)
-	require.Equal(t, config.DialectClaude, direct.Dialect)
-	require.Equal(t, models.FamilyClaude, direct.Entries[0].Metadata.Family)
 	require.Positive(t, direct.Entries[0].Metadata.ContextWindow)
 
 	// A figure in the configuration applies to every entry, so the whole
 	// chain resolves, and it replaces the table's figure.
-	whole, err := models.Resolve("opus", config.Model{Chain: chain, ContextWindow: 150_000, MaxOutputTokens: 30_000, Family: "claude"})
+	whole, err := models.Resolve("opus", config.Model{Chain: chain, ContextWindow: 150_000, MaxOutputTokens: 30_000})
 	require.NoError(t, err)
 	require.Len(t, whole.Entries, 3)
 	for _, e := range whole.Entries {
-		require.Equal(t, models.Metadata{ContextWindow: 150_000, MaxOutputTokens: 30_000, Family: "claude"}, e.Metadata)
+		require.Equal(t, models.Metadata{ContextWindow: 150_000, MaxOutputTokens: 30_000}, e.Metadata)
 	}
 
 	clients := map[string]provider.Provider{"claude": client{"claude"}, "openrouter": client{"openrouter"}}
@@ -68,41 +66,12 @@ func TestResolveAModelFromItsChain(t *testing.T) {
 	require.Equal(t, "openrouter", noClient.Provider)
 }
 
-func TestDialect(t *testing.T) {
-	known := config.Model{ContextWindow: 100_000, MaxOutputTokens: 8_000}
-	with := func(change func(*config.Model)) config.Model {
-		m := known
-		change(&m)
-		return m
-	}
-	tests := []struct {
-		name string
-		cfg  config.Model
-		want string
-	}{
-		{"a Claude model", config.Model{Chain: []string{"claude:work/claude-opus-4-7"}}, config.DialectClaude},
-		{"a GPT model", config.Model{Chain: []string{"codex:work/gpt-6.1-sol"}}, config.DialectCodex},
-		{"another family", with(func(m *config.Model) { m.Chain, m.Family = []string{"zai:main/glm-5"}, "glm" }), config.DialectGeneric},
-		{"a pinned dialect, with no family", with(func(m *config.Model) { m.Chain, m.Dialect = []string{"zai:main/glm-5"}, config.DialectClaude }), config.DialectClaude},
-		{"a pinned dialect over the family's", config.Model{Chain: []string{"codex:work/gpt-6.1-sol"}, Dialect: config.DialectGeneric}, config.DialectGeneric},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := models.Resolve("m", tt.cfg)
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got.Dialect)
-		})
-	}
-
-	// A fallback happens inside a turn, where the tools cannot change.
-	mixed := config.Model{Chain: []string{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}}
-	_, err := models.Resolve("m", mixed)
-	var dialects *models.DialectError
-	require.ErrorAs(t, err, &dialects)
-	require.Equal(t, []string{config.DialectClaude, config.DialectCodex}, dialects.Dialects)
-	mixed.Dialect = config.DialectClaude
-	_, err = models.Resolve("m", mixed)
+// A chain may mix providers: every model gets the same tools, so a fallback
+// inside a turn changes nothing the model was told.
+func TestAChainMayMixProviders(t *testing.T) {
+	mixed, err := models.Resolve("m", config.Model{Chain: []string{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}})
 	require.NoError(t, err)
+	require.Len(t, mixed.Entries, 2)
 }
 
 // Select from a real config file, as the wiring will call it.
