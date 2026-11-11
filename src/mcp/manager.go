@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -388,9 +389,9 @@ func (m *Manager) connect(ctx context.Context, s Server) (*live, error) {
 	// connection. The timeout and the caller's cancellation are applied by
 	// hand and taken off again once initialize has answered.
 	connCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	var timedOut bool
+	var timedOut atomic.Bool
 	timer := time.AfterFunc(m.connectTimeout, func() {
-		timedOut = true
+		timedOut.Store(true)
 		cancel()
 	})
 	stopFollowing := context.AfterFunc(ctx, cancel)
@@ -419,14 +420,14 @@ func (m *Manager) connect(ctx context.Context, s Server) (*live, error) {
 		}
 	}
 	session, err := client.Connect(connCtx, transport, nil)
-	stopped := timer.Stop()
+	timer.Stop()
 	stopFollowing()
 	if err != nil {
 		cancel()
 		if stdio != nil && stdio.proc != nil {
 			stdio.proc.stop()
 		}
-		if !stopped && timedOut {
+		if timedOut.Load() {
 			return nil, fmt.Errorf("mcp: server %q did not answer initialize within mcp.connect_timeout_seconds (%s): %w",
 				s.Name, m.connectTimeout, err)
 		}
