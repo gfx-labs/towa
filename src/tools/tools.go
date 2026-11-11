@@ -7,6 +7,7 @@ package tools
 import (
 	"context"
 	"encoding/json/jsontext"
+	"io"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/src/provider"
@@ -70,8 +71,18 @@ type Env struct {
 	// Dirs are the session's additional directories, absolute paths.
 	Dirs []string
 	// Progress sends content to the client while the tool runs. It may be
-	// called any number of times, and not at all.
+	// called any number of times, and not at all. Each call carries only
+	// new content: the loop appends it to what it has already sent, since
+	// the content of an ACP tool call update replaces what the client has.
+	// Progress is nil when nobody is listening, so a tool checks before
+	// calling it.
 	Progress func(ctx context.Context, content []acp.ToolCallContent) error
+	// PutBlob keeps content in the session's store, outside the transcript,
+	// and returns the reference to put in a result's Parts beside the text
+	// the model gets. Output gating uses it for the full output it left out.
+	// PutBlob is nil when the session has no store. The full output is then
+	// not kept, and the model can still get it by running the call again.
+	PutBlob func(ctx context.Context, mimeType string, content io.Reader) (transcript.Stored, error)
 }
 
 // Result is the outcome of one call.
