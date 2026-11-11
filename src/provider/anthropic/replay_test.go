@@ -1,0 +1,332 @@
+package anthropic_test
+
+import (
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
+	"io"
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/gfx-labs/acpharness/src/auth"
+	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/provider/anthropic"
+	"github.com/gfx-labs/acpharness/src/provider/providertest"
+	"github.com/gfx-labs/acpharness/src/transcript"
+)
+
+// Recordings are made from a real account and never written by hand:
+//
+//	ACPHARNESS_RECORD_ANTHROPIC=1 ACPHARNESS_ANTHROPIC_MODEL=... ANTHROPIC_API_KEY=... \
+//	    go test ./src/provider/anthropic -run TestExchange/api_
+//	ACPHARNESS_RECORD_ANTHROPIC=1 ACPHARNESS_CLAUDE_MODEL=... ACPHARNESS_CLAUDE_OAUTH_TOKEN=... \
+//	    go test ./src/provider/anthropic -run TestExchange/oauth_
+//
+// The OAuth model has to be Opus or Sonnet: Haiku accepts a request without
+// the billing block, so it proves nothing about the request shape. A
+// recording holds the model it was made with. Without the record variable a
+// scenario replays its file, and is skipped when the file does not exist.
+const (
+	recordEnv = "ACPHARNESS_RECORD_ANTHROPIC"
+	// version is fixed so that the user agent of a replay matches the
+	// recording.
+	version = "recording"
+)
+
+type scenario struct {
+	name     string
+	scheme   auth.Scheme
+	prompt   string
+	tools    []provider.Tool
+	thinking anthropic.Thinking
+	effort   string
+	// maxOutput is what the scenario needs. Thinking needs room.
+	maxOutput int64
+	// badToken sends a token the API rejects, to record the refusal.
+	badToken bool
+	check    func(t *testing.T, events []provider.Event, err error)
+}
+
+var readTool = provider.Tool{
+	Name:        "read",
+	Description: "Read a file and return its content.",
+	InputSchema: jsontext.Value(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
+}
+
+func scenarios() []scenario {
+	var out []scenario
+	for _, ep := range []struct {
+		prefix string
+		scheme auth.Scheme
+	}{{"api_", auth.SchemeAPIKey}, {"oauth_", auth.SchemeOAuth}} {
+		out = append(out,
+			scenario{
+				name: ep.prefix + "text", scheme: ep.scheme, maxOutput: 256,
+				prompt: "Reply with the single word: ready",
+				check:  checkText,
+			},
+			scenario{
+				name: ep.prefix + "tool_call", scheme: ep.scheme, maxOutput: 1024,
+				prompt: "Read the file notes.txt with the read tool.", tools: []provider.Tool{readTool},
+				check: checkToolCall,
+			},
+			scenario{
+				name: ep.prefix + "thinking", scheme: ep.scheme, maxOutput: 4096, effort: "low",
+				thinking: anthropic.Thinking{Mode: anthropic.ThinkingAdaptive, Display: "summarized"},
+				prompt:   "Think about which is larger, 2^10 or 10^3, then read the file notes.txt with the read tool.",
+				tools:    []provider.Tool{readTool},
+				check:    checkThinking,
+			},
+			scenario{
+				name: ep.prefix + "max_tokens", scheme: ep.scheme, maxOutput: 16,
+				prompt: "Write three paragraphs about rivers.",
+				check: func(t *testing.T, events []provider.Event, err error) {
+					require.NoError(t, err)
+					require.Equal(t, provider.StopMaxTokens, events[len(events)-1].Stop)
+				},
+			},
+			scenario{
+				name: ep.prefix + "rejected_credential", scheme: ep.scheme, maxOutput: 16, badToken: true,
+				prompt: "Reply with the single word: ready",
+				check: func(t *testing.T, _ []provider.Event, err error) {
+					var perr *provider.Error
+					require.ErrorAs(t, err, &perr)
+					require.Equal(t, provider.ReasonAuth, perr.Reason)
+					require.Equal(t, provider.Fallback, perr.Class)
+				},
+			},
+		)
+	}
+	return out
+}
+
+func checkText(t *testing.T, events []provider.Event, err error) {
+	require.NoError(t, err)
+	var deltas, finished strings.Builder
+	for _, ev := range events {
+		deltas.WriteString(ev.TextDelta)
+		if ev.Item != nil && ev.Item.Text != nil {
+			finished.WriteString(ev.Item.Text.Text)
+		}
+	}
+	require.NotEmpty(t, finished.String())
+	require.Equal(t, finished.String(), deltas.String(), "the deltas add up to the finished text")
+	require.Equal(t, provider.StopEndTurn, events[len(events)-1].Stop)
+	checkUsageBeforeStop(t, events)
+}
+
+func checkToolCall(t *testing.T, events []provider.Event, err error) {
+	require.NoError(t, err)
+	progress := map[string]*strings.Builder{}
+	var call *transcript.ToolCall
+	for _, ev := range events {
+		if ev.ToolCall != nil {
+			if progress[ev.ToolCall.ID] == nil {
+				progress[ev.ToolCall.ID] = &strings.Builder{}
+			}
+			progress[ev.ToolCall.ID].WriteString(ev.ToolCall.InputDelta)
+		}
+		if ev.Item != nil && ev.Item.ToolCall != nil {
+			call = ev.Item.ToolCall
+		}
+	}
+	require.NotNil(t, call, "the response holds a tool call")
+	require.Equal(t, jsontext.Kind('{'), call.Input.Kind())
+	require.Contains(t, progress, call.ID, "progress was reported under the call's id")
+	require.JSONEq(t, string(call.Input), progress[call.ID].String(), "the deltas add up to the input")
+	require.Equal(t, provider.StopToolUse, events[len(events)-1].Stop)
+	checkUsageBeforeStop(t, events)
+}
+
+func checkThinking(t *testing.T, events []provider.Event, err error) {
+	checkToolCall(t, events, err)
+	var thinking *transcript.Item
+	for _, ev := range events {
+		if ev.Item != nil && ev.Item.Thinking != nil {
+			thinking = ev.Item
+		}
+	}
+	require.NotNil(t, thinking, "the response holds thinking")
+	require.NotEmpty(t, thinking.Opaque, "the signature is kept for the next request")
+}
+
+func checkUsageBeforeStop(t *testing.T, events []provider.Event) {
+	require.GreaterOrEqual(t, len(events), 2)
+	usage := events[len(events)-2].Usage
+	require.NotNil(t, usage, "usage comes before the stop")
+	require.Positive(t, usage.OutputTokens)
+	require.Positive(t, usage.InputTokens+usage.CacheReadTokens+usage.CacheWriteTokens)
+}
+
+func (s scenario) request(model string, cred auth.Credential) provider.Request {
+	return provider.Request{
+		Model: model, Credential: cred,
+		System:          []provider.SystemBlock{{Name: "instructions", Text: "You are acpharness, a coding agent under test. Follow the user's request exactly."}},
+		Items:           []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: s.prompt}}}}},
+		Tools:           s.tools,
+		Effort:          s.effort,
+		MaxOutputTokens: s.maxOutput,
+	}
+}
+
+func (s scenario) config(httpClient *http.Client, baseURL string) anthropic.Config {
+	return anthropic.Config{
+		HTTPClient: httpClient, Version: version, BaseURL: baseURL,
+		Thinking: func(string) anthropic.Thinking { return s.thinking },
+	}
+}
+
+func TestExchange(t *testing.T) {
+	recording := os.Getenv(recordEnv) != ""
+	for _, s := range scenarios() {
+		t.Run(s.name, func(t *testing.T) {
+			path := filepath.Join("testdata", s.name+".json")
+			cred := auth.Credential{Account: "recorded", Scheme: s.scheme, Token: providertest.Redacted}
+			httpClient := httpclient.New()
+			var model, baseURL string
+			if recording {
+				model, cred.Token = os.Getenv("ACPHARNESS_ANTHROPIC_MODEL"), os.Getenv("ANTHROPIC_API_KEY")
+				if s.scheme == auth.SchemeOAuth {
+					model, cred.Token = os.Getenv("ACPHARNESS_CLAUDE_MODEL"), os.Getenv("ACPHARNESS_CLAUDE_OAUTH_TOKEN")
+				}
+				if cred.Token == "" || model == "" {
+					t.Skip("the credential or the model for this scheme is not in the environment")
+				}
+				if s.badToken {
+					cred.Token = "acpharness-rejected-credential"
+				}
+				require.NoError(t, os.MkdirAll("testdata", 0o755))
+				httpClient.Transport = &providertest.Recorder{Next: httpClient.Transport, Path: path, Secrets: []string{cred.Token}}
+			} else {
+				ex, err := providertest.Load(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					t.Skipf("%s has not been recorded", path)
+				}
+				require.NoError(t, err)
+				var body struct {
+					Model string `json:"model"`
+				}
+				require.NoError(t, json.Unmarshal(ex.Request.Body, &body))
+				model = body.Model
+				// The request id is new for every request.
+				baseURL = providertest.Replay(t, path, providertest.IgnoreHeader("X-Client-Request-Id")).URL
+			}
+			client, err := anthropic.New(s.config(httpClient, baseURL))
+			require.NoError(t, err)
+
+			req := s.request(model, cred)
+			var events []provider.Event
+			var streamErr error
+			for ev, err := range client.Stream(t.Context(), req) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+				events = append(events, ev)
+			}
+			s.check(t, events, streamErr)
+
+			// What came back must be sendable: the next request is built
+			// from these items.
+			for _, ev := range events {
+				if ev.Item != nil {
+					require.NoError(t, ev.Item.Validate())
+					require.Equal(t, anthropic.Provider, ev.Item.Provider)
+					req.Items = append(req.Items, *ev.Item)
+				}
+			}
+			requireBuilds(t, s, req)
+		})
+	}
+}
+
+// requireBuilds sends req to an address nothing listens on. A request the
+// client cannot build from its items fails before that, as an invalid
+// request.
+func requireBuilds(t *testing.T, s scenario, req provider.Request) {
+	t.Helper()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	client, err := anthropic.New(s.config(httpclient.New(), closed.URL))
+	require.NoError(t, err)
+	for _, err := range client.Stream(t.Context(), req) {
+		var perr *provider.Error
+		require.ErrorAs(t, err, &perr)
+		require.Equal(t, provider.ReasonNetwork, perr.Reason, "the request was built and sent: %v", err)
+	}
+}
+
+// sent is a request as it arrived at a server.
+type sent struct {
+	header http.Header
+	query  string
+	body   string
+}
+
+// capture sends req and returns what arrived. The server answers 500: only
+// the request is looked at.
+func capture(t *testing.T, cfg anthropic.Config, req provider.Request) sent {
+	t.Helper()
+	var got sent
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		got = sent{header: r.Header.Clone(), query: r.URL.RawQuery, body: string(body)}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	cfg.HTTPClient, cfg.Version, cfg.BaseURL = httpclient.New(), version, server.URL
+	client, err := anthropic.New(cfg)
+	require.NoError(t, err)
+	for _, err := range client.Stream(t.Context(), req) {
+		require.Error(t, err)
+	}
+	require.NotEmpty(t, got.body, "the request reached the server")
+	return got
+}
+
+// A proxy that holds the account's token swaps the authorization and
+// nothing else, so a proxied credential must not change any other byte.
+func TestProxiedCredentialGetsTheSameRequest(t *testing.T) {
+	for _, scheme := range []auth.Scheme{auth.SchemeOAuth, auth.SchemeAPIKey} {
+		t.Run(string(scheme), func(t *testing.T) {
+			s := scenario{prompt: "hello", tools: []provider.Tool{readTool}, maxOutput: 64}
+			cfg := anthropic.Config{Thinking: func(string) anthropic.Thinking {
+				return anthropic.Thinking{Mode: anthropic.ThinkingAdaptive}
+			}}
+			held := capture(t, cfg, s.request("model", auth.Credential{Account: "work", Scheme: scheme, Token: "placeholder"}))
+			proxied := capture(t, cfg, s.request("model", auth.Credential{Account: "work", Scheme: scheme, Token: "placeholder", Proxied: true}))
+
+			// The request id is new for every request.
+			held.header.Del("X-Client-Request-Id")
+			proxied.header.Del("X-Client-Request-Id")
+			require.Equal(t, held, proxied)
+		})
+	}
+}
+
+// Thinking and native items carry data only their provider can read. An
+// item from another provider is sent without it, or not at all.
+func TestOpaqueOfAnotherProviderIsNotSent(t *testing.T) {
+	const marker = "opaque-of-another-provider"
+	opaque := jsontext.Value(`{"signature":"` + marker + `","redacted_data":"` + marker + `","type":"` + marker + `"}`)
+	req := scenario{prompt: "hello", maxOutput: 64}.request("model", auth.Credential{Scheme: auth.SchemeAPIKey, Token: "placeholder"})
+	req.Items = append(req.Items,
+		transcript.Item{Thinking: &transcript.Thinking{Text: "thought elsewhere"}, Provider: "openai", Opaque: opaque},
+		transcript.Item{Native: &transcript.Native{Kind: "compaction"}, Provider: "openai", Opaque: opaque},
+		transcript.Item{Text: &transcript.Text{Text: "an answer"}, Provider: "openai", Opaque: opaque},
+		transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "go on"}}}},
+	)
+	got := capture(t, anthropic.Config{}, req)
+	require.NotContains(t, got.body, marker)
+	require.NotContains(t, got.body, "thought elsewhere")
+	require.Contains(t, got.body, "an answer")
+}
