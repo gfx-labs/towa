@@ -15,12 +15,14 @@ import (
 	"github.com/gfx-labs/acpharness/src/config"
 )
 
-// Change is what a write or an edit did to one file.
+// Change is what a write, an edit or a remove did to one file.
 type Change struct {
-	// Path is the absolute path that was written, with links followed.
+	// Path is the absolute path that was changed, with links followed.
 	Path string
 	// Existed says the file was there before.
 	Existed bool
+	// Removed says the file is gone. NewText is then empty.
+	Removed bool
 	// OldText is the content before. It is empty when the file did not
 	// exist or OldBinary is set.
 	OldText string
@@ -31,7 +33,10 @@ type Change struct {
 
 // Diff returns the change as ACP shows a file modification: the old and the
 // new text, which the client diffs itself. A file that was new or was not
-// text has no old text.
+// text has no old text. ACP's diff has no way to say a file was removed:
+// a removal is the old text against empty new text, which is also what
+// emptying a file looks like, so a caller that shows a removal says so in
+// the call's title or kind as well.
 func (c Change) Diff() acp.ToolCallContent {
 	diff := &acp.ToolCallContentDiff{Path: c.Path, NewText: c.NewText, Type: "diff"}
 	if c.Existed && !c.OldBinary {
@@ -169,6 +174,66 @@ func ApplyEdits(ctx context.Context, roots Roots, cfg config.ToolsFiles, in Edit
 		Change:   Change{Path: loc.abs(), Existed: true, OldText: string(old), NewText: text},
 		Replaced: replaced,
 	}, nil
+}
+
+// ReadText returns the whole of a text file and its absolute path, with
+// links followed. It is for a caller that rewrites the file, so the limit
+// is EditMaxBytes. A file that is not UTF-8 is KindBinary.
+func ReadText(ctx context.Context, roots Roots, cfg config.ToolsFiles, path string) (abs, text string, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
+	loc, err := roots.locate(path)
+	if err != nil {
+		return "", "", err
+	}
+	root, err := loc.open()
+	if err != nil {
+		return "", "", err
+	}
+	defer root.Close() //nolint:errcheck // nothing was written through it
+	data, _, err := readWhole(root, loc.rel, path, cfg.EditMaxBytes)
+	if err != nil {
+		return "", "", err
+	}
+	if !utf8.Valid(data) {
+		return "", "", &Error{Kind: KindBinary, Path: path}
+	}
+	return loc.abs(), string(data), nil
+}
+
+// Remove deletes one regular file. The Change holds the text it had, when
+// it was text of at most EditMaxBytes: a larger file is refused, because
+// the client could not be shown what was removed. A path that is a
+// symbolic link names the file the link points to, as it does for a write:
+// that file is removed and the link is left pointing nowhere.
+func Remove(ctx context.Context, roots Roots, cfg config.ToolsFiles, path string) (Change, error) {
+	if err := ctx.Err(); err != nil {
+		return Change{}, err
+	}
+	loc, err := roots.locate(path)
+	if err != nil {
+		return Change{}, err
+	}
+	root, err := loc.open()
+	if err != nil {
+		return Change{}, err
+	}
+	defer root.Close() //nolint:errcheck // the remove is checked where it happens
+	old, _, err := readWhole(root, loc.rel, path, cfg.EditMaxBytes)
+	if err != nil {
+		return Change{}, err
+	}
+	change := Change{Path: loc.abs(), Existed: true, Removed: true}
+	if utf8.Valid(old) {
+		change.OldText = string(old)
+	} else {
+		change.OldBinary = true
+	}
+	if err := root.Remove(loc.rel); err != nil {
+		return Change{}, classify(path, err)
+	}
+	return change, nil
 }
 
 // readWhole reads a regular file of at most limit bytes.

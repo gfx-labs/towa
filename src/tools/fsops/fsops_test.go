@@ -249,6 +249,90 @@ func TestWriteCreatesAndReplacesAndReportsTheChange(t *testing.T) {
 	}
 }
 
+func TestReadTextReturnsAWholeFileForRewriting(t *testing.T) {
+	roots, outside := session(t)
+	cfg, ctx := filesConfig(t), context.Background()
+	// Longer than a line-ranged read allows, and still within the edit limit.
+	cfg.ReadMaxBytes = 10
+	body := strings.Repeat("line\n", 100)
+	put(t, filepath.Join(roots.Cwd, "big.txt"), body)
+
+	abs, text, err := fsops.ReadText(ctx, roots, cfg, "big.txt")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(roots.Cwd, "big.txt"), abs)
+	require.Equal(t, body, text)
+
+	put(t, filepath.Join(roots.Cwd, "latin1.txt"), "caf\xe9\n")
+	_, _, err = fsops.ReadText(ctx, roots, cfg, "latin1.txt")
+	requireKind(t, err, fsops.KindBinary)
+	_, _, err = fsops.ReadText(ctx, roots, cfg, "absent.txt")
+	requireKind(t, err, fsops.KindNotFound)
+	_, _, err = fsops.ReadText(ctx, roots, cfg, ".")
+	requireKind(t, err, fsops.KindIsDirectory)
+	cfg.EditMaxBytes = 100
+	_, _, err = fsops.ReadText(ctx, roots, cfg, "big.txt")
+	require.Equal(t, int64(500), requireKind(t, err, fsops.KindTooLarge).Size)
+
+	roots.Confine = true
+	_, _, err = fsops.ReadText(ctx, roots, cfg, filepath.Join(outside, "secret.txt"))
+	requireKind(t, err, fsops.KindOutside)
+}
+
+func TestRemoveDeletesOneFileAndReportsWhatItHeld(t *testing.T) {
+	roots, outside := session(t)
+	cfg, ctx := filesConfig(t), context.Background()
+
+	change, err := fsops.Remove(ctx, roots, cfg, "in.txt")
+	require.NoError(t, err)
+	require.True(t, change.Removed)
+	require.Equal(t, "inside\n", change.OldText)
+	diff := change.Diff().Diff
+	require.Equal(t, filepath.Join(roots.Cwd, "in.txt"), diff.Path)
+	require.Equal(t, "inside\n", *diff.OldText)
+	require.Empty(t, diff.NewText)
+	require.NoFileExists(t, filepath.Join(roots.Cwd, "in.txt"))
+
+	_, err = fsops.Remove(ctx, roots, cfg, "in.txt")
+	requireKind(t, err, fsops.KindNotFound)
+	require.NoError(t, os.Mkdir(filepath.Join(roots.Cwd, "dir"), 0o755))
+	_, err = fsops.Remove(ctx, roots, cfg, "dir")
+	requireKind(t, err, fsops.KindIsDirectory)
+	require.DirExists(t, filepath.Join(roots.Cwd, "dir"))
+
+	// A move is a write to the new path and a remove of the old one.
+	_, text, err := fsops.ReadText(ctx, roots, cfg, filepath.Join(roots.Dirs[0], "more.txt"))
+	require.NoError(t, err)
+	_, err = fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: "moved/more.txt", Content: text})
+	require.NoError(t, err)
+	_, err = fsops.Remove(ctx, roots, cfg, filepath.Join(roots.Dirs[0], "more.txt"))
+	require.NoError(t, err)
+	require.NoFileExists(t, filepath.Join(roots.Dirs[0], "more.txt"))
+	got, err := os.ReadFile(filepath.Join(roots.Cwd, "moved/more.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "extra\n", string(got))
+	// And a file just written can be removed again.
+	change, err = fsops.Remove(ctx, roots, cfg, "moved/more.txt")
+	require.NoError(t, err)
+	require.Equal(t, "extra\n", change.OldText)
+
+	// A file that is not text is removed without its content being kept.
+	put(t, filepath.Join(roots.Cwd, "blob"), "\x00\xff\x00")
+	change, err = fsops.Remove(ctx, roots, cfg, "blob")
+	require.NoError(t, err)
+	require.True(t, change.OldBinary)
+	require.Nil(t, change.Diff().Diff.OldText)
+
+	secret := filepath.Join(outside, "secret.txt")
+	confined := roots
+	confined.Confine = true
+	_, err = fsops.Remove(ctx, confined, cfg, secret)
+	requireKind(t, err, fsops.KindOutside)
+	require.FileExists(t, secret)
+	_, err = fsops.Remove(ctx, roots, cfg, secret)
+	require.NoError(t, err)
+	require.NoFileExists(t, secret)
+}
+
 func TestEditReplacesExactTextOnce(t *testing.T) {
 	roots, _ := session(t)
 	cfg, ctx := filesConfig(t), context.Background()
