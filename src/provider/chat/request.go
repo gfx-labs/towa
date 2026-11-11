@@ -1,0 +1,436 @@
+package chat
+
+import (
+	"encoding/base64"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"fmt"
+	"strings"
+
+	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/transcript"
+)
+
+// wireRequest is the body of a Chat Completions request.
+type wireRequest struct {
+	Model         string           `json:"model"`
+	Messages      []wireMessage    `json:"messages"`
+	Stream        bool             `json:"stream"`
+	StreamOptions *streamOptions   `json:"stream_options,omitzero"`
+	Tools         []jsontext.Value `json:"tools,omitzero"`
+	MaxTokens     int64            `json:"max_tokens,omitzero"`
+	// ReasoningEffort is the OpenAI member. Reasoning is OpenRouter's.
+	ReasoningEffort string         `json:"reasoning_effort,omitzero"`
+	Reasoning       *wireReasoning `json:"reasoning,omitzero"`
+	Provider        *wireRouting   `json:"provider,omitzero"`
+	PromptCacheKey  string         `json:"prompt_cache_key,omitzero"`
+	SessionID       string         `json:"session_id,omitzero"`
+}
+
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+type wireReasoning struct {
+	Effort  string `json:"effort,omitzero"`
+	Exclude bool   `json:"exclude,omitzero"`
+}
+
+// wireRouting is OpenRouter's provider object.
+type wireRouting struct {
+	Order                  []string           `json:"order,omitzero"`
+	Only                   []string           `json:"only,omitzero"`
+	Ignore                 []string           `json:"ignore,omitzero"`
+	AllowFallbacks         *bool              `json:"allow_fallbacks,omitzero"`
+	RequireParameters      *bool              `json:"require_parameters,omitzero"`
+	DataCollection         string             `json:"data_collection,omitzero"`
+	ZDR                    *bool              `json:"zdr,omitzero"`
+	Sort                   string             `json:"sort,omitzero"`
+	Quantizations          []string           `json:"quantizations,omitzero"`
+	MaxPrice               map[string]float64 `json:"max_price,omitzero"`
+	PreferredMinThroughput float64            `json:"preferred_min_throughput,omitzero"`
+	PreferredMaxLatency    float64            `json:"preferred_max_latency,omitzero"`
+}
+
+type wireMessage struct {
+	Role string `json:"role"`
+	// Content is a JSON string, or an array of parts for a user message
+	// that has more than text. It is left out of an assistant message that
+	// has only tool calls.
+	Content    jsontext.Value `json:"content,omitzero"`
+	ToolCalls  []wireToolCall `json:"tool_calls,omitzero"`
+	ToolCallID string         `json:"tool_call_id,omitzero"`
+	// The three reasoning members are how different endpoints take a
+	// model's reasoning back. At most one is set.
+	Reasoning        string           `json:"reasoning,omitzero"`
+	ReasoningContent string           `json:"reasoning_content,omitzero"`
+	ReasoningDetails []jsontext.Value `json:"reasoning_details,omitzero"`
+}
+
+type wireToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function wireFunction `json:"function"`
+	// ExtraContent is returned as it came. Gemini keeps a thought signature
+	// in it.
+	ExtraContent jsontext.Value `json:"extra_content,omitzero"`
+}
+
+type wireFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type wireTool struct {
+	Type     string      `json:"type"`
+	Function wireToolDef `json:"function"`
+}
+
+type wireToolDef struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitzero"`
+	Parameters  jsontext.Value `json:"parameters,omitzero"`
+}
+
+type wirePart struct {
+	Type       string     `json:"type"`
+	Text       string     `json:"text,omitzero"`
+	ImageURL   *wireURL   `json:"image_url,omitzero"`
+	InputAudio *wireAudio `json:"input_audio,omitzero"`
+}
+
+type wireURL struct {
+	URL string `json:"url"`
+}
+
+type wireAudio struct {
+	Data   string `json:"data"`
+	Format string `json:"format"`
+}
+
+// thinkingOpaque is the Opaque of a Thinking item this client produced: how
+// the reasoning arrived, so that it goes back the same way.
+type thinkingOpaque struct {
+	// Field is the delta member the text came in: "reasoning" or
+	// "reasoning_content". It is empty when the text came only in Details.
+	Field string `json:"field,omitzero"`
+	// Details is OpenRouter's reasoning_details, merged from the deltas.
+	Details []jsontext.Value `json:"details,omitzero"`
+}
+
+// toolCallOpaque is the Opaque of a ToolCall item this client produced.
+type toolCallOpaque struct {
+	ExtraContent jsontext.Value `json:"extra_content,omitzero"`
+}
+
+func invalid(format string, args ...any) *provider.Error {
+	return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf(format, args...)}
+}
+
+// body encodes the request.
+func (c *Client) body(req provider.Request) ([]byte, *provider.Error) {
+	if req.Model == "" {
+		return nil, invalid("request has no model")
+	}
+	w := wireRequest{Model: req.Model, Stream: true, MaxTokens: req.MaxOutputTokens}
+	or := c.cfg.OpenRouter
+	if or.Enabled {
+		if req.Effort != "" || or.Reasoning.Exclude {
+			w.Reasoning = &wireReasoning{Effort: req.Effort, Exclude: or.Reasoning.Exclude}
+		}
+		w.Provider = routing(or.Routing)
+	} else {
+		w.ReasoningEffort = req.Effort
+		// OpenRouter always reports usage and documents this member as
+		// having no effect. Other endpoints report usage only when asked.
+		w.StreamOptions = &streamOptions{IncludeUsage: true}
+	}
+	switch c.cfg.CacheKeyField {
+	case config.CacheKeyPromptCacheKey:
+		w.PromptCacheKey = req.CacheKey
+	case config.CacheKeySessionID:
+		w.SessionID = req.CacheKey
+	}
+
+	if system := systemText(req.System); system != "" {
+		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: jsonString(system)})
+	}
+	msgs, perr := c.messages(req.Items)
+	if perr != nil {
+		return nil, perr
+	}
+	w.Messages = append(w.Messages, msgs...)
+	if len(w.Messages) == 0 {
+		return nil, invalid("request has no system prompt and no items")
+	}
+
+	for i, t := range req.Tools {
+		if t.Native != nil {
+			w.Tools = append(w.Tools, t.Native)
+			continue
+		}
+		if t.Name == "" {
+			return nil, invalid("tools[%d] has no name", i)
+		}
+		def, err := json.Marshal(wireTool{Type: "function", Function: wireToolDef{
+			Name: t.Name, Description: t.Description, Parameters: t.InputSchema,
+		}})
+		if err != nil {
+			return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("tool %q", t.Name), Err: err}
+		}
+		w.Tools = append(w.Tools, def)
+	}
+
+	out, err := json.Marshal(w)
+	if err != nil {
+		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: "encode request", Err: err}
+	}
+	return out, nil
+}
+
+// routing returns the provider object, or nil when no preference is set.
+func routing(r config.OpenRouterRouting) *wireRouting {
+	w := wireRouting{
+		Order: r.Order, Only: r.Only, Ignore: r.Ignore,
+		AllowFallbacks: r.AllowFallbacks, RequireParameters: r.RequireParameters,
+		DataCollection: r.DataCollection, ZDR: r.ZDR, Sort: r.Sort,
+		Quantizations: r.Quantizations, MaxPrice: r.MaxPrice,
+		PreferredMinThroughput: r.PreferredMinThroughputTPS, PreferredMaxLatency: r.PreferredMaxLatencySeconds,
+	}
+	if len(w.Order)+len(w.Only)+len(w.Ignore)+len(w.Quantizations)+len(w.MaxPrice) == 0 &&
+		w.AllowFallbacks == nil && w.RequireParameters == nil && w.ZDR == nil &&
+		w.DataCollection == "" && w.Sort == "" && w.PreferredMinThroughput == 0 && w.PreferredMaxLatency == 0 {
+		return nil
+	}
+	return &w
+}
+
+// systemText joins the sections into the one system message the protocol
+// has. Chat Completions has no cache breakpoints of its own.
+func systemText(blocks []provider.SystemBlock) string {
+	var texts []string
+	for _, b := range blocks {
+		if b.Text != "" {
+			texts = append(texts, b.Text)
+		}
+	}
+	return strings.Join(texts, "\n\n")
+}
+
+func jsonString(s string) jsontext.Value {
+	v, err := jsontext.AppendQuote(nil, s)
+	if err != nil {
+		// Only invalid UTF-8 fails, and the encoder then reports it for
+		// the whole request.
+		return jsontext.Value(`"` + s + `"`)
+	}
+	return v
+}
+
+// messages turns the conversation into wire messages. Thinking, text and
+// tool calls that follow one another are one assistant message, as the
+// model wrote them in one response.
+func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Error) {
+	var out []wireMessage
+	var cur *wireMessage // the assistant message being built
+	var text strings.Builder
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		if text.Len() > 0 {
+			cur.Content = jsonString(text.String())
+		}
+		// Reasoning alone is not a message an endpoint accepts.
+		if cur.Content != nil || len(cur.ToolCalls) > 0 {
+			out = append(out, *cur)
+		}
+		cur = nil
+		text.Reset()
+	}
+	assistant := func() *wireMessage {
+		if cur == nil {
+			cur = &wireMessage{Role: "assistant"}
+		}
+		return cur
+	}
+
+	for i, item := range items {
+		if err := item.Validate(); err != nil {
+			return nil, invalid("items[%d]: %v", i, err)
+		}
+		mine := item.Provider == c.cfg.ID
+		switch {
+		case item.User != nil:
+			flush()
+			content, perr := userContent(i, item.User.Parts)
+			if perr != nil {
+				return nil, perr
+			}
+			if content != nil {
+				out = append(out, wireMessage{Role: "user", Content: content})
+			}
+		case item.Text != nil:
+			text.WriteString(item.Text.Text)
+			assistant()
+		case item.Thinking != nil:
+			// Another provider's reasoning has no plain form here.
+			if !mine || item.Opaque == nil {
+				continue
+			}
+			var op thinkingOpaque
+			if err := json.Unmarshal(item.Opaque, &op); err != nil {
+				return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
+			}
+			m := assistant()
+			switch {
+			case len(op.Details) > 0:
+				m.ReasoningDetails = append(m.ReasoningDetails, op.Details...)
+			case op.Field == fieldReasoningContent:
+				m.ReasoningContent += item.Thinking.Text
+			case op.Field == fieldReasoning:
+				m.Reasoning += item.Thinking.Text
+			default:
+				return nil, invalid("items[%d]: thinking opaque names the field %q", i, op.Field)
+			}
+		case item.ToolCall != nil:
+			tc := item.ToolCall
+			if tc.ID == "" || tc.Name == "" {
+				return nil, invalid("items[%d]: tool call has no id or no name", i)
+			}
+			args, perr := arguments(i, tc.Input)
+			if perr != nil {
+				return nil, perr
+			}
+			call := wireToolCall{ID: tc.ID, Type: "function", Function: wireFunction{Name: tc.Name, Arguments: args}}
+			if mine && item.Opaque != nil {
+				var op toolCallOpaque
+				if err := json.Unmarshal(item.Opaque, &op); err != nil {
+					return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
+				}
+				call.ExtraContent = op.ExtraContent
+			}
+			m := assistant()
+			m.ToolCalls = append(m.ToolCalls, call)
+		case item.ToolResult != nil:
+			flush()
+			tr := item.ToolResult
+			if tr.CallID == "" {
+				return nil, invalid("items[%d]: tool result has no call id", i)
+			}
+			var b strings.Builder
+			for j, p := range tr.Parts {
+				switch {
+				case p.Stored != nil:
+				case p.Text != "":
+					b.WriteString(p.Text)
+				case p.Resource != nil && p.Resource.Data == nil:
+					b.WriteString(p.Resource.Text)
+				case p.Link != nil:
+					b.WriteString(linkText(p.Link))
+				case p.Image != nil, p.Audio != nil, p.Resource != nil:
+					// A tool message is text. Moving the content into a
+					// user message would put it between tool results,
+					// which endpoints reject.
+					return nil, invalid("items[%d].parts[%d]: a Chat Completions tool result cannot carry binary content", i, j)
+				default:
+					return nil, invalid("items[%d].parts[%d]: part has nothing set", i, j)
+				}
+			}
+			out = append(out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(b.String())})
+		case item.Native != nil:
+			// This client produces no native items, so one tagged with
+			// its provider is not something it can send back.
+			if mine {
+				return nil, invalid("items[%d]: native item of kind %q", i, item.Native.Kind)
+			}
+		default:
+			return nil, invalid("items[%d]: not an item a request can hold", i)
+		}
+	}
+	flush()
+	return out, nil
+}
+
+// arguments returns a tool call's argument as the text the model wrote. A
+// JSON string holds text that was not valid JSON, and goes back unquoted.
+func arguments(i int, input jsontext.Value) (string, *provider.Error) {
+	if input.Kind() != '"' {
+		return string(input), nil
+	}
+	var s string
+	if err := json.Unmarshal(input, &s); err != nil {
+		return "", &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: tool call input", i), Err: err}
+	}
+	return s, nil
+}
+
+func linkText(l *transcript.Link) string {
+	if l.Name == "" {
+		return l.URI
+	}
+	return "[" + l.Name + "](" + l.URI + ")"
+}
+
+// userContent returns a user message's content: a string when every part is
+// text, and an array of parts otherwise. It is nil when no part is sent.
+func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Error) {
+	var wire []wirePart
+	plain := true
+	for j, p := range parts {
+		switch {
+		case p.Stored != nil:
+		case p.Text != "":
+			wire = append(wire, wirePart{Type: "text", Text: p.Text})
+		case p.Image != nil:
+			plain = false
+			wire = append(wire, imagePart(p.Image.MimeType, p.Image.Data))
+		case p.Audio != nil:
+			format, ok := strings.CutPrefix(p.Audio.MimeType, "audio/")
+			if !ok || format == "" {
+				return nil, invalid("items[%d].parts[%d]: %q is not an audio type", i, j, p.Audio.MimeType)
+			}
+			plain = false
+			wire = append(wire, wirePart{Type: "input_audio", InputAudio: &wireAudio{
+				Data: base64.StdEncoding.EncodeToString(p.Audio.Data), Format: format,
+			}})
+		case p.Resource != nil:
+			r := p.Resource
+			switch {
+			case r.Data == nil:
+				wire = append(wire, wirePart{Type: "text", Text: r.Text})
+			case strings.HasPrefix(r.MimeType, "image/"):
+				plain = false
+				wire = append(wire, imagePart(r.MimeType, r.Data))
+			default:
+				return nil, invalid("items[%d].parts[%d]: Chat Completions cannot carry a resource of type %q", i, j, r.MimeType)
+			}
+		case p.Link != nil:
+			wire = append(wire, wirePart{Type: "text", Text: linkText(p.Link)})
+		default:
+			return nil, invalid("items[%d].parts[%d]: part has nothing set", i, j)
+		}
+	}
+	if len(wire) == 0 {
+		return nil, nil
+	}
+	if plain {
+		texts := make([]string, len(wire))
+		for k, p := range wire {
+			texts[k] = p.Text
+		}
+		return jsonString(strings.Join(texts, "\n\n")), nil
+	}
+	out, err := json.Marshal(wire)
+	if err != nil {
+		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
+	}
+	return out, nil
+}
+
+func imagePart(mimeType string, data []byte) wirePart {
+	return wirePart{Type: "image_url", ImageURL: &wireURL{
+		URL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data),
+	}}
+}

@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/chat/completions",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/test"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"llama3.2:3b\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ready\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":64}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Content-Type": [
+        "text/event-stream"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:56:13 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "data: {\"id\":\"chatcmpl-403\",\"object\":\"chat.completion.chunk\",\"created\":1794405373,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Ready\"},\"finish_reason\":null}]}\n\n"
+      },
+      {
+        "text": "data: {\"id\":\"chatcmpl-403\",\"object\":\"chat.completion.chunk\",\"created\":1794405373,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\".\"},\"finish_reason\":null}]}\n\n"
+      },
+      {
+        "text": "data: {\"id\":\"chatcmpl-403\",\"object\":\"chat.completion.chunk\",\"created\":1794405373,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"chatcmpl-403\",\"object\":\"chat.completion.chunk\",\"created\":1794405373,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[],\"usage\":{\"prompt_tokens\":32,\"completion_tokens\":3,\"total_tokens\":35}}\n\ndata: [DONE]\n\n"
+      }
+    ],
+    "incomplete": true
+  }
+}

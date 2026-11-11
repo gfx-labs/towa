@@ -1,0 +1,42 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/chat/completions",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/test"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"acpharness-no-such-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true}}"
+    }
+  },
+  "response": {
+    "status": 404,
+    "header": {
+      "Content-Length": [
+        "117"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:56:13 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "{\"error\":{\"message\":\"model 'acpharness-no-such-model' not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
+      }
+    ]
+  }
+}

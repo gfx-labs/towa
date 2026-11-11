@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/chat/completions",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/test"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"llama3.2:3b\",\"messages\":[{\"role\":\"user\",\"content\":\"Call the shell tool with the command: ls /tmp\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"shell\",\"description\":\"Run a shell command.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"max_tokens\":256}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Content-Type": [
+        "text/event-stream"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:56:41 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "data: {\"id\":\"chatcmpl-227\",\"object\":\"chat.completion.chunk\",\"created\":1794405401,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"call_bqqk3o7g\",\"index\":0,\"type\":\"function\",\"function\":{\"name\":\"shell\",\"arguments\":\"{\\\"object\\\":\\\"{\\\\\\\"command\\\\\\\":{\\\\\\\"type\\\\\\\":\\\\\\\"string\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"ls /tmp\\\\\\\"\\\"}\"}}]},\"finish_reason\":null}]}\n\n"
+      },
+      {
+        "text": "data: {\"id\":\"chatcmpl-227\",\"object\":\"chat.completion.chunk\",\"created\":1794405401,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":\"tool_calls\"}]}\n\ndata: {\"id\":\"chatcmpl-227\",\"object\":\"chat.completion.chunk\",\"created\":1794405401,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[],\"usage\":{\"prompt_tokens\":151,\"completion_tokens\":31,\"total_tokens\":182}}\n\ndata: [DONE]\n\n"
+      }
+    ],
+    "incomplete": true
+  }
+}
