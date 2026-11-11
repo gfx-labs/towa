@@ -90,6 +90,9 @@ func (c *Client) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 }
 
 func (c *Client) stream(ctx context.Context, req provider.Request, yield func(provider.Event, error) bool) *provider.Error {
+	if req.Credential.Account == "" {
+		return invalid("the request credential names no account")
+	}
 	if _, perr := c.contextName(req.Credential); perr != nil {
 		return perr
 	}

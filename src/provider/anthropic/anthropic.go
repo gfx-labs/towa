@@ -22,6 +22,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
 // Values of the wire protocol.
@@ -191,6 +192,9 @@ func (c *Client) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 // stream returns the error to yield. It returns nil once the stream has
 // stopped or the consumer has broken out of the range.
 func (c *Client) stream(ctx context.Context, req provider.Request, yield func(provider.Event, error) bool) *provider.Error {
+	if req.Credential.Account == "" {
+		return invalidRequest("the request credential names no account")
+	}
 	body, thinking, perr := c.buildRequest(req)
 	if perr != nil {
 		return perr
@@ -230,7 +234,7 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 		}
 	}
 
-	state := newStreamState(c.cfg.Provider, req.Model)
+	state := newStreamState(c.cfg.Provider, transcript.Origin{Model: req.Model, Account: req.Credential.Account})
 	for ev, err := range sse.Events(resp.Body) {
 		if err != nil {
 			return transportError(ctx, "read stream", err)

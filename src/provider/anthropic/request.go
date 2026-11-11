@@ -182,7 +182,7 @@ func (c *Client) buildRequest(req provider.Request) (*wireRequest, Thinking, *pr
 		out.Tools = append(out.Tools, lastTool)
 	}
 
-	messages, perr := c.buildMessages(req.Items)
+	messages, perr := c.buildMessages(transcript.Origin{Model: req.Model, Account: req.Credential.Account}, req.Items)
 	if perr != nil {
 		return nil, Thinking{}, perr
 	}
@@ -249,7 +249,7 @@ func markMessage(m *message, mark func() *cacheControl) {
 // buildMessages turns items into messages. Neighbouring items of one role
 // share a message, because the API wants every tool result in the message
 // right after its call.
-func (c *Client) buildMessages(items []transcript.Item) ([]*message, *provider.Error) {
+func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item) ([]*message, *provider.Error) {
 	var out []*message
 	add := func(role string, blocks ...any) {
 		if len(blocks) == 0 {
@@ -265,8 +265,8 @@ func (c *Client) buildMessages(items []transcript.Item) ([]*message, *provider.E
 		if err := item.Validate(); err != nil {
 			return nil, invalidRequest(fmt.Sprintf("item %d: %v", i, err))
 		}
-		// Opaque is read only on an item this provider produced.
-		own := item.Provider == c.cfg.Provider && len(item.Opaque) > 0
+		// Opaque replay requires exact request provenance.
+		own := item.OpaqueCompatible(c.cfg.Provider, origin)
 		switch {
 		case item.User != nil:
 			if item.User.Role != "" && item.User.Role != "user" {
@@ -301,6 +301,9 @@ func (c *Client) buildMessages(items []transcript.Item) ([]*message, *provider.E
 				return nil, invalidRequest(fmt.Sprintf("item %d: thinking has neither a signature nor redacted data", i))
 			}
 		case item.ToolCall != nil:
+			if len(item.Opaque) > 0 {
+				return nil, invalidRequest(fmt.Sprintf("item %d: Messages cannot preserve opaque tool call extensions", i))
+			}
 			input, perr := toolInput(item.ToolCall)
 			if perr != nil {
 				return nil, perr
@@ -318,9 +321,10 @@ func (c *Client) buildMessages(items []transcript.Item) ([]*message, *provider.E
 		case item.Native != nil:
 			// Every native item of this API is a block of the assistant's
 			// message, such as a server tool's use and its result.
-			if own {
-				add("assistant", item.Opaque)
+			if !own {
+				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
 			}
+			add("assistant", item.Opaque)
 		default:
 			return nil, invalidRequest(fmt.Sprintf("item %d is not one a model request can hold", i))
 		}

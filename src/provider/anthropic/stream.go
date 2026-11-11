@@ -72,13 +72,14 @@ type block struct {
 
 type streamState struct {
 	provider string
+	origin   transcript.Origin
 	usage    transcript.Usage
 	blocks   map[int64]*block
 	stop     string
 }
 
-func newStreamState(providerName, model string) *streamState {
-	return &streamState{provider: providerName, usage: transcript.Usage{Model: model}, blocks: map[int64]*block{}}
+func newStreamState(providerName string, origin transcript.Origin) *streamState {
+	return &streamState{provider: providerName, origin: origin, usage: transcript.Usage{Model: origin.Model}, blocks: map[int64]*block{}}
 }
 
 func protocolError(msg string) *provider.Error {
@@ -207,6 +208,7 @@ func (s *streamState) stopBlock(ev streamEvent, yield func(provider.Event, error
 	if perr != nil || item == nil {
 		return false, perr
 	}
+	item.Origin = &transcript.Origin{Model: s.origin.Model, Account: s.origin.Account}
 	return !yield(provider.Event{Item: item}, nil), nil
 }
 

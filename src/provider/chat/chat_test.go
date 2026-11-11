@@ -44,7 +44,7 @@ func openRouter(routing config.OpenRouterRouting) config.Provider {
 func conversation(providerID string) []transcript.Item {
 	return []transcript.Item{
 		{User: &transcript.User{Parts: []transcript.Part{{Text: "list the files"}}}},
-		{Thinking: &transcript.Thinking{Text: "I should look."}, Provider: providerID, Opaque: jsontext.Value(`{"field":"reasoning_content"}`)},
+		{Thinking: &transcript.Thinking{Text: "I should look."}, Provider: providerID, Opaque: jsontext.Value(`{"field":"reasoning_content"}`), Origin: &transcript.Origin{Model: "deepseek-chat", Account: "main"}},
 		{Text: &transcript.Text{Text: "Looking."}, Provider: providerID},
 		{ToolCall: &transcript.ToolCall{ID: "call_1", Name: "shell", Input: jsontext.Value(`{"command":"ls"}`)}, Provider: providerID},
 		// Arguments that were not valid JSON are stored in a JSON string.
@@ -64,9 +64,10 @@ func conversation(providerID string) []transcript.Item {
 func TestRequestBodyForAPlainEndpoint(t *testing.T) {
 	c := newClient(t, config.Provider{ID: "deepseek", CacheKeyField: config.CacheKeyPromptCacheKey})
 	body, perr := c.body(provider.Request{
-		Model:  "deepseek-chat",
-		System: []provider.SystemBlock{{Name: "base", Text: "You are an agent."}, {Name: "empty"}, {Name: "rules", Text: "Be brief."}},
-		Items:  conversation("deepseek"),
+		Model:      "deepseek-chat",
+		Credential: auth.Credential{Account: "main"},
+		System:     []provider.SystemBlock{{Name: "base", Text: "You are an agent."}, {Name: "empty"}, {Name: "rules", Text: "Be brief."}},
+		Items:      conversation("deepseek"),
 		Tools: []provider.Tool{
 			{Name: "shell", Description: "Run a command.", InputSchema: jsontext.Value(`{"type":"object","properties":{"command":{"type":"string"}}}`)},
 			{NativeAPI: provider.NativeAPIChatCompletions, Native: jsontext.Value(`{"type":"web_search"}`)},
@@ -161,7 +162,7 @@ func TestRequestRejectsWhatItCannotSend(t *testing.T) {
 // here in two pieces. The merged detail must go back in the next request.
 func TestReasoningDetailsGoBackAsTheyCame(t *testing.T) {
 	c := newClient(t, openRouter(config.OpenRouterRouting{}))
-	s := &streamState{client: c, req: provider.Request{Model: "m"}, status: http.StatusOK}
+	s := &streamState{client: c, req: provider.Request{Model: "m", Credential: auth.Credential{Account: "main"}}, status: http.StatusOK}
 	for _, data := range []string{
 		`{"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"Let me think about this ","signature":null,"id":"reasoning-text-1","format":"anthropic-claude-v1","index":0}]}}]}`,
 		`{"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"step by step...","signature":"sig","index":0}]}}]}`,
@@ -177,7 +178,7 @@ func TestReasoningDetailsGoBackAsTheyCame(t *testing.T) {
 	require.Equal(t, provider.StopEndTurn, s.out[2].Stop)
 
 	user := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}
-	body, perr := c.body(provider.Request{Model: "m", Items: []transcript.Item{user, *thinking, *s.out[1].Item}})
+	body, perr := c.body(provider.Request{Model: "m", Credential: auth.Credential{Account: "main"}, Items: []transcript.Item{user, *thinking, *s.out[1].Item}})
 	require.Nil(t, perr)
 	require.JSONEq(t, `{"model":"m","stream":true,"messages":[
 		{"role":"user","content":"hi"},

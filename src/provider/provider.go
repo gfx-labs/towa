@@ -32,7 +32,8 @@ type ContextNamer interface {
 // Request is one model request.
 type Request struct {
 	// Model is the provider's own name for the model.
-	Model      string
+	Model string
+	// Credential must name its account so response provenance is complete.
 	Credential auth.Credential
 	// System holds the system prompt's sections in order. A client adds
 	// what its credential's scheme requires, such as the Claude OAuth

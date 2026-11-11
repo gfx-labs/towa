@@ -13,6 +13,7 @@ import (
 	"github.com/valyala/bytebufferpool"
 
 	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
 // websocketBeta selects version 2 of the Responses WebSocket protocol, the
@@ -245,7 +246,7 @@ func (c *Client) finishSocket(key socketKey, sock *socket, own string, input []j
 		// The next request renders this response's items from the
 		// transcript. They are rendered the same way here, so that the
 		// prefix it sends hashes to the same value.
-		rendered, perr := buildInput(own, p.out)
+		rendered, perr := buildInput(own, transcript.Origin{Model: p.model, Account: p.account}, p.out)
 		if perr == nil {
 			var out []jsontext.Value
 			if out, perr = encodeItems(rendered); perr == nil {

@@ -294,6 +294,7 @@ func TestExchange(t *testing.T) {
 					require.NoError(t, ev.Item.Validate())
 					require.Equal(t, anthropic.Provider, ev.Item.Provider)
 					require.Equal(t, contextName, ev.Item.Provider)
+					require.Equal(t, &transcript.Origin{Model: req.Model, Account: cred.Account}, ev.Item.Origin)
 					req.Items = append(req.Items, *ev.Item)
 				}
 			}
@@ -367,15 +368,14 @@ func TestProxiedCredentialGetsTheSameRequest(t *testing.T) {
 	}
 }
 
-// Thinking and native items carry data only their provider can read. An
-// item from another provider is sent without it, or not at all.
+// Portable content survives a provider switch without another provider's
+// opaque metadata. Required native items are rejected in the boundary test.
 func TestOpaqueOfAnotherProviderIsNotSent(t *testing.T) {
 	const marker = "opaque-of-another-provider"
 	opaque := jsontext.Value(`{"signature":"` + marker + `","redacted_data":"` + marker + `","type":"` + marker + `"}`)
-	req := scenario{prompt: "hello", maxOutput: 64}.request("model", auth.Credential{Scheme: auth.SchemeAPIKey, Token: "placeholder"})
+	req := scenario{prompt: "hello", maxOutput: 64}.request("model", auth.Credential{Account: "work", Scheme: auth.SchemeAPIKey, Token: "placeholder"})
 	req.Items = append(req.Items,
 		transcript.Item{Thinking: &transcript.Thinking{Text: "thought elsewhere"}, Provider: "openai", Opaque: opaque},
-		transcript.Item{Native: &transcript.Native{Kind: "compaction"}, Provider: "openai", Opaque: opaque},
 		transcript.Item{Text: &transcript.Text{Text: "an answer"}, Provider: "openai", Opaque: opaque},
 		transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "go on"}}}},
 	)

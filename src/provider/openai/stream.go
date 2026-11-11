@@ -207,7 +207,7 @@ func (p *parser) convert(raw jsontext.Value) (*transcript.Item, *provider.Error)
 	if perr != nil {
 		return nil, perr
 	}
-	out := &transcript.Item{Provider: p.provider}
+	out := &transcript.Item{Provider: p.provider, Origin: &transcript.Origin{Model: p.model, Account: p.account}}
 	op := opaque{ID: item.ID}
 	switch item.Type {
 	case typeMessage:

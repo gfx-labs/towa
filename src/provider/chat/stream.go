@@ -356,6 +356,11 @@ func (s *streamState) end() *provider.Error {
 		}
 		s.out = append(s.out, provider.Event{Item: item})
 	}
+	for _, ev := range s.out {
+		if ev.Item != nil {
+			ev.Item.Origin = &transcript.Origin{Model: s.req.Model, Account: s.req.Credential.Account}
+		}
+	}
 	s.out = append(s.out, provider.Event{Stop: stop})
 	return nil
 }

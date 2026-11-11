@@ -275,6 +275,7 @@ func TestReplay(t *testing.T) {
 				for _, item := range got.items {
 					require.Equal(t, src.name, item.Provider)
 					require.Equal(t, contextName, item.Provider)
+					require.Equal(t, &transcript.Origin{Model: ex.req.Model, Account: "main"}, item.Origin)
 					switch {
 					case item.Text != nil:
 						text.WriteString(item.Text.Text)

@@ -225,6 +225,10 @@ func (c *Client) header(ep endpoint, req provider.Request) http.Header {
 // Stream sends one request and yields the response's events.
 func (c *Client) Stream(ctx context.Context, req provider.Request) iter.Seq2[provider.Event, error] {
 	return func(yield func(provider.Event, error) bool) {
+		if req.Credential.Account == "" {
+			yield(provider.Event{}, invalidRequest("the request credential names no account"))
+			return
+		}
 		ep, perr := c.endpoint(req.Credential)
 		if perr != nil {
 			yield(provider.Event{}, perr)

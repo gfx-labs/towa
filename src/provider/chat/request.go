@@ -156,7 +156,7 @@ func (c *Client) body(req provider.Request) ([]byte, *provider.Error) {
 	if system := systemText(req.System); system != "" {
 		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: jsonString(system)})
 	}
-	msgs, perr := c.messages(req.Items)
+	msgs, perr := c.messages(transcript.Origin{Model: req.Model, Account: req.Credential.Account}, req.Items)
 	if perr != nil {
 		return nil, perr
 	}
@@ -237,7 +237,7 @@ func jsonString(s string) jsontext.Value {
 // messages turns the conversation into wire messages. Thinking, text and
 // tool calls that follow one another are one assistant message, as the
 // model wrote them in one response.
-func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Error) {
+func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]wireMessage, *provider.Error) {
 	var out []wireMessage
 	var cur *wireMessage // the assistant message being built
 	var text strings.Builder
@@ -266,7 +266,7 @@ func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Err
 		if err := item.Validate(); err != nil {
 			return nil, invalid("items[%d]: %v", i, err)
 		}
-		mine := item.Provider == c.cfg.ID
+		mine := item.OpaqueCompatible(c.cfg.ID, origin)
 		switch {
 		case item.User != nil:
 			role := item.User.Role
@@ -285,7 +285,7 @@ func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Err
 			text.WriteString(item.Text.Text)
 			assistant()
 		case item.Thinking != nil:
-			// Another provider's reasoning has no plain form here.
+			// Incompatible reasoning has no plain form here.
 			if !mine || item.Opaque == nil {
 				continue
 			}
@@ -305,6 +305,9 @@ func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Err
 				return nil, invalid("items[%d]: thinking opaque names the field %q", i, op.Field)
 			}
 		case item.ToolCall != nil:
+			if len(item.Opaque) > 0 && !mine {
+				return nil, invalid("items[%d]: tool call opaque provenance does not match provider, model and account", i)
+			}
 			tc := item.ToolCall
 			if tc.ID == "" || tc.Name == "" {
 				return nil, invalid("items[%d]: tool call has no id or no name", i)
@@ -350,11 +353,7 @@ func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Err
 			}
 			out = append(out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(b.String())})
 		case item.Native != nil:
-			// This client produces no native items, so one tagged with
-			// its provider is not something it can send back.
-			if mine {
-				return nil, invalid("items[%d]: native item of kind %q", i, item.Native.Kind)
-			}
+			return nil, invalid("items[%d]: Chat Completions cannot replay native item of kind %q", i, item.Native.Kind)
 		default:
 			return nil, invalid("items[%d]: not an item a request can hold", i)
 		}

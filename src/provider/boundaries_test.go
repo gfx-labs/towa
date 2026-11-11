@@ -104,6 +104,12 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 			require.Equal(t, provider.ReasonRequest, got.Reason)
 			require.Equal(t, before, requests.Load())
 			req.Credential = cred
+			req.Credential.Account = ""
+			got = streamError(req)
+			require.Equal(t, provider.Fail, got.Class)
+			require.Equal(t, provider.ReasonRequest, got.Reason)
+			require.Equal(t, before, requests.Load())
+			req.Credential = cred
 			native, err := os.ReadFile(filepath.Join("..", "tools", "codex", "specs", "apply_patch.json"))
 			require.NoError(t, err)
 			ownAPI := map[string]provider.NativeAPI{"responses": provider.NativeAPIResponses, "messages": provider.NativeAPIMessages, "chat": provider.NativeAPIChatCompletions}[api]
@@ -123,6 +129,51 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 			require.Equal(t, provider.ReasonRequest, got.Reason)
 			require.Equal(t, before, requests.Load())
 			req.Tools = nil
+			own, err := namer.ContextName(cred)
+			require.NoError(t, err)
+			for _, source := range []struct {
+				name   string
+				origin *transcript.Origin
+			}{
+				{own, nil},
+				{own, &transcript.Origin{Model: "another-model", Account: cred.Account}},
+				{own, &transcript.Origin{Model: req.Model, Account: "another-account"}},
+				{"another-provider", &transcript.Origin{Model: req.Model, Account: cred.Account}},
+			} {
+				// This string is deliberately not wire metadata. Incompatible
+				// provenance must be decided before opaque data is decoded.
+				opaque := jsontext.Value(`"untrusted-opaque-marker"`)
+				for _, item := range []transcript.Item{
+					{Native: &transcript.Native{Kind: "untrusted"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					{ToolCall: &transcript.ToolCall{ID: "opaque-call", Name: "tool", Input: jsontext.Value(`{}`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+				} {
+					req.Items = append(req.Items[:1], item)
+					got = streamError(req)
+					require.Equal(t, provider.Fail, got.Class)
+					require.Equal(t, provider.ReasonRequest, got.Reason)
+					require.Equal(t, before, requests.Load())
+					if responses, ok := client.(*openai.Client); ok {
+						_, err := responses.Compact(t.Context(), req)
+						var perr *provider.Error
+						require.ErrorAs(t, err, &perr)
+						require.Equal(t, provider.Fail, perr.Class)
+						require.Equal(t, provider.ReasonRequest, perr.Reason)
+						require.Equal(t, before, requests.Load())
+					}
+				}
+				req.Items = append(req.Items[:1],
+					transcript.Item{Thinking: &transcript.Thinking{Text: "incompatible-thinking"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					transcript.Item{Text: &transcript.Text{Text: "portable-answer"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+				)
+				got = streamError(req)
+				require.Equal(t, http.StatusServiceUnavailable, got.Status)
+				body := string(<-bodies)
+				require.Contains(t, body, "portable-answer")
+				require.NotContains(t, body, "untrusted-opaque-marker")
+				require.NotContains(t, body, "incompatible-thinking")
+				before = requests.Load()
+			}
+			req.Items = req.Items[:1]
 			if api == "responses" {
 				req.Tools = []provider.Tool{{Name: "apply_patch", Native: native, NativeAPI: provider.NativeAPIResponses}}
 				got = streamError(req)
@@ -145,6 +196,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 				own, err := namer.ContextName(cred)
 				require.NoError(t, err)
 				req.Items[1].Provider = own
+				req.Items[1].Origin = &transcript.Origin{Model: req.Model, Account: cred.Account}
 				for _, typ := range []string{"function_call", "custom_tool_call"} {
 					req.Items[1].Opaque, err = json.Marshal(map[string]string{"type": typ})
 					require.NoError(t, err)

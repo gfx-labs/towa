@@ -31,6 +31,9 @@ type Compacted struct {
 // call of the Responses API. It reads Model, Credential, System and Items
 // of req. Every error is a *provider.Error.
 func (c *Client) Compact(ctx context.Context, req provider.Request) (*Compacted, error) {
+	if req.Credential.Account == "" {
+		return nil, invalidRequest("the request credential names no account")
+	}
 	ep, perr := c.endpoint(req.Credential)
 	if perr != nil {
 		return nil, perr
@@ -38,7 +41,8 @@ func (c *Client) Compact(ctx context.Context, req provider.Request) (*Compacted,
 	if req.Model == "" {
 		return nil, invalidRequest("the request names no model")
 	}
-	input, perr := buildInput(ep.provider, req.Items)
+	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
+	input, perr := buildInput(ep.provider, origin, req.Items)
 	if perr != nil {
 		return nil, perr
 	}
@@ -77,6 +81,7 @@ func (c *Client) Compact(ctx context.Context, req provider.Request) (*Compacted,
 		found = found || (item.Type == typeCompaction && item.EncryptedContent != "")
 		result.Items = append(result.Items, transcript.Item{
 			Native: &transcript.Native{Kind: item.Type}, Provider: ep.provider, Opaque: raw.Clone(),
+			Origin: &transcript.Origin{Model: req.Model, Account: req.Credential.Account},
 		})
 	}
 	if out.Usage != nil {

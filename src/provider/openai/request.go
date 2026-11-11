@@ -135,7 +135,7 @@ func (c *Client) buildRequest(ep endpoint, req provider.Request) (*requestBody, 
 	if req.Model == "" {
 		return nil, invalidRequest("the request names no model")
 	}
-	input, perr := buildInput(ep.provider, req.Items)
+	input, perr := buildInput(ep.provider, transcript.Origin{Model: req.Model, Account: req.Credential.Account}, req.Items)
 	if perr != nil {
 		return nil, perr
 	}
@@ -212,9 +212,8 @@ func buildTools(tools []provider.Tool) ([]any, *provider.Error) {
 	return out, nil
 }
 
-// buildInput turns transcript items into input items for the endpoint whose
-// items are tagged own. Opaque is read only from an item with that tag.
-func buildInput(own string, items []transcript.Item) ([]any, *provider.Error) {
+// buildInput reads opaque metadata only with exact request provenance.
+func buildInput(own string, origin transcript.Origin, items []transcript.Item) ([]any, *provider.Error) {
 	out := make([]any, 0, len(items))
 	// customCalls holds the ids of free-text calls, whose results go back
 	// as a different item type.
@@ -224,7 +223,7 @@ func buildInput(own string, items []transcript.Item) ([]any, *provider.Error) {
 			return nil, invalidRequest(fmt.Sprintf("item %d: %v", i, err))
 		}
 		var op opaque
-		mine := item.Provider == own && len(item.Opaque) > 0
+		mine := item.OpaqueCompatible(own, origin)
 		if mine && item.Native == nil {
 			if err := json.Unmarshal(item.Opaque, &op); err != nil {
 				return nil, invalidRequest(fmt.Sprintf("item %d: its opaque data cannot be read: %v", i, err))
@@ -266,6 +265,9 @@ func buildInput(own string, items []transcript.Item) ([]any, *provider.Error) {
 			}
 			out = append(out, reasoningItem{Type: typeReasoning, ID: op.ID, Summary: summary, EncryptedContent: op.EncryptedContent})
 		case item.ToolCall != nil:
+			if len(item.Opaque) > 0 && !mine {
+				return nil, invalidRequest(fmt.Sprintf("item %d: tool call opaque provenance does not match provider, model and account", i))
+			}
 			call, custom, perr := buildCall(item.ToolCall, op)
 			if perr != nil {
 				return nil, at(perr, i)
@@ -284,7 +286,7 @@ func buildInput(own string, items []transcript.Item) ([]any, *provider.Error) {
 			out = append(out, callOutputItem{Type: typ, CallID: item.ToolResult.CallID, Output: output})
 		case item.Native != nil:
 			if !mine {
-				continue
+				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
 			}
 			if !item.Opaque.IsValid() {
 				return nil, invalidRequest(fmt.Sprintf("item %d: the %s item is not valid JSON", i, item.Native.Kind))

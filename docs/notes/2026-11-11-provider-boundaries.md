@@ -56,6 +56,56 @@ tag before HTTP. It also exercises every other foreign tag and an absent tag.
 It does not claim that an incorrectly tagged definition is semantically valid
 for its named API. The producer owns accurate tagging.
 
+## Exact request origin
+
+`d87e607` adds `transcript.Origin{Model, Account}` and
+`Item.OpaqueCompatible`. Adapters now use the actual wire request's model and
+credential account in this check, in addition to canonical `Item.Provider`.
+Legacy nil origins stay unknown. There is no inferred or backfilled identity.
+
+All actual stream outputs carry this origin, including auto-compaction native
+items. Explicit Responses `Compact` results stamp each retained item too.
+Responses stamps before copying a finished item into the WebSocket continuation
+cache, whose local rendering uses the same target origin. Actual `Stream` and
+`Compact` calls reject an empty credential account before HTTP, since a partial
+origin cannot be stored as a valid transcript item.
+
+Replay policy:
+
+- Portable text, user content and structural tool results keep their plain
+  fields, without incompatible opaque metadata.
+- Incompatible or legacy thinking is omitted, not sent unsigned or converted to
+  a user message.
+- Responses and Messages native items require exact provider/model/account and
+  nonempty opaque content. Incompatible native items fail before HTTP.
+- Chat has no native response-item format and rejects every native item.
+- Responses and Chat reject opaque-bearing tool calls on any origin mismatch.
+  Their matching calls keep their recorded call type/extensions. Messages
+  produces no opaque tool-call format and rejects any such extension, including
+  a matching one, rather than silently losing a required signature.
+- Ordinary tool calls with no opaque metadata retain the existing structural
+  encoding. A string input still needs explicit compatible Responses call-type
+  metadata, as described above.
+
+All adapter failures above are `*provider.Error`, class `Fail`, reason
+`request`, status zero when no HTTP request was sent. No new reason value or
+error-text matching contract was introduced. Native-compaction recovery remains
+owned by `compact.ItemsWithOrigin` and its typed unreadable-window error, not a
+provider retry or silent deletion.
+
+The existing real recordings verify origin stamping and that the next request
+can be built with emitted items. The request-boundary test checks legacy nil,
+changed model, changed account and changed provider. It deliberately uses an
+untrusted opaque JSON string, not a fabricated provider response, to prove that
+incompatible metadata is not decoded or transmitted. Required native/tool-call
+items fail without HTTP, while plain text survives and incompatible thinking
+is absent. No successful native/Compact or WebSocket exchange has been recorded,
+so those stamping paths are inspected and built, not claimed replay-verified.
+The same retained boundary test fails against an overlay of the actual
+pre-guard `eb54443` Responses request/Compact/WebSocket builders: the legacy
+same-provider native input reaches HTTP and returns retryable 503 instead of
+failing as an invalid request. The shared checkout was not reverted.
+
 ## Checks
 
 Scoped provider build, vet, race tests and lint pass. Static Linux and

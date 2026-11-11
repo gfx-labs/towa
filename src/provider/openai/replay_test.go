@@ -250,6 +250,7 @@ func TestExchange(t *testing.T) {
 				if ev.Item != nil {
 					require.NoError(t, ev.Item.Validate())
 					require.Equal(t, contextName, ev.Item.Provider)
+					require.Equal(t, &transcript.Origin{Model: req.Model, Account: cred.Account}, ev.Item.Origin)
 					req.Items = append(req.Items, *ev.Item)
 				}
 			}
