@@ -68,8 +68,11 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 		HTTPClient: client, BaseURL: openai.DefaultBaseURL, CodexBaseURL: openai.DefaultCodexBaseURL,
 		Provider: openai.ProviderAPI, UserAgent: "acpharness/" + version(),
 		Transport: openai.Transport(cfg.OpenAI.Transport), MaxIdleSockets: cfg.OpenAI.MaxIdleSockets,
-		ParallelToolCalls: cfg.OpenAI.ParallelToolCalls, CompactThreshold: cfg.OpenAI.CompactThreshold,
-		ErrorBodyBytes: cfg.OpenAI.ErrorBodyBytes,
+		ParallelToolCalls: cfg.OpenAI.ParallelToolCalls,
+		ErrorBodyBytes:    cfg.OpenAI.ErrorBodyBytes,
+	}
+	if cfg.Compaction.OpenAINative == config.NativeAuto {
+		responsesConfig.CompactThreshold = cfg.Compaction.OpenAINativeThresholdTokens
 	}
 	// These fields have constructor fallbacks. Wiring must receive their
 	// resolved values, not silently choose different settings here.
