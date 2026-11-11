@@ -168,6 +168,17 @@ func loadConfig(cmd *cli.Command, h Host) (*config.Loaded, error) {
 		Flags:     map[string]any{},
 		Set:       cmd.StringSlice("set"),
 	}
+	// The accounts that logins made. Without XDG_STATE_HOME and HOME there
+	// is no auth store, so there are none.
+	if lookup(h.Environ, "XDG_STATE_HOME") != "" || lookup(h.Environ, "HOME") != "" {
+		store, err := authStore(h)
+		if err != nil {
+			return nil, err
+		}
+		if src.StoredAccounts, err = store.Accounts(); err != nil {
+			return nil, err
+		}
+	}
 	// The user's config directory, by the XDG rule. Without XDG_CONFIG_HOME
 	// and HOME there is no such directory, so that layer is empty.
 	if dir := lookup(h.Environ, "XDG_CONFIG_HOME"); dir != "" {

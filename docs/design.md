@@ -91,77 +91,87 @@ koanf decodes the merged tree into one typed config struct. urfave/cli v3 define
 
 `acpharness config` prints the resolved config with secrets redacted and the source of each key.
 
-Sketch:
+Sketch. The examples in this document are YAML. A TOML or JSON file with the same keys loads the same way:
 
-```toml
-default_model = "opus"
+```yaml
+default_model: opus
 
-[models.opus]
-chain = ["claude:work/claude-opus-4-7", "claude:personal/claude-opus-4-7", "openrouter:main/anthropic/claude-opus-4.7"]
-# The last entry is a gateway's own id, which the built-in table does not
-# know, so the model states its figures.
-context_window = 1000000
-max_output_tokens = 128000
-family = "claude"
+models:
+  opus:
+    chain:
+      - "claude:work/claude-opus-4-7"
+      - "claude:personal/claude-opus-4-7"
+      - "openrouter:main/anthropic/claude-opus-4.7"
+    # The last entry is a gateway's own id, which the built-in table does not
+    # know, so the model states its figures.
+    context_window: 1000000
+    max_output_tokens: 128000
+    family: claude
+  gpt:
+    chain:
+      - "codex:chatgpt/gpt-5.5"
 
-[models.gpt]
-chain = ["codex:work/gpt-5.5"]
+# claude:work, claude:personal and codex:chatgpt have no entry here: a login
+# makes each of them in auth.json. Only an account without a stored login is
+# declared.
+accounts:
+  - id: main
+    provider: openrouter
+    kind: api_key
+    api_key_env: OPENROUTER_API_KEY
+  - id: pod
+    provider: claude
+    kind: proxied_oauth   # oauth | api_key | proxied_oauth | proxied_api_key
 
-[[accounts]]
-id = "work"
-provider = "claude"
-kind = "oauth"
+providers:
+  - id: openrouter
+    kind: chat            # chat | responses
+    base_url: https://openrouter.ai/api/v1
+  - id: zai
+    kind: chat
+    base_url: https://api.z.ai/api/coding/paas/v4
 
-[[accounts]]
-id = "main"
-provider = "openrouter"
-kind = "api_key"
-api_key_env = "OPENROUTER_API_KEY"
+context:
+  agents_files: true
+  extra_files: []
+  extra_dirs: []
+  skills_dirs: ["~/.agents/skills"]
 
-[[accounts]]
-id = "pod"
-provider = "claude"
-kind = "proxied_oauth"   # oauth | api_key | proxied_oauth | proxied_api_key
+limits:
+  max_tool_calls: 0       # 0 = unlimited
+  max_wall: 0s
+  max_input_tokens: 0
+  max_output_tokens: 0
+  max_stop_denials: 3     # how often a stop hook may keep a turn going
 
-[[providers]]
-id = "zai"
-kind = "chat"            # chat | responses
-base_url = "https://api.z.ai/api/coding/paas/v4"
+subagents:
+  max_depth: 2
+  max_concurrent: 4
 
-[context]
-agents_files = true
-extra_files = []
-extra_dirs = []
-skills_dirs = ["~/.agents/skills"]
+compaction:
+  mode: reactive          # reactive | proactive | semantic | off
+  openai_native: auto     # auto | explicit | off
 
-[limits]
-max_tool_calls = 0       # 0 = unlimited
-max_wall = "0s"
-max_input_tokens = 0
-max_output_tokens = 0
-max_stop_denials = 3     # how often a stop hook may keep a turn going
-subagent_depth = 2
-subagent_concurrency = 4
+hooks:
+  - event: pre_tool       # pre_tool | post_tool | prompt | stop
+    tools: [Bash, shell]
+    command: [/usr/local/bin/check-cmd]
+    timeout: 5s
 
-[compaction]
-mode = "reactive"        # reactive | proactive | semantic | off
-openai_native = "auto"   # auto | explicit | off
+mcp:
+  servers:
+    - name: linear
+      transport: streamable_http   # stdio | streamable_http | sse
+      url: https://mcp.linear.app/mcp
 
-[[hooks]]
-event = "pre_tool"       # pre_tool | post_tool | prompt | stop
-tools = ["Bash", "shell"]
-command = ["/usr/local/bin/check-cmd"]
-
-[[mcp.servers]]
-name = "linear"
-transport = "streamable_http"   # stdio | streamable_http | sse
-url = "https://mcp.linear.app/mcp"
-
-[telemetry]
-otel = true
-logs.stderr.level = "info"
-logs.stderr.format = "text"
-logs.otel.level = "debug"
+telemetry:
+  otel: true
+  logs:
+    stderr:
+      level: info
+      format: text
+    otel:
+      level: debug
 ```
 
 Defaults for limits and compaction thresholds start from jcode's measured defaults and are documented with their source.
@@ -182,12 +192,13 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 
 ### Accounts and fallback
 
-- Accounts live in the auth store, `$XDG_STATE_HOME/acpharness/auth/<account>.json`, mode 0600.
-- Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no file in the auth store, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
+- Logins live in one file, `$XDG_STATE_HOME/acpharness/auth/auth.json`, mode 0600, apart from the configuration. It holds every OAuth account by id with its provider and tokens. An account in it needs no `accounts` entry: a login creates it. A model chain may name an account of a built-in provider before its first login, and a turn that reaches it then reports that the account is not logged in and gives the command. `accounts` in the configuration is for what has no stored login: API keys read from the environment and proxy-held accounts. `logout` removes the account's entry.
+- Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no entry in `auth.json`, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
 - Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
 - `acpharness hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
-- `acpharness login claude --account work` and `acpharness login codex --account work` run the upstream OAuth flows: browser with a local callback, or a device or manual code paste for headless hosts.
-- Refresh: take an `flock` on the account's lock file (`<account>.lock`, not the account file, since the rename that writes the account would leave a lock on the old inode), re-read the account, refresh only if the token is still expired, write atomically (temp file and rename), release. Hundreds of processes share one refresh.
+- `acpharness login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
+- A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `acpharness login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
+- Refresh: take an `flock` on the account's lock file (`account.<id>.lock`, not `auth.json`, since the rename that writes the file would leave a lock on the old inode), re-read the account, refresh only if the token is still expired, write, release. Hundreds of processes share one refresh, and the refresh of one account does not wait for another's token request. Every write of `auth.json` takes `auth.json.lock` for its read and its write, so that two accounts written at once both survive, and replaces the file atomically (temp file and rename). A read takes no lock.
 - Model chains: each named model is an ordered list of `provider:account/model`. The router tries the next entry on rate limit, quota exhaustion, auth failure or overload, after retries on the current entry are exhausted. Fallback moves are reported to the client.
 - Retry: exponential backoff with jitter, honoring `retry-after` and provider reset headers. Policy in config.
 - Rate-limit state is per account and shared in process. Cross-process sharing is a later option (a small file or broker) if contention shows up.
@@ -285,21 +296,21 @@ docker run -d -p 8080:80 -v $HOME/.cache/tei:/data \
   --model-id BAAI/bge-small-en-v1.5
 ```
 
-```toml
-[embeddings]
-base_url = "http://127.0.0.1:8080/v1"
-model = "BAAI/bge-small-en-v1.5"
+```yaml
+embeddings:
+  base_url: http://127.0.0.1:8080/v1
+  model: BAAI/bge-small-en-v1.5
 ```
 
 ## Jev decisions
 
 A configured Jev endpoint backs a native `jev_decision` tool and skill: bounded choice among supplied options, with state treated as untrusted data, matching jcode's tool shape and limits. Routes follow jcode: OpenRouter decisions, TypeSafe direct, AIMLAPI, or a custom base URL. Jev serves decisions only, not embeddings, so embeddings stay a separate config. Harness features may use Jev later (skill suggestion, subagent model routing) behind config.
 
-```toml
-[jev]
-route = "openrouter"     # openrouter | typesafe | aimlapi | custom
-model = "typesafe/jev-1.13"
-account = "main"
+```yaml
+jev:
+  route: openrouter     # openrouter | typesafe | aimlapi | custom
+  model: typesafe/jev-1.13
+  account: main
 ```
 
 ## System prompt

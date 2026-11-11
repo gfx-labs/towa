@@ -156,3 +156,50 @@ file = "policy.md"
 	_, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 }
+
+// An account comes from a config layer, from the auth store, or from a model
+// chain that names it on a built-in provider ahead of its login. A declared
+// account is kept as declared when the store has the same id.
+func TestAccountsComeFromConfigStoreAndChains(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, filepath.Join(dir, "config.yaml"), `
+default_model: opus
+models:
+  opus:
+    chain:
+      - claude:work/claude-opus-4-7
+      - claude:later/claude-opus-4-7
+accounts:
+  - id: work
+    provider: claude
+    kind: proxied_oauth
+`)
+	got, err := config.Load(config.Sources{
+		Files:          []string{path},
+		StoredAccounts: map[string]string{"work": "claude", "gpt": "codex"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []config.Account{
+		{ID: "work", Provider: "claude", Kind: config.AccountProxiedOAuth},
+		{ID: "gpt", Provider: "codex", Kind: config.AccountOAuth, Stored: true},
+		{ID: "later", Provider: "claude", Kind: config.AccountOAuth, Stored: true},
+	}, got.Config.Accounts)
+
+	// A login cannot make an account of a configured provider, so a chain
+	// that names one must find it declared.
+	path = write(t, filepath.Join(dir, "gateway.yaml"), `
+default_model: remote
+models:
+  remote:
+    chain:
+      - gateway:nobody/some-model
+    context_window: 1000
+    max_output_tokens: 100
+providers:
+  - id: gateway
+    kind: chat
+    base_url: https://example.com/v1
+`)
+	_, err = config.Load(config.Sources{Files: []string{path}})
+	require.ErrorContains(t, err, "nobody")
+}

@@ -124,6 +124,10 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 	}
 	for i, a := range cfg.Accounts {
 		at := fmt.Sprintf("accounts[%d]", i)
+		if a.Stored {
+			// A login made it, so no config key names it.
+			at = "auth.json:accounts." + a.ID
+		}
 		// A proxied account contacts its provider like any other. Only
 		// its credential is held elsewhere.
 		if !configured[a.Provider] {
@@ -151,6 +155,15 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 		}
 		if err := add(at+".provider", flow.TokenURL); err != nil {
 			return Report{}, err
+		}
+		// A device code login asks these from this host. Its page is opened
+		// on whichever device the user has.
+		if flow.Device.UserCodeURL != "" {
+			for _, u := range []string{flow.Device.UserCodeURL, flow.Device.PollURL} {
+				if err := add(at+".provider", u); err != nil {
+					return Report{}, err
+				}
+			}
 		}
 	}
 

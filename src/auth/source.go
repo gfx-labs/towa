@@ -14,8 +14,9 @@ import (
 
 // Errors of an AccountSource. Each is wrapped with the account's id.
 var (
-	// ErrUnknownAccount: the configuration has no account with that id.
-	ErrUnknownAccount = errors.New("no such account in the configuration")
+	// ErrUnknownAccount: no account has that id, in the configuration or
+	// in the auth store.
+	ErrUnknownAccount = errors.New("no such account")
 	// ErrProxied: a proxy holds the account's credential, so the harness has
 	// nothing to refresh, log in to or log out of.
 	ErrProxied = errors.New("a proxy holds this account's credential")
@@ -245,6 +246,9 @@ func (s *AccountSource) refresh(ctx context.Context, a config.Account, keep func
 
 func (s *AccountSource) load(a config.Account) (Tokens, error) {
 	t, err := s.opts.Store.Load(a.ID)
+	if errors.Is(err, ErrNotLoggedIn) {
+		return Tokens{}, fmt.Errorf("%w: log in with \"acpharness login %s --account %s\"", err, a.Provider, a.ID)
+	}
 	if err != nil {
 		return Tokens{}, err
 	}

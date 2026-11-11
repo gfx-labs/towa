@@ -83,6 +83,8 @@ type tokenEndpoint struct {
 	current  string // the refresh token that works now
 	grants   []map[string]string
 	idToken  string
+	// polls counts the requests for a device code's approval.
+	polls int
 	// challenge is what the authorize page was given.
 	challenge string
 }
@@ -154,6 +156,31 @@ func newTokenEndpoint(t *testing.T, refreshToken string) *tokenEndpoint {
 		back := q.Get("redirect_uri") + "?" + url.Values{"code": {"the-code"}, "state": {q.Get("state")}}.Encode()
 		http.Redirect(w, r, back, http.StatusFound)
 	})
+	// The device code endpoints of a provider whose user approves between
+	// the first request for the approval and the second.
+	mux.HandleFunc("POST /deviceauth/usercode", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"ABCD-1234","interval":"1"}`)
+	})
+	mux.HandleFunc("POST /deviceauth/token", func(w http.ResponseWriter, r *http.Request) {
+		poll := map[string]string{}
+		if err := json.UnmarshalRead(r.Body, &poll); err != nil || poll["device_auth_id"] != "dev-1" || poll["user_code"] != "ABCD-1234" {
+			http.Error(w, "bad poll", http.StatusBadRequest)
+			return
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.polls++
+		if e.polls == 1 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		// The provider chooses the verifier of a device login.
+		sum := sha256.Sum256([]byte("device-verifier"))
+		e.challenge = base64.RawURLEncoding.EncodeToString(sum[:])
+		_ = json.MarshalWrite(w, map[string]string{
+			"authorization_code": "the-code", "code_challenge": e.challenge, "code_verifier": "device-verifier",
+		})
+	})
 	e.Server = httptest.NewServer(mux)
 	t.Cleanup(e.Close)
 	return e
@@ -218,8 +245,8 @@ func TestProcessesShareOneRefresh(t *testing.T) {
 	require.Equal(t, 1, requests)
 	require.Zero(t, refused)
 
-	// What is left on disk: the new login, readable by the owner only, and
-	// no temporary file.
+	// What is left on disk: the one file of logins and the lock files,
+	// readable by the owner only, and no temporary file.
 	info, err := os.Stat(dir)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
@@ -232,7 +259,7 @@ func TestProcessesShareOneRefresh(t *testing.T) {
 		require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), entry.Name())
 		names = append(names, entry.Name())
 	}
-	require.Equal(t, []string{"work.json", "work.lock"}, names)
+	require.Equal(t, []string{"account.work.lock", "auth.json", "auth.json.lock"}, names)
 	stored, err := auth.NewStore(dir).Load("work")
 	require.NoError(t, err)
 	require.Equal(t, "refresh-1", stored.RefreshToken)
@@ -423,8 +450,20 @@ func TestStoreRefusesAFileOthersCanRead(t *testing.T) {
 	dir := t.TempDir()
 	store := auth.NewStore(dir)
 	require.NoError(t, store.Save("work", expired("r")))
-	require.NoError(t, os.Chmod(filepath.Join(dir, "work.json"), 0o644))
-	_, err := store.Load("work")
+	// Every account is in the one file, and the store names them.
+	other := expired("r2")
+	other.Provider = "codex"
+	require.NoError(t, store.Save("second", other))
+	accounts, err := store.Accounts()
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"work": "claude", "second": "codex"}, accounts)
+	require.NoError(t, store.Delete("second"))
+	kept, err := store.Load("work")
+	require.NoError(t, err)
+	require.Equal(t, "r", kept.RefreshToken)
+
+	require.NoError(t, os.Chmod(filepath.Join(dir, "auth.json"), 0o644))
+	_, err = store.Load("work")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, auth.ErrNotLoggedIn)
 
@@ -531,6 +570,38 @@ func TestLoginWithAPastedCode(t *testing.T) {
 	grant := endpoint.grants[0]
 	require.Equal(t, auth.ClaudeFlow().ManualRedirectURI, grant["redirect_uri"])
 	require.NotEmpty(t, grant["state"])
+}
+
+// The Codex login by device code: the code and its page are shown, the
+// approval is asked for until it comes, and the code it carries is
+// exchanged with the verifier the provider chose.
+func TestLoginWithADeviceCode(t *testing.T) {
+	endpoint := newTokenEndpoint(t, "")
+	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-42"}}`))
+	endpoint.idToken = "e30." + claims + ".sig"
+	opts := loginOptions(endpoint, auth.CodexFlow())
+	opts.Device = true
+	opts.OpenBrowser = nil
+	opts.Flow.Device.UserCodeURL = endpoint.URL + "/deviceauth/usercode"
+	opts.Flow.Device.PollURL = endpoint.URL + "/deviceauth/token"
+	var shown bytes.Buffer
+	opts.Out = &shown
+
+	tokens, err := auth.RunLogin(t.Context(), opts)
+	require.NoError(t, err)
+	require.Equal(t, "access-1", tokens.AccessToken)
+	require.Equal(t, "acct-42", tokens.ChatGPTAccountID)
+	require.Contains(t, shown.String(), "ABCD-1234")
+	require.Contains(t, shown.String(), auth.CodexFlow().Device.VerificationURL)
+	require.Equal(t, 2, endpoint.polls)
+	require.Equal(t, auth.CodexFlow().Device.RedirectURI, endpoint.grants[0]["redirect_uri"])
+
+	// A provider without a device login says so and sends nothing.
+	opts.Flow = auth.ClaudeFlow()
+	_, err = auth.RunLogin(t.Context(), opts)
+	require.Error(t, err)
+	requests, _ := endpoint.counts()
+	require.Equal(t, 1, requests)
 }
 
 // A code pasted with another login's state is not sent to the endpoint.

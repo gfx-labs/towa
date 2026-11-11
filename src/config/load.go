@@ -47,6 +47,11 @@ type Sources struct {
 	// Set holds "key=value" assignments. The value is text, converted to the
 	// key's type, so a key that holds a list or a table cannot be set this way.
 	Set []string
+	// StoredAccounts holds the accounts of the auth store: the provider of
+	// each, by id. They are not a layer. Each joins Config.Accounts as an
+	// oauth account, unless a layer declares an account of that id. So does
+	// an account that a model chain names on a built-in provider.
+	StoredAccounts map[string]string
 }
 
 // Loaded is a resolved configuration and where its values came from.
@@ -122,6 +127,7 @@ func Load(src Sources) (*Loaded, error) {
 	if err := l.k.UnmarshalWithConf("", &out.Config, koanf.UnmarshalConf{Tag: "koanf", DecoderConfig: decoder}); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	out.Config.addStoredAccounts(src.StoredAccounts)
 	if err := out.Config.validate(); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}

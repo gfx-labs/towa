@@ -47,6 +47,8 @@ type Flow struct {
 	// ChatGPTAccount says the id token names the ChatGPT account that the
 	// backend wants in a header.
 	ChatGPTAccount bool
+	// Device is the provider's device code login, when it has one.
+	Device DeviceFlow
 }
 
 // ClaudeFlow is the Claude Code login.
@@ -87,6 +89,16 @@ func CodexFlow() Flow {
 		CallbackPort:   1455,
 		CallbackPath:   "/auth/callback",
 		ChatGPTAccount: true,
+		// codex-rs/login/src/device_code_auth.rs at openai/codex ce0323f2,
+		// the commit the Codex prompts are pinned to. The lifetime is the
+		// 15 minutes it waits and tells the user.
+		Device: DeviceFlow{
+			UserCodeURL:     "https://auth.openai.com/api/accounts/deviceauth/usercode",
+			PollURL:         "https://auth.openai.com/api/accounts/deviceauth/token",
+			VerificationURL: "https://auth.openai.com/codex/device",
+			RedirectURI:     "https://auth.openai.com/deviceauth/callback",
+			Lifetime:        15 * time.Minute,
+		},
 	}
 }
 
@@ -269,6 +281,16 @@ type Login struct {
 // Begin starts a login that sends the browser back to redirectURI.
 func (f Flow) Begin(redirectURI string) *Login {
 	return &Login{flow: f, redirectURI: redirectURI, verifier: randomText(), state: randomText()}
+}
+
+// BeginManual starts a login whose page ends where the user can copy the
+// code from. what names the thing to copy.
+func (f Flow) BeginManual() (login *Login, what string) {
+	if f.ManualRedirectURI != "" {
+		return f.Begin(f.ManualRedirectURI), "the code the page shows"
+	}
+	redirect := f.LocalRedirectURI(f.CallbackPort)
+	return f.Begin(redirect), "the whole address the browser then fails to open, which starts with " + redirect
 }
 
 // randomText is 32 random bytes in the characters a PKCE verifier allows.

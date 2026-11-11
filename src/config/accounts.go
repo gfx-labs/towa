@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -47,6 +49,9 @@ type Account struct {
 	// authorization and nothing else, and the harness has no id token to
 	// read the id from.
 	ChatGPTAccountID string `koanf:"chatgpt_account_id" validate:"excluded_unless=Kind proxied_oauth"`
+	// Stored says no config layer declares the account: it is one of the
+	// auth store, made by a login or named by a model chain ahead of it.
+	Stored bool `koanf:"-"`
 }
 
 // Kinds of an account.
@@ -62,10 +67,44 @@ const (
 	AccountProxiedAPIKey = "proxied_api_key"
 )
 
+// addStoredAccounts adds the accounts of the auth store, given as the
+// provider of each by id, and then the accounts that model chains name on a
+// built-in provider. A login makes such an account, so a chain may name it
+// before the login exists, and its use reports that it is not logged in.
+// An id that a config layer declares keeps the declared account.
+func (c *Config) addStoredAccounts(stored map[string]string) {
+	known := map[string]bool{}
+	for _, a := range c.Accounts {
+		known[a.ID] = true
+	}
+	add := func(id, provider string) {
+		if !known[id] {
+			known[id] = true
+			c.Accounts = append(c.Accounts, Account{ID: id, Provider: provider, Kind: AccountOAuth, Stored: true})
+		}
+	}
+	// In id and name order, so that the same input always gives the same list.
+	for _, id := range slices.Sorted(maps.Keys(stored)) {
+		add(id, stored[id])
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Models)) {
+		for _, raw := range c.Models[name].Chain {
+			// An entry that does not parse is for validation to report.
+			entry, err := ParseChainEntry(raw)
+			if err == nil && (entry.Provider == ProviderClaude || entry.Provider == ProviderCodex) {
+				add(entry.Account, entry.Provider)
+			}
+		}
+	}
+}
+
 func (c *Config) validateAccounts() error {
 	seen := map[string]bool{}
 	for i, a := range c.Accounts {
 		at := fmt.Sprintf("accounts[%d]", i)
+		if a.Stored {
+			at = fmt.Sprintf("auth store account %q", a.ID)
+		}
 		if err := validateFields(at, a); err != nil {
 			return err
 		}

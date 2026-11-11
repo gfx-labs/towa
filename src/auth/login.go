@@ -9,13 +9,22 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
+// ErrNothingPasted says a manual login was given no code: an empty line, or
+// an input that ended.
+var ErrNothingPasted = errors.New("no code was pasted")
+
 // LoginOptions is what one login needs. Every field is required, except
-// that OpenBrowser is not used by a manual login.
+// that only a browser login uses OpenBrowser and CallbackTimeout, and only
+// a manual login reads In.
 type LoginOptions struct {
 	Flow Flow
+	// Device shows a code to type into the provider's page and waits for
+	// its approval. It needs no browser on this host and reads nothing.
+	Device bool
 	// HTTPClient sends the token request. It comes from src/httpclient.
 	HTTPClient *http.Client
 	// Manual asks for the code to be pasted and starts no callback server.
@@ -31,12 +40,31 @@ type LoginOptions struct {
 	CallbackTimeout time.Duration
 	// TokenTimeout bounds the token request.
 	TokenTimeout time.Duration
+	// Later records a browser or manual login before its page is shown, so
+	// that a later run of "acpharness login <provider> --code" can finish
+	// it. It may be nil, and then the user is not told of that way.
+	Later func(login *Login) error
+}
+
+// later records login for a later run and returns what to tell the user
+// about it. what names the thing the later run is given.
+func (opts LoginOptions) later(login *Login, what string) (string, error) {
+	if opts.Later == nil {
+		return "", nil
+	}
+	if err := opts.Later(login); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("A later run can also finish this login, given %s:\n\n  acpharness login %s --code '...'\n\n", what, opts.Flow.Provider), nil
 }
 
 // RunLogin takes the user through one authorization and returns the tokens.
 // It stores nothing.
 func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
-	if opts.Manual {
+	switch {
+	case opts.Device:
+		return deviceLogin(ctx, opts)
+	case opts.Manual:
 		return manualLogin(ctx, opts)
 	}
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(opts.Flow.CallbackPort))
@@ -46,6 +74,10 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	login := opts.Flow.Begin(opts.Flow.LocalRedirectURI(port))
+	hint, err := opts.later(login, "the whole address the browser ends on")
+	if err != nil {
+		return Tokens{}, errors.Join(err, listener.Close())
+	}
 
 	type callback struct {
 		code string
@@ -89,11 +121,15 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 		return err
 	}
 
-	if _, err := fmt.Fprintf(opts.Out, "Opening this page in a browser:\n\n%s\n\n", login.AuthorizeURL()); err != nil {
+	if _, err := fmt.Fprintf(opts.Out, "Open this page in a browser on this host to log in:\n\n%s\n\n%s", login.AuthorizeURL(), hint); err != nil {
 		return Tokens{}, errors.Join(err, stop())
 	}
+	// The page is printed, so a host without an opener is not the end of
+	// the login: the user opens it.
 	if err := opts.OpenBrowser(ctx, login.AuthorizeURL()); err != nil {
-		return Tokens{}, errors.Join(fmt.Errorf("no browser could be opened: %w (a manual login needs none)", err), stop())
+		if _, err := fmt.Fprintf(opts.Out, "No browser could be opened from here (%v). Open the page yourself.\n\n", err); err != nil {
+			return Tokens{}, errors.Join(err, stop())
+		}
 	}
 
 	timeout := time.NewTimer(opts.CallbackTimeout)
@@ -102,7 +138,10 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 	select {
 	case result = <-got:
 	case <-timeout.C:
-		result.err = fmt.Errorf("the browser did not come back within %s (a manual login waits for a pasted code)", opts.CallbackTimeout)
+		result.err = fmt.Errorf("the browser did not come back within %s", opts.CallbackTimeout)
+		if hint != "" {
+			result.err = fmt.Errorf("%w: the login can still be finished with \"acpharness login %s --code '<the address the browser ended on>'\"", result.err, opts.Flow.Provider)
+		}
 	case <-ctx.Done():
 		result.err = context.Cause(ctx)
 	}
@@ -115,15 +154,12 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 // manualLogin prints the page to open, on any device, and reads what the
 // user copies from the page it ends on.
 func manualLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
-	redirect := opts.Flow.ManualRedirectURI
-	prompt := "Approve the login, then paste the code the page shows:"
-	if redirect == "" {
-		redirect = opts.Flow.LocalRedirectURI(opts.Flow.CallbackPort)
-		prompt = "Approve the login. The browser then fails to open an address that starts with " + redirect +
-			"\nPaste that whole address:"
+	login, what := opts.Flow.BeginManual()
+	hint, err := opts.later(login, what)
+	if err != nil {
+		return Tokens{}, err
 	}
-	login := opts.Flow.Begin(redirect)
-	if _, err := fmt.Fprintf(opts.Out, "Open this page in a browser on any device:\n\n%s\n\n%s\n", login.AuthorizeURL(), prompt); err != nil {
+	if _, err := fmt.Fprintf(opts.Out, "Open this page in a browser on any device:\n\n%s\n\nApprove the login, then paste %s:\n\n%s", login.AuthorizeURL(), what, hint); err != nil {
 		return Tokens{}, err
 	}
 	// The line is read in a goroutine so that a cancelled context ends the
@@ -135,7 +171,7 @@ func manualLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 	read := make(chan line, 1)
 	go func() {
 		text, err := bufio.NewReader(opts.In).ReadString('\n')
-		if errors.Is(err, io.EOF) && text != "" {
+		if errors.Is(err, io.EOF) {
 			err = nil
 		}
 		read <- line{text, err}
@@ -148,6 +184,10 @@ func manualLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 	}
 	if pasted.err != nil {
 		return Tokens{}, fmt.Errorf("reading the pasted code: %w", pasted.err)
+	}
+	// An empty line or a closed input: nobody pasted here.
+	if strings.TrimSpace(pasted.text) == "" {
+		return Tokens{}, ErrNothingPasted
 	}
 	code, state, err := ParsePasted(pasted.text)
 	if err != nil {

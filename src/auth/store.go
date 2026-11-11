@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -12,13 +13,13 @@ import (
 	"time"
 )
 
-// ErrNotLoggedIn says an OAuth account has no file in the store.
+// ErrNotLoggedIn says the store holds no login for an OAuth account.
 var ErrNotLoggedIn = errors.New("account has no stored login")
 
-// Tokens is the stored login of one OAuth account: the content of its file.
+// Tokens is the stored login of one OAuth account: its entry in auth.json.
 type Tokens struct {
-	// Provider is the provider the login was made with. A file is not used
-	// for an account that the configuration now gives to another provider.
+	// Provider is the provider the login was made with. An entry is not used
+	// for an account that the configuration gives to another provider.
 	Provider     string `json:"provider"`
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -37,8 +38,15 @@ type Tokens struct {
 // ExpiresAt is when the access token stops working.
 func (t Tokens) ExpiresAt() time.Time { return time.UnixMilli(t.ExpiresAtUnixMs) }
 
-// Store keeps one file per account in a directory only the user can read.
+// Store keeps every account's login in one file, auth.json, in a directory
+// only the user can read. An account in the file needs no entry in the
+// configuration: a login creates it.
 type Store struct{ dir string }
+
+// accountsFile is the content of auth.json.
+type accountsFile struct {
+	Accounts map[string]Tokens `json:"accounts"`
+}
 
 // NewStore returns the store in dir. The directory is made on first write.
 func NewStore(dir string) *Store { return &Store{dir: dir} }
@@ -55,27 +63,80 @@ func StateDir(xdgStateHome, home string) (string, error) {
 	return "", errors.New("neither XDG_STATE_HOME nor HOME is set, so there is no place for the auth store")
 }
 
-// path is the account's file with the given extension. An id that is not a
-// plain file name would reach outside the directory.
-func (s *Store) path(account, ext string) (string, error) {
-	if account == "" || account != filepath.Base(account) || strings.HasPrefix(account, ".") {
-		return "", fmt.Errorf("account id %q cannot name a file in the auth store", account)
+// plainName refuses a name that is not a plain file name. An account id
+// names the account's lock file and a provider its pending login, and
+// neither may reach outside the directory.
+func plainName(what, name string) error {
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		return fmt.Errorf("%s %q cannot name a file in the auth store", what, name)
 	}
-	return filepath.Join(s.dir, account+ext), nil
+	return nil
 }
 
-// Load reads the account's file. Without one the error is ErrNotLoggedIn.
+func (s *Store) accountsPath() string { return filepath.Join(s.dir, "auth.json") }
+
+// read returns the content of auth.json. Without the file there are no
+// accounts.
+func (s *Store) read() (accountsFile, error) {
+	var f accountsFile
+	if err := readFile(s.accountsPath(), &f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return accountsFile{}, err
+	}
+	return f, nil
+}
+
+// update rewrites auth.json with change applied. The file holds every
+// account, so a writer takes one lock for its read and its write, and the
+// refresh of one account does not undo the refresh of another.
+func (s *Store) update(change func(accounts map[string]Tokens) error) (err error) {
+	// No context: the lock is held for one read and one write, and a
+	// refreshed token must be stored whatever became of its caller.
+	unlock, err := lockFile(context.Background(), s.accountsPath()+".lock")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	f, err := s.read()
+	if err != nil {
+		return err
+	}
+	if f.Accounts == nil {
+		f.Accounts = map[string]Tokens{}
+	}
+	if err := change(f.Accounts); err != nil {
+		return err
+	}
+	return writeFile(s.accountsPath(), &f)
+}
+
+// Accounts returns the provider of every account in the store, by id.
+func (s *Store) Accounts() (map[string]string, error) {
+	f, err := s.read()
+	if err != nil {
+		return nil, err
+	}
+	providers := make(map[string]string, len(f.Accounts))
+	for id, t := range f.Accounts {
+		providers[id] = t.Provider
+	}
+	return providers, nil
+}
+
+// Load reads the account's login. Without one the error is ErrNotLoggedIn.
+// It takes no lock: a writer replaces the file whole.
 func (s *Store) Load(account string) (Tokens, error) {
-	path, err := s.path(account, ".json")
+	if err := plainName("account id", account); err != nil {
+		return Tokens{}, err
+	}
+	f, err := s.read()
 	if err != nil {
 		return Tokens{}, err
 	}
-	var t Tokens
-	err = readFile(path, &t)
-	if errors.Is(err, fs.ErrNotExist) {
+	t, ok := f.Accounts[account]
+	if !ok {
 		return Tokens{}, fmt.Errorf("account %q: %w", account, ErrNotLoggedIn)
 	}
-	return t, err
+	return t, nil
 }
 
 // readFile decodes the token file at path into v. A missing file is
@@ -99,14 +160,17 @@ func readFile(path string, v any) error {
 	return nil
 }
 
-// Save replaces the account's file. A reader sees the old file or the new
-// one, never a part of either.
+// Save replaces the account's login, and makes the account when the store
+// has none of that id. A reader sees the old file or the new one, never a
+// part of either.
 func (s *Store) Save(account string, t Tokens) error {
-	path, err := s.path(account, ".json")
-	if err != nil {
+	if err := plainName("account id", account); err != nil {
 		return err
 	}
-	return writeFile(path, &t)
+	return s.update(func(accounts map[string]Tokens) error {
+		accounts[account] = t
+		return nil
+	})
 }
 
 // writeFile replaces the token file at path with v, by a temp file in the
@@ -126,7 +190,8 @@ func writeFile(path string, v any) (err error) {
 			err = errors.Join(err, tmp.Close(), os.Remove(tmp.Name()))
 		}
 	}()
-	if err := json.MarshalWrite(tmp, v); err != nil {
+	// Sorted and on several lines: the file is one a person may read.
+	if err := json.MarshalWrite(tmp, v, json.Deterministic(true), jsontext.Multiline(true)); err != nil {
 		return err
 	}
 	// Without the sync a crash after the rename can leave an empty file.
@@ -142,31 +207,34 @@ func writeFile(path string, v any) (err error) {
 	return nil
 }
 
-// Delete removes the account's file. Without one the error is ErrNotLoggedIn.
+// Delete removes the account from the store. Without one the error is
+// ErrNotLoggedIn.
 func (s *Store) Delete(account string) error {
-	path, err := s.path(account, ".json")
-	if err != nil {
+	if err := plainName("account id", account); err != nil {
 		return err
 	}
-	err = os.Remove(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("account %q: %w", account, ErrNotLoggedIn)
-	}
-	return err
+	return s.update(func(accounts map[string]Tokens) error {
+		if _, ok := accounts[account]; !ok {
+			return fmt.Errorf("account %q: %w", account, ErrNotLoggedIn)
+		}
+		delete(accounts, account)
+		return nil
+	})
 }
 
 // Lock takes the account's exclusive lock, waiting for whichever process or
 // goroutine holds it. The returned function releases it.
 //
-// The lock is on a file of its own beside the account's file. Save replaces
-// the account's file, and a lock on a replaced file excludes nobody. The lock
-// file is never removed, for the same reason.
+// The lock is on a file of its own. Save replaces auth.json, and a lock on a
+// replaced file excludes nobody. The lock file is never removed, for the
+// same reason. It is one per account, so that the refresh of one account
+// does not wait for the token request of another.
 func (s *Store) Lock(ctx context.Context, account string) (unlock func() error, err error) {
-	path, err := s.path(account, ".lock")
-	if err != nil {
+	if err := plainName("account id", account); err != nil {
 		return nil, err
 	}
-	return lockFile(ctx, path)
+	// No id makes this the name of the lock update takes.
+	return lockFile(ctx, filepath.Join(s.dir, "account."+account+".lock"))
 }
 
 // lockFile takes the exclusive lock on the file at path, making it first.
