@@ -63,6 +63,9 @@ type Turn struct {
 	// SkillsDirs are skills directories the client named on session/new,
 	// added to context.skills_dirs.
 	SkillsDirs []string
+	// Model is the name of the configured model the session chose for this
+	// turn. Empty means none was chosen and the configured default applies.
+	Model string
 	// Client is what the client advertised in initialize.
 	Client acp.ClientCapabilities
 	// Sendable reports whether Update will send this update. Update returns
