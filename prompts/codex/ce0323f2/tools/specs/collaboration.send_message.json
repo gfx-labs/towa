@@ -1,0 +1,32 @@
+{
+  "description": "Tools for spawning and managing sub-agents.",
+  "name": "collaboration",
+  "tools": [
+    {
+      "description": "Send a message to an existing agent. The message will be delivered promptly. Does not trigger a new turn.",
+      "name": "send_message",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "Message text to queue on the target agent.",
+            "encrypted": true,
+            "type": "string"
+          },
+          "target": {
+            "description": "Relative or canonical task name to message (from spawn_agent).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "message"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ],
+  "type": "namespace"
+}

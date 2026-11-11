@@ -1,0 +1,26 @@
+{
+  "description": "Tools for reading and waiting on time.",
+  "name": "clock",
+  "tools": [
+    {
+      "description": "Pause execution for a specified duration. The sleep ends early when new input arrives for the active turn. Returns the elapsed wall-clock time.",
+      "name": "sleep",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "description": "How long to sleep in milliseconds. Must be between 1 and 43200000.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "duration_ms"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ],
+  "type": "namespace"
+}

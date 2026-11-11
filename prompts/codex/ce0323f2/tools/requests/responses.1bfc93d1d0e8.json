@@ -1,0 +1,420 @@
+[
+  {
+    "description": "Runs a command in a PTY, returning output or a session ID for ongoing interaction.",
+    "name": "exec_command",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "description": "Shell command to execute.",
+          "type": "string"
+        },
+        "justification": {
+          "description": "User-facing approval question for `require_escalated`; omit otherwise.",
+          "type": "string"
+        },
+        "login": {
+          "description": "True runs the shell with -l/-i semantics; false disables them. Defaults to true.",
+          "type": "boolean"
+        },
+        "max_output_tokens": {
+          "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.",
+          "type": "number"
+        },
+        "prefix_rule": {
+          "description": "Reusable approval prefix for `cmd`, only with `sandbox_permissions: \"require_escalated\"`; for example [\"git\", \"pull\"].",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sandbox_permissions": {
+          "description": "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
+          "enum": [
+            "use_default",
+            "require_escalated"
+          ],
+          "type": "string"
+        },
+        "shell": {
+          "description": "Shell binary to launch. Defaults to the user's default shell.",
+          "type": "string"
+        },
+        "tty": {
+          "description": "True allocates a PTY for the command; false or omitted uses plain pipes.",
+          "type": "boolean"
+        },
+        "workdir": {
+          "description": "Working directory for the command. Defaults to the turn cwd.",
+          "type": "string"
+        },
+        "yield_time_ms": {
+          "description": "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    "strict": false,
+    "type": "function"
+  },
+  {
+    "description": "Writes characters to an existing unified exec session and returns recent output.",
+    "name": "write_stdin",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "chars": {
+          "description": "Bytes to write to stdin. Defaults to empty, which polls without writing.",
+          "type": "string"
+        },
+        "max_output_tokens": {
+          "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.",
+          "type": "number"
+        },
+        "session_id": {
+          "description": "Identifier of the running unified exec session.",
+          "type": "number"
+        },
+        "yield_time_ms": {
+          "description": "Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "strict": false,
+    "type": "function"
+  },
+  {
+    "description": "Request user input for one to three short questions and wait for the response. This tool is only available in Plan mode.",
+    "name": "request_user_input",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "questions": {
+          "description": "Questions to show the user. Prefer 1 and do not exceed 3",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "header": {
+                "description": "Short header label shown in the UI (12 or fewer chars).",
+                "type": "string"
+              },
+              "id": {
+                "description": "Stable identifier for mapping answers (snake_case).",
+                "type": "string"
+              },
+              "options": {
+                "description": "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "description": "One short sentence explaining impact/tradeoff if selected.",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "User-facing label (1-5 words).",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "description"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "question": {
+                "description": "Single-sentence prompt shown to the user.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "header",
+              "question",
+              "options"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "type": "object"
+    },
+    "strict": false,
+    "type": "function"
+  },
+  {
+    "description": "Ask the user one or more questions during ongoing work. Use this tool only to request missing information, preferences, constraints, clarification, or approval. The tool returns immediately without ending the turn or waiting for a reply; any reply arrives asynchronously as a new user message. Keep questions concise, self-contained, and easy to understand, using a level of detail appropriate to the user and task. The UI always allows a free-text answer, including when suggested options are provided. A preselected option is not submitted automatically.",
+    "name": "request_user_input_async",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "questions": {
+          "description": "One or more self-contained questions to present together, in display order.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "options": {
+                "description": "Suggested answers, in display order. Put the recommended answer first; the first option is preselected by default. The user can select one option or enter a free-text answer. Do not include an Other option or a free-text placeholder; the UI provides free-text input automatically. Omit options for a free-text-only question.",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "title": {
+                "description": "The complete question shown to the user, including any context needed to answer it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "type": "object"
+    },
+    "strict": false,
+    "type": "function"
+  },
+  {
+    "description": "Tools for reading and waiting on time.",
+    "name": "clock",
+    "tools": [
+      {
+        "description": "Return the current time in UTC.",
+        "name": "curr_time",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "description": "Pause execution for a specified duration. The sleep ends early when new input arrives for the active turn. Returns the elapsed wall-clock time.",
+        "name": "sleep",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "duration_ms": {
+              "description": "How long to sleep in milliseconds. Must be between 1 and 43200000.",
+              "type": "number"
+            }
+          },
+          "required": [
+            "duration_ms"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      }
+    ],
+    "type": "namespace"
+  },
+  {
+    "description": "The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+    "format": {
+      "definition": "start: begin_patch hunk+ end_patch\nbegin_patch: \"*** Begin Patch\" LF\nend_patch: \"*** End Patch\" LF?\n\nhunk: add_hunk | delete_hunk | update_hunk\nadd_hunk: \"*** Add File: \" filename LF add_line+\ndelete_hunk: \"*** Delete File: \" filename LF\nupdate_hunk: \"*** Update File: \" filename LF change_move? change?\n\nfilename: /(.+)/\nadd_line: \"+\" /(.*)/ LF -> line\n\nchange_move: \"*** Move to: \" filename LF\nchange: (change_context | change_line)+ eof_line?\nchange_context: (\"@@\" | \"@@ \" /(.+)/) LF\nchange_line: (\"+\" | \"-\" | \" \") /(.*)/ LF\neof_line: \"*** End of File\" LF\n\n%import common.LF\n",
+      "syntax": "lark",
+      "type": "grammar"
+    },
+    "name": "apply_patch",
+    "type": "custom"
+  },
+  {
+    "description": "View a local image file from the filesystem when visual inspection is needed. Use this for images already available on disk.",
+    "name": "view_image",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "description": "Image detail level. Defaults to `high`; use `original` to preserve exact resolution.",
+          "enum": [
+            "high",
+            "original"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "description": "Local filesystem path to an image file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "strict": false,
+    "type": "function"
+  },
+  {
+    "description": "Tools for spawning and managing sub-agents.",
+    "name": "collaboration",
+    "tools": [
+      {
+        "description": "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.",
+        "name": "followup_task",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "description": "Message text to send to the target agent.",
+              "encrypted": true,
+              "type": "string"
+            },
+            "target": {
+              "description": "Agent id or canonical task name to send a follow-up task to (from spawn_agent).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "description": "Interrupt an agent's current turn, if any, and return its previous status. The agent remains available for messages and follow-up tasks.",
+        "name": "interrupt_agent",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "description": "Agent id or canonical task name to interrupt (from spawn_agent).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "description": "List live agents in the current root thread tree. Optionally filter by task-path prefix.",
+        "name": "list_agents",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "path_prefix": {
+              "description": "Task-path prefix filter without a trailing slash. Omit to list all live agents.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "description": "Send a message to an existing agent. The message will be delivered promptly. Does not trigger a new turn.",
+        "name": "send_message",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "description": "Message text to queue on the target agent.",
+              "encrypted": true,
+              "type": "string"
+            },
+            "target": {
+              "description": "Relative or canonical task name to message (from spawn_agent).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "description": "\n        Available model overrides (optional; inherited parent model is preferred):\n- `gpt-6.1-sol`: Latest workhorse model for coding and everyday work. Reasoning efforts: low (default), medium, high, xhigh, max, ultra. Service tiers: priority.\n- `gpt-6-astra`: Frontier intelligence for the most demanding work. Reasoning efforts: low (default), medium, high, xhigh, max, ultra. Service tiers: priority.\n- `gpt-6-sol`: Previous generation workhorse model. Reasoning efforts: low, medium (default), high, xhigh, max, ultra. Service tiers: priority.\n- `gpt-6-luna`: Fast and affordable model for easier tasks. Reasoning efforts: low, medium (default), high, xhigh, max. Service tiers: priority.\n- `gpt-5.6-sol`: Older generation workhorse model. Reasoning efforts: low (default), medium, high, xhigh, max, ultra. Service tiers: priority.\n        Spawns an agent to work on the specified task. If your current task is `/root/task1` and you spawn_agent with task_name \"task_3\" the agent will have canonical task name `/root/task1/task_3`.\nYou are then able to refer to this agent as `task_3` or `/root/task1/task_3` interchangeably. However an agent `/root/task2/task_3` would only be able to communicate with this agent via its canonical name `/root/task1/task_3`.\nThe spawned agent will have the same tools as you and the ability to spawn its own subagents.\n\nIt will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.\nThe new agent's canonical task name will be provided to it along with the message.\n\nNote that passing `fork_turns=\"none\"` will not pass any surrounding context to the spawned subagent, which may cause the agent to lack the context it needs to complete its task, whereas `fork_turns=\"all\"` will provide the subagent with all surrounding context.",
+        "name": "spawn_agent",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "fork_turns": {
+              "description": "Parent history to inherit. Defaults to `all`; use `none` to start without parent history. Only `all` and `none` are supported.",
+              "type": "string"
+            },
+            "message": {
+              "description": "Initial plain-text task for the new agent.",
+              "encrypted": true,
+              "type": "string"
+            },
+            "model": {
+              "description": "Model override for the new agent. Omit unless an explicit override is needed.",
+              "type": "string"
+            },
+            "reasoning_effort": {
+              "description": "Reasoning effort override for the new agent. Omit to inherit the parent effort.",
+              "type": "string"
+            },
+            "task_name": {
+              "description": "Task name for the new agent. Use lowercase letters, digits, and underscores.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_name",
+            "message"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "description": "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. The wait also ends early when new user input is steered into the active turn. Does not return the content; returns either a summary of which agents have updates (if any), an interruption summary for steered input, or a timeout summary if no activity arrives before the deadline.",
+        "name": "wait_agent",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "timeout_ms": {
+              "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      }
+    ],
+    "type": "namespace"
+  }
+]

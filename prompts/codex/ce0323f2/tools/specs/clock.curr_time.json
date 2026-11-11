@@ -1,0 +1,18 @@
+{
+  "description": "Tools for reading and waiting on time.",
+  "name": "clock",
+  "tools": [
+    {
+      "description": "Return the current time in UTC.",
+      "name": "curr_time",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ],
+  "type": "namespace"
+}

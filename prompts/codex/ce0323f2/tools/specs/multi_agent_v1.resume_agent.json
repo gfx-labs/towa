@@ -1,0 +1,26 @@
+{
+  "description": "Tools for spawning and managing sub-agents.",
+  "name": "multi_agent_v1",
+  "tools": [
+    {
+      "description": "Resume a previously closed agent by id so it can receive send_input and wait_agent calls.",
+      "name": "resume_agent",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Agent id to resume.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ],
+  "type": "namespace"
+}

@@ -1,0 +1,24 @@
+{
+  "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+  "name": "read_mcp_resource",
+  "parameters": {
+    "additionalProperties": false,
+    "properties": {
+      "server": {
+        "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources.",
+        "type": "string"
+      },
+      "uri": {
+        "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "server",
+      "uri"
+    ],
+    "type": "object"
+  },
+  "strict": false,
+  "type": "function"
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Tools for spawning and managing sub-agents.",
+  "name": "collaboration",
+  "tools": [
+    {
+      "description": "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. The wait also ends early when new user input is steered into the active turn. Does not return the content; returns either a summary of which agents have updates (if any), an interruption summary for steered input, or a timeout summary if no activity arrives before the deadline.",
+      "name": "wait_agent",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "timeout_ms": {
+            "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ],
+  "type": "namespace"
+}

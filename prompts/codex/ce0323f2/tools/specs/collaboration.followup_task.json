@@ -1,0 +1,32 @@
+{
+  "description": "Tools for spawning and managing sub-agents.",
+  "name": "collaboration",
+  "tools": [
+    {
+      "description": "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.",
+      "name": "followup_task",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "Message text to send to the target agent.",
+            "encrypted": true,
+            "type": "string"
+          },
+          "target": {
+            "description": "Agent id or canonical task name to send a follow-up task to (from spawn_agent).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "message"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ],
+  "type": "namespace"
+}
