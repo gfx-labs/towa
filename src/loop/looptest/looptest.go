@@ -149,6 +149,13 @@ func Replay(t testing.TB, s Scenario) *Fixture {
 	})
 }
 
+// At builds the same real loop at base without recording or rewriting its
+// HTTP transport. Tests use a local server and the normal proxy settings.
+func At(t testing.TB, s Scenario, base string) *Fixture {
+	t.Helper()
+	return build(t, s, base, nil)
+}
+
 // RecordingPath is the file of a scenario's nth request, from 1.
 func RecordingPath(s Scenario, n int) string {
 	_, file, _, ok := runtime.Caller(0)
@@ -215,8 +222,12 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 	}
 
 	httpClient := httpclient.New()
-	seq := transport(httpClient.Transport)
-	httpClient.Transport = seq
+	var served func() int
+	if transport != nil {
+		seq := transport(httpClient.Transport)
+		httpClient.Transport = seq
+		served = seq.count
+	}
 	client, err := chat.New(chat.Config{
 		HTTPClient: httpClient,
 		Provider:   config.Provider{ID: ProviderID, Kind: config.ProviderChat, BaseURL: base},
@@ -274,7 +285,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 	}
 	l, err := loop.New(opts)
 	fail(err)
-	return &Fixture{Loop: l, Store: st, Cwd: cwd, Config: cfg, Options: opts, Served: seq.count, scenario: s}
+	return &Fixture{Loop: l, Store: st, Cwd: cwd, Config: cfg, Options: opts, Served: served, scenario: s}
 }
 
 // ReadToolName is the name of the fixture's one tool.
