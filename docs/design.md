@@ -236,7 +236,7 @@ Names, descriptions and schemas are in `src/tools/core/specs`. The instructions 
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
 - Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
 - Todo: the `todo` tool maps to ACP `plan` updates.
-- Web: webfetch with HTML to Markdown. Web search uses the provider's built-in server tool (Anthropic web search, OpenAI Responses web search, OpenRouter web plugin). Users who want an external backend add a tool or an MCP server.
+- Web: webfetch with HTML to Markdown. `websearch` is our own: this process posts the query to DuckDuckGo's HTML page (`websearch.endpoint`) and returns titles, URLs and snippets, so it behaves the same with every provider and adds no provider-specific tool or stored item. The providers' built-in search tools are not used. A bot challenge from the endpoint is reported to the model as a failed search (`docs/notes/2026-11-11-websearch.md`).
 - Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. It can also read other sessions by id, so a parent can read the sessions of the subagents it spawned. Scope is a config setting: `self`, `descendants` (the session and every subagent session below it, the default) or `store` (every session in the store, opt-in because a shared store holds other workers' sessions). Keyword matching first. Result and snippet limits come from config.
 - Argument repair: before validation, a tool input is repaired when a list or object argument arrives as a JSON string, a single object arrives where a list is declared, or a number or boolean arrives as a string. Each repair is counted in telemetry and logged, never silent. Anything else that fails the schema is returned to the model as an error.
 - Subagent: see below.
@@ -483,4 +483,4 @@ jobshop (origin/master 2b42e5fd, 2026-11-11) uses `acp-go-sdk` v0.13.5 and calls
 
 ## Open questions
 
-- Web search for chat providers without a built-in tool: none by default, user-supplied tool or MCP.
+- Web search has one backend, DuckDuckGo's HTML page, which challenges an address that searches often. A second backend (SearXNG or a keyed API) is added when that is measured to be a problem on the worker hosts.

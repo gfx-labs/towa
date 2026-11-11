@@ -397,6 +397,12 @@ func (f *runtimeFactory) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, e
 			return nil, err
 		}
 	}
+	if f.cfg.WebSearch.Enabled {
+		tool, err := extras.WebSearch(f.cfg.WebSearch, f.client)
+		if err := add(extras.NameWebSearch, tool, err); err != nil {
+			return nil, err
+		}
+	}
 	if f.cfg.Context.SkillsEnabled {
 		skills := loaded.Skills
 		if skills == nil {

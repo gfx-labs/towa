@@ -32,6 +32,7 @@ type Config struct {
 	Embeddings         Embeddings         `koanf:"embeddings"`
 	OpenAI             OpenAI             `koanf:"openai"`
 	WebFetch           WebFetch           `koanf:"webfetch"`
+	WebSearch          WebSearch          `koanf:"websearch"`
 	Jev                Jev                `koanf:"jev"`
 	Compaction         Compaction         `koanf:"compaction"`
 	ConversationSearch ConversationSearch `koanf:"conversation_search"`
@@ -90,7 +91,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults, jevDefaults, compactionDefaults,
+		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults, websearchDefaults, jevDefaults, compactionDefaults,
 		conversationSearchDefaults, subagentsDefaults,
 	} {
 		maps.Copy(all, section)
@@ -113,7 +114,7 @@ func (c *Config) validate() error {
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
-		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate,
+		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate, c.WebSearch.validate,
 		c.Jev.validate, c.validateJevAccount, c.Compaction.validate, c.validateCompaction,
 		c.ConversationSearch.validate, c.Subagents.validate, c.validateSubagentModels,
 		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },

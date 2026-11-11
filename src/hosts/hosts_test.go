@@ -72,6 +72,9 @@ api_key_env = "OPENAI_API_KEY"
 base_url = "http://127.0.0.1:8080/v1"
 model = "bge"
 
+[websearch]
+endpoint = "https://search.example/html/"
+
 [jev]
 route = "custom"
 model = "jev-local"
@@ -123,6 +126,7 @@ command = "mcp-files"
 		"mcp.servers[0].oauth": {"auth.example.com:443"},
 		"mcp.servers[1].url":   {"tickets.example.com:443"},
 		"embeddings.base_url":  {"127.0.0.1:8080"},
+		"websearch.endpoint":   {"search.example:443"},
 		"jev.base_url":         {"jev.internal.example:443"},
 		// Traces and logs fall back to the general variable.
 		"telemetry.otel:" + hosts.EnvOTLPEndpoint:        {"collector:4318"},
@@ -163,13 +167,14 @@ func hostLines(r hosts.Report) []string {
 func TestOTLPIsListedOnlyWhenTurnedOnAndNamed(t *testing.T) {
 	otlp := hosts.OTLP{Endpoint: "http://collector:4318"}
 
-	off, err := hosts.List(load(t, ""), hosts.Inputs{OTLP: otlp})
+	const noSearch = "[websearch]\nenabled = false\n"
+	off, err := hosts.List(load(t, noSearch), hosts.Inputs{OTLP: otlp})
 	require.NoError(t, err)
 	require.Empty(t, off.Hosts)
 
 	// On without a variable: the exporter's default is not ours to state,
 	// so each signal is reported as not covered.
-	unnamed, err := hosts.List(load(t, "[telemetry]\notel = true\n"), hosts.Inputs{})
+	unnamed, err := hosts.List(load(t, noSearch+"[telemetry]\notel = true\n"), hosts.Inputs{})
 	require.NoError(t, err)
 	require.Empty(t, unnamed.Hosts)
 	require.Greater(t, len(unnamed.NotCovered), len(off.NotCovered))

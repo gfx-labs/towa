@@ -17,6 +17,7 @@ import (
 const (
 	NameConversationSearch = "conversation_search"
 	NameWebFetch           = "webfetch"
+	NameWebSearch          = "websearch"
 	NameJevDecision        = "jev_decision"
 	NameSkill              = "skill_manage"
 	NameBatch              = "batch"

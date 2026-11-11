@@ -177,6 +177,8 @@ mode = "off"
 enabled = false
 [webfetch]
 enabled = false
+[websearch]
+enabled = false
 [tools.batch]
 enabled = false
 [tools.files]

@@ -82,7 +82,7 @@ url = "https://moved.example/mcp"
 		Commands: []*cli.Command{hostsCommandWith(h, env)},
 		Writer:   io.Discard, ErrWriter: io.Discard,
 	}
-	require.NoError(t, app.Run(t.Context(), []string{"acpharness", "--config", file, "--set", "telemetry.otel=true", "hosts"}))
+	require.NoError(t, app.Run(t.Context(), []string{"acpharness", "--config", file, "--set", "telemetry.otel=true", "--set", "websearch.enabled=false", "hosts"}))
 
 	// The authorize and token endpoints share a host, which is one line.
 	require.Equal(t, strings.Join([]string{
@@ -147,7 +147,8 @@ account = "c"
 		require.True(t, ok, line)
 		keys[key]++
 	}
+	// The search endpoint is the configured default, with no key of the user's.
 	require.Equal(t, map[string]int{
-		"accounts[0].provider": 1, "accounts[1].provider": 1, "accounts[2].provider": 1, "jev.route": 1,
+		"accounts[0].provider": 1, "accounts[1].provider": 1, "accounts[2].provider": 1, "jev.route": 1, "websearch.endpoint": 1,
 	}, keys)
 }

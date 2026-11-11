@@ -198,6 +198,11 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 			return Report{}, err
 		}
 	}
+	if cfg.WebSearch.Enabled {
+		if err := add("websearch.endpoint", cfg.WebSearch.Endpoint); err != nil {
+			return Report{}, err
+		}
+	}
 	if cfg.Jev.Route != "" {
 		if in.JevEndpoint == "" {
 			return Report{}, fmt.Errorf("hosts: jev.route is %q and no endpoint was given for it", cfg.Jev.Route)
