@@ -73,6 +73,12 @@ type Filter struct {
 	Cwd      string
 	ParentID uuid.UUID
 	Archived Archived
+	// After selects ids after this id, exclusively. List is ordered by id,
+	// oldest first. A zero id means the first page.
+	After uuid.UUID
+	// Limit is the most matches to return, after the filters. Zero means
+	// no limit. A negative value is an error.
+	Limit int
 }
 
 // Store holds sessions.
