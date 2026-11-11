@@ -13,6 +13,7 @@ import (
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/acpharness/src/models"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/router"
 	"github.com/gfx-labs/acpharness/src/tools"
@@ -84,6 +85,18 @@ func TestStopForCopiesWhatTheProviderSaid(t *testing.T) {
 		Account: "work", Model: "opus", Message: "weekly limit reached",
 	}, stopped.Stop)
 	assert.ErrorIs(t, err, perr)
+
+	missing := &models.NoModelError{}
+	selection := fmt.Errorf("resolve: %w", missing)
+	mapped := loop.StopFor(selection)
+	require.ErrorAs(t, mapped, &stopped)
+	assert.Equal(t, harness.StopRequest, stopped.Stop.Kind)
+	assert.Equal(t, missing.Error(), stopped.Stop.Message)
+	assert.ErrorIs(t, mapped, selection)
+	var original *models.NoModelError
+	require.ErrorAs(t, mapped, &original)
+	assert.Same(t, missing, original)
+	assert.Same(t, mapped, loop.StopFor(mapped), "mapping an existing stop must not wrap it again")
 
 	plain := errors.New("disk full")
 	assert.Equal(t, plain, loop.StopFor(plain), "an error that is not the provider's is not given a stop")

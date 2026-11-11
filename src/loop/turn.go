@@ -278,7 +278,7 @@ func (tn *turn) run(ctx context.Context) (Result, error) {
 		}
 	}
 	if err := tn.resolve(ctx); err != nil {
-		return Result{}, err
+		return Result{}, StopFor(err)
 	}
 	if l.o.NewCompactor != nil {
 		current := copyTurn(t)

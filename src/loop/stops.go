@@ -5,6 +5,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/auth"
+	"github.com/gfx-labs/acpharness/src/models"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/router"
 )
@@ -36,10 +37,15 @@ func StopKind(reason provider.Reason) (harness.StopKind, bool) {
 // auth source could not give, such as a login that has to be redone, comes
 // from the router as an auth failure and so becomes an auth stop. Any other error,
 // and a provider error with a reason outside the list, is returned as it is.
+// A selection without a configured model is a request stop, not a provider failure.
 func StopFor(err error) error {
 	var stopped *StopError
 	if errors.As(err, &stopped) {
 		return stopped
+	}
+	var noModel *models.NoModelError
+	if errors.As(err, &noModel) {
+		return &StopError{Stop: harness.Stop{Kind: harness.StopRequest, Message: noModel.Error()}, Err: err}
 	}
 	var perr *provider.Error
 	if !errors.As(err, &perr) {
