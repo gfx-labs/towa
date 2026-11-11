@@ -51,6 +51,7 @@ A worker that finishes early takes work that needs nothing from the lanes still 
 |---|---|---|
 | `agentctx` (second task) | `src/hooks/**`, `src/config/hooks.go` | Hooks: config maps an event (`pre_tool`, `post_tool`, `prompt`, `stop`) and a tool set to a command. The command gets the event as JSON on stdin and answers allow, deny with a reason, or a changed input |
 | `auth` (second task) | `src/auth/**`, `src/embed/**`, `src/config/embeddings.go` | Token storage for MCP OAuth in the auth store, agreed with the `mcp` lane. A record that a refresh token is dead. The client for the OpenAI `/v1/embeddings` shape |
+| `session` (second task) | `src/hosts/**`, `src/cli/hosts.go`, `src/tools/todo/**` | The `hosts` command: every host the resolved config will contact, one per line with the config key that names it. The todo capability: one validated list in, an ACP plan out, with no dialect adapter |
 
 ## After wave 1
 
