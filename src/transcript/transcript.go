@@ -49,9 +49,23 @@ type Item struct {
 	// leaves it out when it has none.
 	Provider string         `json:"provider,omitzero"`
 	Opaque   jsontext.Value `json:"opaque,omitzero"`
+	// Origin is nil for legacy items with unknown request provenance.
+	Origin *Origin `json:"origin,omitzero"`
 }
 
-// Validate checks the variant and any message role.
+// Origin identifies the request that produced opaque content, without credentials.
+type Origin struct {
+	Model   string `json:"model"`
+	Account string `json:"account"`
+}
+
+// OpaqueCompatible requires known, identical request provenance for opaque replay.
+func (i Item) OpaqueCompatible(provider string, origin Origin) bool {
+	return len(i.Opaque) > 0 && provider != "" && i.Provider == provider &&
+		i.Origin != nil && origin.Model != "" && origin.Account != "" && *i.Origin == origin
+}
+
+// Validate checks the variant, message role and any declared origin.
 func (i Item) Validate() error {
 	set := 0
 	for _, present := range []bool{
@@ -64,6 +78,9 @@ func (i Item) Validate() error {
 	}
 	switch set {
 	case 1:
+		if i.Origin != nil && (i.Origin.Model == "" || i.Origin.Account == "") {
+			return errors.New("transcript: origin requires a model and an account")
+		}
 		if i.User != nil {
 			switch i.User.Role {
 			case "", "user", "developer":

@@ -332,7 +332,7 @@ type Store interface {
 }
 ```
 
-- `transcript.Entry` is the append-only canonical transcript: messages, tool calls and results, provider-native items, model switches, compaction summaries. Provider-only content is in `Item.Opaque`, tagged with `Item.Provider`.
+- `transcript.Entry` is the append-only canonical transcript: messages, tool calls and results, provider-native items, model switches, compaction summaries. Provider-only content is in `Item.Opaque`, tagged with canonical `Item.Provider` and `Item.Origin` (exact request model and configured account ID). Opaque replay requires all three identities to match. A legacy nil origin is unknown and is never inferred or backfilled. Only safe plain structural fallback is allowed without a match, required signatures and native context need an explicit incompatibility error or portable regeneration from retained source.
 - Session and entry ids are caller-supplied UUIDv7 from the Go standard library. Times also come from the caller. Each entry keeps its `ParentID`, including when a fork copies it.
 - `Meta` records cwd, additional directories, title, model, mode, parent session id, created time and archived state. `State` is opaque caller-owned bytes for session configuration the load request cannot carry. The store returns those bytes unchanged and never interprets them. `SetMeta` replaces Title, Model, Mode, Dirs, Archived and State, leaving identity, cwd, parent and created time unchanged.
 - `Append` returns only after the entries are durable, all together. In either format, a crash leaves a complete append or an explicitly torn one, never a silently accepted prefix. `Updated` is the time of the last entry, read from the log rather than rewriting metadata each turn.
