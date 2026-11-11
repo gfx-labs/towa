@@ -19,6 +19,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/urfave/cli/v3"
 
+	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/session"
@@ -100,22 +101,40 @@ func serve(ctx context.Context, cmd *cli.Command, h Host) error {
 		return err
 	}
 
-	host, err := session.NewHost(session.Options{
-		Version: version(),
-		Turn:    loop.Stub,
-		Logger:  tel.Logger,
-		Tracer:  tel.Tracer,
-		Meter:   tel.Meter,
-		Session: loaded.Config.Session,
-	})
+	factory, err := newRuntimeFactory(ctx, loaded.Config, h, tel)
 	if err != nil {
 		return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
+	}
+	registry := &session.Registry{}
+	if err := session.AddModels(registry, loaded.Config.DefaultModel, loaded.Config.Models); err != nil {
+		return errors.Join(err, factory.Close(), tel.Shutdown(context.WithoutCancel(ctx)))
+	}
+	host, err := session.NewHost(session.Options{
+		Version:  version(),
+		Open:     factory.Open,
+		Logger:   tel.Logger,
+		Tracer:   tel.Tracer,
+		Meter:    tel.Meter,
+		Session:  loaded.Config.Session,
+		Registry: registry,
+		Store:    factory.store,
+		Supports: session.Supports{
+			AdditionalDirectories: true,
+			SystemPrompt:          true,
+			ContextOverrides:      true,
+			MCP:                   &acp.McpCapabilities{Http: true, Sse: true},
+		},
+		Mapper: loop.Mapper{},
+	})
+	if err != nil {
+		return errors.Join(err, factory.Close(), tel.Shutdown(context.WithoutCancel(ctx)))
 	}
 	err = serveListeners(ctx, loaded.Config.Listen, host, h, tel.Logger, h.CloseStdio)
 	if ctx.Err() != nil && errors.Is(err, context.Cause(ctx)) {
 		err = nil
 	}
 	err = errors.Join(err, host.Close(context.WithoutCancel(ctx)))
+	err = errors.Join(err, factory.Close())
 	tel.Logger.Info("stopped", "err", err)
 	// ctx may be cancelled already. The exporters' own timeouts bound this.
 	return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
