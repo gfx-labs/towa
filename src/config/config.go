@@ -13,19 +13,23 @@ import (
 // its type, its defaults and its validation. A field is added to a section
 // when the code that reads it exists.
 type Config struct {
-	Telemetry  Telemetry  `koanf:"telemetry"`
-	Auth       Auth       `koanf:"auth"`
-	Accounts   []Account  `koanf:"accounts"`
-	Providers  []Provider `koanf:"providers"`
-	Store      Store      `koanf:"store"`
-	Tools      Tools      `koanf:"tools"`
-	MCP        MCP        `koanf:"mcp"`
-	Session    Session    `koanf:"session"`
-	Context    Context    `koanf:"context"`
-	Listen     Listen     `koanf:"listen"`
-	Limits     Limits     `koanf:"limits"`
-	Hooks      []Hook     `koanf:"hooks"`
-	Embeddings Embeddings `koanf:"embeddings"`
+	// DefaultModel names the entry of Models a session starts with.
+	DefaultModel string `koanf:"default_model"`
+	// Models are the named models, each an ordered chain of accounts.
+	Models     map[string]Model `koanf:"models"`
+	Telemetry  Telemetry        `koanf:"telemetry"`
+	Auth       Auth             `koanf:"auth"`
+	Accounts   []Account        `koanf:"accounts"`
+	Providers  []Provider       `koanf:"providers"`
+	Store      Store            `koanf:"store"`
+	Tools      Tools            `koanf:"tools"`
+	MCP        MCP              `koanf:"mcp"`
+	Session    Session          `koanf:"session"`
+	Context    Context          `koanf:"context"`
+	Listen     Listen           `koanf:"listen"`
+	Limits     Limits           `koanf:"limits"`
+	Hooks      []Hook           `koanf:"hooks"`
+	Embeddings Embeddings       `koanf:"embeddings"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -105,6 +109,7 @@ func (c *Config) validate() error {
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
 		c.Embeddings.validate, c.validateEmbeddingsAccount,
+		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
 			return err
