@@ -83,9 +83,10 @@ type ToolsBatch struct {
 
 // toolsDefaults names where each default comes from. A Codex figure cites
 // its file and line in openai/codex at ce0323f2f2d3b25e82806cd555237da3db4e1897,
-// read on 2026-11-11. The Claude Code and jcode figures were written from
-// memory and are unchecked until the capture lane's files are in: see
-// docs/notes/2026-11-11-tools.md.
+// read on 2026-11-11. A Claude Code figure cites a module of the unpacked
+// 2.1.280 bundle, its line and the text to search for, since the bundle is
+// minified and its identifiers change with every version. The jcode figure
+// is unchecked. See docs/notes/2026-11-11-tools.md for what differs.
 var toolsDefaults = map[string]any{
 	// Codex keeps the same amount: UNIFIED_EXEC_OUTPUT_MAX_BYTES, 1 MiB
 	// (codex-rs/core/src/unified_exec/mod.rs:75), which exec.rs:81 uses
@@ -97,21 +98,31 @@ var toolsDefaults = map[string]any{
 	// read any file on the machine, and the design leaves isolation to the
 	// host.
 	"tools.files.confine": false,
-	// Unchecked: Claude Code's Read, 256 KB per read and 2000 lines.
-	"tools.files.read_max_bytes":     256 << 10,
+	// Claude Code: 262144 (chunk-esax8p5m.js:11, "=262144"), the default
+	// maxSizeBytes of a read (chunk-fg23k495.js:11, "defaultFileReadingLimits").
+	// Upstream applies it to the whole file and only when the call names no
+	// limit. Here it is the most any one read returns.
+	"tools.files.read_max_bytes": 256 << 10,
+	// Claude Code: 2000 (chunk-58pe6gjn.js:12, "Reads up to").
 	"tools.files.read_default_lines": 2000,
-	// Unchecked: the Anthropic Messages API's limit on one image, 5 MB.
-	"tools.files.image_max_bytes": 5 << 20,
+	// Claude Code: targetRawSize, 3932160 (chunk-6bcrsx06.js:11,
+	// "maxBase64Size:5242880,targetRawSize:3932160"). The API's limit is
+	// 5 MiB of base64, which is three quarters of that in file bytes.
+	// Upstream shrinks a larger image. Here it is refused.
+	"tools.files.image_max_bytes": 3932160,
 	// No upstream source. Sixteen maximal reads, so a file the model can
-	// page through in a few calls can be edited.
+	// page through in a few calls can be edited. Claude Code's Edit takes
+	// a file of up to 1 GiB (chunk-1xqpf2j8.js:3451, "too large to edit").
 	"tools.files.edit_max_bytes": 4 << 20,
 	// No upstream source for a fixed program. Codex runs the user's own
 	// shell and falls back to bash, then zsh, then /bin/sh on Linux
-	// (codex-rs/shell-command/src/shell_detect.rs:363). Unchecked: Claude
-	// Code's Bash tool.
+	// (codex-rs/shell-command/src/shell_detect.rs:363). Claude Code takes
+	// CLAUDE_CODE_SHELL, then SHELL when it is bash or zsh, then looks for
+	// both (chunk-1xqpf2j8.js:675, "Using shell override").
 	"tools.shell.program": "bash",
-	// Unchecked: Claude Code's Bash, two minutes by default and ten at
-	// most. Codex's default is ten seconds, DEFAULT_EXEC_COMMAND_TIMEOUT_MS
+	// Claude Code: 120000 and 600000 ms (chunk-dk0eh9zy.js:14,
+	// "BASH_DEFAULT_TIMEOUT_MS"). Codex's default is ten seconds,
+	// DEFAULT_EXEC_COMMAND_TIMEOUT_MS
 	// (codex-rs/core/src/exec.rs:63), and it has no maximum there.
 	"tools.shell.timeout":     "2m",
 	"tools.shell.max_timeout": "10m",
@@ -120,8 +131,9 @@ var toolsDefaults = map[string]any{
 	"tools.search.ripgrep":  "rg",
 	"tools.repair.enabled":  true,
 	"tools.gate.enabled":    true,
-	// Unchecked: Claude Code's limit on a tool result,
-	// MAX_MCP_OUTPUT_TOKENS. Codex's nearest figure is lower:
+	// Claude Code: 25000, its limit on an MCP tool's result
+	// (chunk-8ren4cq6.js:11, "MAX_MCP_OUTPUT_TOKENS") and on one file
+	// read (chunk-fg23k495.js:11, "=25000"). Codex's nearest figure is lower:
 	// DEFAULT_MAX_OUTPUT_TOKENS, 10000, for one command's output
 	// (codex-rs/core/src/unified_exec/mod.rs:74).
 	"tools.gate.budget_tokens": 25000,
