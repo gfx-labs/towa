@@ -12,18 +12,18 @@ type Embeddings struct {
 	// "/embeddings" is added to it.
 	BaseURL string `koanf:"base_url"`
 	// Model is the endpoint's own name for the model.
-	Model string `koanf:"model"`
+	Model string `koanf:"model" validate:"required_with=BaseURL,excluded_without=BaseURL"`
 	// Account is the id of the account whose credential is sent. Empty
 	// sends no authorization, which is what a local sidecar wants.
-	Account string `koanf:"account"`
+	Account string `koanf:"account" validate:"excluded_without=BaseURL"`
 	// Dimensions is the length of vector to ask for. Zero does not ask, and
 	// the model's own length is used. When it is set, a vector of another
 	// length is an error.
-	Dimensions int `koanf:"dimensions"`
+	Dimensions int `koanf:"dimensions" validate:"gte=0"`
 	// BatchSize is the most inputs sent in one request.
-	BatchSize int `koanf:"batch_size"`
+	BatchSize int `koanf:"batch_size" validate:"gt=0"`
 	// TimeoutSeconds bounds one request.
-	TimeoutSeconds int `koanf:"timeout_seconds"`
+	TimeoutSeconds int `koanf:"timeout_seconds" validate:"gt=0"`
 }
 
 var embeddingsDefaults = map[string]any{
@@ -41,23 +41,10 @@ var embeddingsDefaults = map[string]any{
 }
 
 func (e Embeddings) validate() error {
-	switch {
-	case e.Dimensions < 0:
-		return fmt.Errorf("embeddings.dimensions: %d is negative", e.Dimensions)
-	case e.BatchSize <= 0:
-		return fmt.Errorf("embeddings.batch_size: %d is not positive", e.BatchSize)
-	case e.TimeoutSeconds <= 0:
-		return fmt.Errorf("embeddings.timeout_seconds: %d is not positive", e.TimeoutSeconds)
+	if err := validateFields("embeddings", e); err != nil {
+		return err
 	}
 	if e.BaseURL == "" {
-		// A model or an account without an endpoint is a config that was
-		// meant to do something and does nothing.
-		switch {
-		case e.Model != "":
-			return fmt.Errorf("embeddings.model is %q and embeddings.base_url is empty", e.Model)
-		case e.Account != "":
-			return fmt.Errorf("embeddings.account is %q and embeddings.base_url is empty", e.Account)
-		}
 		return nil
 	}
 	u, err := url.Parse(e.BaseURL)
@@ -66,9 +53,6 @@ func (e Embeddings) validate() error {
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("embeddings.base_url: %q has a query or a fragment, and a path is added to it", e.BaseURL)
-	}
-	if e.Model == "" {
-		return fmt.Errorf("embeddings.model is empty")
 	}
 	return nil
 }

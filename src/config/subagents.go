@@ -1,7 +1,5 @@
 package config
 
-import "fmt"
-
 // Config keys of the subagent limits. A refused call names the one that
 // refused it.
 const (
@@ -15,15 +13,15 @@ type Subagents struct {
 	// MaxDepth is how many sessions may stand between a subagent and the
 	// session the client opened, counting the subagent. 1 lets a session
 	// start subagents that start none. 0 lets no session start one.
-	MaxDepth int `koanf:"max_depth"`
+	MaxDepth int `koanf:"max_depth" validate:"gte=0"`
 	// MaxConcurrent is how many subagents may run at once in the process,
 	// at every depth together. A call over it is refused and does not
 	// wait. 0 means no limit.
-	MaxConcurrent int `koanf:"max_concurrent"`
+	MaxConcurrent int `koanf:"max_concurrent" validate:"gte=0"`
 	// Models are the named models a call may choose for its subagent. A
 	// call that names none runs the subagent on its parent's model, which
 	// needs no entry here.
-	Models []string `koanf:"models"`
+	Models []string `koanf:"models" validate:"unique,dive,required"`
 }
 
 // The defaults are what jcode does at 8e11eb23e. Its direct subagent tool is
@@ -50,21 +48,5 @@ func (s Subagents) validate() error {
 
 // Validate reports settings the spawner cannot use.
 func (s Subagents) Validate() error {
-	switch {
-	case s.MaxDepth < 0:
-		return fmt.Errorf("%s is negative", KeySubagentsMaxDepth)
-	case s.MaxConcurrent < 0:
-		return fmt.Errorf("%s is negative", KeySubagentsMaxConcurrent)
-	}
-	seen := make(map[string]bool, len(s.Models))
-	for i, name := range s.Models {
-		if name == "" {
-			return fmt.Errorf("%s[%d] is empty", KeySubagentsModels, i)
-		}
-		if seen[name] {
-			return fmt.Errorf("%s names %q twice", KeySubagentsModels, name)
-		}
-		seen[name] = true
-	}
-	return nil
+	return validateFields("subagents", s)
 }

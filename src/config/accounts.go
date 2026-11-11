@@ -11,12 +11,12 @@ type Auth struct {
 	// RefreshMarginSeconds is how long before its expiry an OAuth token is
 	// refreshed, so that a request does not leave with a token that expires
 	// on the way.
-	RefreshMarginSeconds int `koanf:"refresh_margin_seconds"`
+	RefreshMarginSeconds int `koanf:"refresh_margin_seconds" validate:"gte=0"`
 	// TokenTimeoutSeconds bounds one request to an OAuth token endpoint.
-	TokenTimeoutSeconds int `koanf:"token_timeout_seconds"`
+	TokenTimeoutSeconds int `koanf:"token_timeout_seconds" validate:"gt=0"`
 	// LoginTimeoutSeconds is how long login waits for the browser to come
 	// back before it asks for the code to be pasted.
-	LoginTimeoutSeconds int `koanf:"login_timeout_seconds"`
+	LoginTimeoutSeconds int `koanf:"login_timeout_seconds" validate:"gt=0"`
 }
 
 // The values are jcode's: its freshness margin, its Claude token request
@@ -28,33 +28,25 @@ var authDefaults = map[string]any{
 }
 
 func (a Auth) validate() error {
-	switch {
-	case a.RefreshMarginSeconds < 0:
-		return fmt.Errorf("auth.refresh_margin_seconds: %d is negative", a.RefreshMarginSeconds)
-	case a.TokenTimeoutSeconds <= 0:
-		return fmt.Errorf("auth.token_timeout_seconds: %d is not positive", a.TokenTimeoutSeconds)
-	case a.LoginTimeoutSeconds <= 0:
-		return fmt.Errorf("auth.login_timeout_seconds: %d is not positive", a.LoginTimeoutSeconds)
-	}
-	return nil
+	return validateFields("auth", a)
 }
 
 // Account is one login or key the harness can send requests with.
 type Account struct {
 	// ID names the account in model chains and in the auth store.
-	ID string `koanf:"id"`
+	ID string `koanf:"id" validate:"required"`
 	// Provider is the provider the account belongs to, such as "claude",
 	// "codex" or "openrouter".
-	Provider string `koanf:"provider"`
-	Kind     string `koanf:"kind"`
+	Provider string `koanf:"provider" validate:"required"`
+	Kind     string `koanf:"kind" validate:"oneof=oauth api_key proxied_oauth proxied_api_key"`
 	// APIKeyEnv names the environment variable that holds the key of an
 	// api_key account.
-	APIKeyEnv string `koanf:"api_key_env"`
+	APIKeyEnv string `koanf:"api_key_env" validate:"required_if=Kind api_key,excluded_unless=Kind api_key"`
 	// ChatGPTAccountID is the account id the Codex backend wants in a
 	// header. Only a proxied_oauth account sets it: the proxy replaces the
 	// authorization and nothing else, and the harness has no id token to
 	// read the id from.
-	ChatGPTAccountID string `koanf:"chatgpt_account_id"`
+	ChatGPTAccountID string `koanf:"chatgpt_account_id" validate:"excluded_unless=Kind proxied_oauth"`
 }
 
 // Kinds of an account.
@@ -74,35 +66,17 @@ func (c *Config) validateAccounts() error {
 	seen := map[string]bool{}
 	for i, a := range c.Accounts {
 		at := fmt.Sprintf("accounts[%d]", i)
+		if err := validateFields(at, a); err != nil {
+			return err
+		}
 		switch {
-		case a.ID == "":
-			return fmt.Errorf("%s.id is empty", at)
 		case a.ID != filepath.Base(a.ID) || strings.HasPrefix(a.ID, "."):
 			// The id names the account's file in the auth store.
 			return fmt.Errorf("%s.id: %q is not a plain file name", at, a.ID)
 		case seen[a.ID]:
 			return fmt.Errorf("%s.id: %q is used by more than one account", at, a.ID)
-		case a.Provider == "":
-			return fmt.Errorf("%s.provider is empty", at)
 		}
 		seen[a.ID] = true
-		switch a.Kind {
-		case AccountAPIKey:
-			if a.APIKeyEnv == "" {
-				return fmt.Errorf("%s.api_key_env is empty for an %s account", at, AccountAPIKey)
-			}
-		case AccountOAuth, AccountProxiedOAuth, AccountProxiedAPIKey:
-			if a.APIKeyEnv != "" {
-				return fmt.Errorf("%s.api_key_env is set for a %s account, which reads no key", at, a.Kind)
-			}
-		default:
-			return fmt.Errorf("%s.kind: %q is not %q, %q, %q or %q", at, a.Kind,
-				AccountOAuth, AccountAPIKey, AccountProxiedOAuth, AccountProxiedAPIKey)
-		}
-		if a.ChatGPTAccountID != "" && a.Kind != AccountProxiedOAuth {
-			return fmt.Errorf("%s.chatgpt_account_id is set for a %s account: only a %s account sets it",
-				at, a.Kind, AccountProxiedOAuth)
-		}
 	}
 	return nil
 }

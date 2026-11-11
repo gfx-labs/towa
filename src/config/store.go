@@ -14,7 +14,7 @@ type Store struct {
 	Root string `koanf:"root"`
 	// Compression is how the log of a new session is stored. A session
 	// that exists keeps the format it was created with.
-	Compression string `koanf:"compression"`
+	Compression string `koanf:"compression" validate:"oneof=none zstd"`
 }
 
 // Values of Store.Compression. They are the names src/store/dir takes.
@@ -36,11 +36,7 @@ func (s Store) validate() error {
 	if s.Root != "" && !filepath.IsAbs(s.Root) {
 		return fmt.Errorf("store.root: %q is not an absolute path", s.Root)
 	}
-	switch s.Compression {
-	case StoreCompressionNone, StoreCompressionZstd:
-		return nil
-	}
-	return fmt.Errorf("store.compression: %q is not %q or %q", s.Compression, StoreCompressionNone, StoreCompressionZstd)
+	return validateFields("store", s)
 }
 
 // Dir returns the directory sessions are kept in. When Root is empty it is

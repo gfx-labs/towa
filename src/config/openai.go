@@ -1,7 +1,5 @@
 package config
 
-import "fmt"
-
 // OpenAI configures the Responses API client, for both of its endpoints:
 // an API key against api.openai.com or a configured base URL, and a ChatGPT
 // login against the Codex backend.
@@ -9,21 +7,21 @@ type OpenAI struct {
 	// Transport is how a request reaches the endpoint: "sse" posts it and
 	// reads server-sent events, "websocket" keeps one connection per
 	// conversation and sends only the new input on it.
-	Transport string `koanf:"transport"`
+	Transport string `koanf:"transport" validate:"oneof=sse websocket"`
 	// MaxIdleSockets is how many WebSocket connections are kept open
 	// between requests, one per conversation. It has no default and must be
 	// set when Transport is "websocket". It is not read otherwise.
-	MaxIdleSockets int `koanf:"max_idle_sockets"`
+	MaxIdleSockets int `koanf:"max_idle_sockets" validate:"required_if=Transport websocket,gte=0"`
 	// CompactThreshold asks the server to compact a conversation itself
 	// once it holds this many tokens. Zero leaves server-side compaction
 	// off.
-	CompactThreshold int64 `koanf:"compact_threshold"`
+	CompactThreshold int64 `koanf:"compact_threshold" validate:"gte=0"`
 	// ParallelToolCalls lets the model ask for several tools in one
 	// response.
 	ParallelToolCalls bool `koanf:"parallel_tool_calls"`
 	// ErrorBodyBytes is how much of an error response is read. A longer
 	// one is cut, and the error's message says so.
-	ErrorBodyBytes int64 `koanf:"error_body_bytes"`
+	ErrorBodyBytes int64 `koanf:"error_body_bytes" validate:"gt=0"`
 }
 
 // Transports of the Responses API client.
@@ -58,23 +56,5 @@ var openaiDefaults = map[string]any{
 }
 
 func (o OpenAI) validate() error {
-	switch o.Transport {
-	case OpenAITransportSSE:
-	case OpenAITransportWebSocket:
-		if o.MaxIdleSockets <= 0 {
-			return fmt.Errorf("openai.max_idle_sockets: %d is not positive, and openai.transport %q needs it",
-				o.MaxIdleSockets, OpenAITransportWebSocket)
-		}
-	default:
-		return fmt.Errorf("openai.transport: %q is not %q or %q", o.Transport, OpenAITransportSSE, OpenAITransportWebSocket)
-	}
-	switch {
-	case o.MaxIdleSockets < 0:
-		return fmt.Errorf("openai.max_idle_sockets: %d is negative", o.MaxIdleSockets)
-	case o.CompactThreshold < 0:
-		return fmt.Errorf("openai.compact_threshold: %d is negative", o.CompactThreshold)
-	case o.ErrorBodyBytes <= 0:
-		return fmt.Errorf("openai.error_body_bytes: %d is not positive", o.ErrorBodyBytes)
-	}
-	return nil
+	return validateFields("openai", o)
 }

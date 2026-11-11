@@ -11,18 +11,18 @@ import (
 // src/models does not know it or is wrong for this endpoint.
 type Model struct {
 	// Chain is tried in order. Each entry is "provider:account/model".
-	Chain []string `koanf:"chain"`
+	Chain []string `koanf:"chain" validate:"min=1"`
 	// ContextWindow is the model's context size in tokens. Zero takes the
 	// built-in figure.
-	ContextWindow int64 `koanf:"context_window"`
+	ContextWindow int64 `koanf:"context_window" validate:"gte=0"`
 	// MaxOutputTokens is the most tokens one response may hold. Zero takes
 	// the built-in figure.
-	MaxOutputTokens int64 `koanf:"max_output_tokens"`
+	MaxOutputTokens int64 `koanf:"max_output_tokens" validate:"gte=0"`
 	// Family names what the model is, such as "claude" or "gpt". It decides
 	// the tool dialect when Dialect is empty.
 	Family string `koanf:"family"`
 	// Dialect pins the tool dialect: one of the Dialect values.
-	Dialect string `koanf:"dialect"`
+	Dialect string `koanf:"dialect" validate:"omitempty,oneof=claude codex generic"`
 }
 
 // Tool dialects.
@@ -93,20 +93,11 @@ func validateModelSet(defaultModel string, models map[string]Model, accounts []A
 	slices.Sort(names)
 	for _, name := range names {
 		m, at := models[name], "models."+name
-		switch {
-		case name == "":
+		if name == "" {
 			return fmt.Errorf("models: a model has an empty name")
-		case len(m.Chain) == 0:
-			return fmt.Errorf("%s.chain is empty", at)
-		case m.ContextWindow < 0:
-			return fmt.Errorf("%s.context_window: %d is negative", at, m.ContextWindow)
-		case m.MaxOutputTokens < 0:
-			return fmt.Errorf("%s.max_output_tokens: %d is negative", at, m.MaxOutputTokens)
 		}
-		switch m.Dialect {
-		case "", DialectClaude, DialectCodex, DialectGeneric:
-		default:
-			return fmt.Errorf("%s.dialect: %q is not %q, %q or %q", at, m.Dialect, DialectClaude, DialectCodex, DialectGeneric)
+		if err := validateFields(at, m); err != nil {
+			return err
 		}
 		for i, raw := range m.Chain {
 			at := fmt.Sprintf("%s.chain[%d]", at, i)

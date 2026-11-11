@@ -1,7 +1,5 @@
 package config
 
-import "fmt"
-
 // Context configures what is loaded into a session's system prompt: agent
 // instruction files, skills, extra files and directories. src/agentctx reads
 // it. A path may start with "~/", which stands for the home directory. Any
@@ -16,25 +14,25 @@ type Context struct {
 	GlobalDir string `koanf:"global_dir"`
 	// ExtraFiles are read after the instruction files, in this order. Each
 	// must exist.
-	ExtraFiles []string `koanf:"extra_files"`
+	ExtraFiles []string `koanf:"extra_files" validate:"dive,required"`
 	// ExtraDirs are read after ExtraFiles. Every .md file under each
 	// directory is read, in path order. Each directory must exist.
-	ExtraDirs []string `koanf:"extra_dirs"`
+	ExtraDirs []string `koanf:"extra_dirs" validate:"dive,required"`
 	// SkillsEnabled exposes the skill-loading extra to the model.
 	SkillsEnabled bool `koanf:"skills_enabled"`
 	// SkillsDirs are searched for directories that hold a SKILL.md. When
 	// two skills have the same name, the one from the earlier directory is
 	// used.
-	SkillsDirs []string `koanf:"skills_dirs"`
+	SkillsDirs []string `koanf:"skills_dirs" validate:"dive,required"`
 	// MaxFileBytes is the largest context file or SKILL.md that is
 	// accepted. A larger one is an error, not a truncated file. Zero means
 	// no limit.
-	MaxFileBytes int64 `koanf:"max_file_bytes"`
+	MaxFileBytes int64 `koanf:"max_file_bytes" validate:"gte=0"`
 	// MaxTotalBytes is the largest sum of the context files' sizes that is
 	// accepted. Zero means no limit.
-	MaxTotalBytes int64 `koanf:"max_total_bytes"`
+	MaxTotalBytes int64 `koanf:"max_total_bytes" validate:"gte=0"`
 	// Sections are added to the end of the system prompt, in this order.
-	Sections []ContextSection `koanf:"sections"`
+	Sections []ContextSection `koanf:"sections" validate:"unique=Name,dive"`
 }
 
 // ContextSection is one system prompt section added by configuration. It
@@ -42,8 +40,8 @@ type Context struct {
 type ContextSection struct {
 	// Name identifies the section. It must differ from every other
 	// section's name, including the built-in ones.
-	Name string `koanf:"name"`
-	Text string `koanf:"text"`
+	Name string `koanf:"name" validate:"required"`
+	Text string `koanf:"text" validate:"required_without=File,excluded_with=File"`
 	// File is the path of a file whose content is the section's text.
 	File string `koanf:"file"`
 }
@@ -60,34 +58,5 @@ var contextDefaults = map[string]any{
 }
 
 func (c Context) validate() error {
-	if c.MaxFileBytes < 0 {
-		return fmt.Errorf("context.max_file_bytes: %d is negative", c.MaxFileBytes)
-	}
-	if c.MaxTotalBytes < 0 {
-		return fmt.Errorf("context.max_total_bytes: %d is negative", c.MaxTotalBytes)
-	}
-	for key, paths := range map[string][]string{
-		"context.extra_files": c.ExtraFiles,
-		"context.extra_dirs":  c.ExtraDirs,
-		"context.skills_dirs": c.SkillsDirs,
-	} {
-		for i, path := range paths {
-			if path == "" {
-				return fmt.Errorf("%s[%d]: the path is empty", key, i)
-			}
-		}
-	}
-	seen := map[string]bool{}
-	for i, s := range c.Sections {
-		switch {
-		case s.Name == "":
-			return fmt.Errorf("context.sections[%d].name: the name is empty", i)
-		case seen[s.Name]:
-			return fmt.Errorf("context.sections[%d].name: %q is used twice", i, s.Name)
-		case (s.Text == "") == (s.File == ""):
-			return fmt.Errorf("context.sections[%d] (%q): set exactly one of text and file", i, s.Name)
-		}
-		seen[s.Name] = true
-	}
-	return nil
+	return validateFields("context", c)
 }

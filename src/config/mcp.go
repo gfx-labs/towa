@@ -12,17 +12,17 @@ type MCP struct {
 	// closed. The next use opens it again. Zero keeps connections open
 	// until the session ends, which a stdio server that keeps state between
 	// calls needs.
-	IdleCloseSeconds int64 `koanf:"idle_close_seconds"`
+	IdleCloseSeconds int64 `koanf:"idle_close_seconds" validate:"gte=0"`
 	// ConnectTimeoutSeconds bounds starting a server and its initialize
 	// exchange.
-	ConnectTimeoutSeconds int64 `koanf:"connect_timeout_seconds"`
+	ConnectTimeoutSeconds int64 `koanf:"connect_timeout_seconds" validate:"gt=0"`
 	// TerminateGraceSeconds is how long a stdio server has to exit after
 	// its stdin closes before its process group gets SIGTERM, and again
 	// before SIGKILL.
-	TerminateGraceSeconds int64 `koanf:"terminate_grace_seconds"`
+	TerminateGraceSeconds int64 `koanf:"terminate_grace_seconds" validate:"gt=0"`
 	// SearchResults is the most tools one search of the mcp tool returns
 	// with their schemas. The result says how many more matched.
-	SearchResults int64 `koanf:"search_results"`
+	SearchResults int64 `koanf:"search_results" validate:"gt=0"`
 	// SessionServersDirect says whether a server a client names in
 	// session/new has its tools put in front of the model under their own
 	// names. A session's server replaces a configured server of the same
@@ -45,17 +45,17 @@ type MCPOAuth struct {
 	// CallbackPath is the path of the redirect URL.
 	CallbackPath string `koanf:"callback_path"`
 	// LoginTimeoutSeconds is how long a login waits for the redirect.
-	LoginTimeoutSeconds int64 `koanf:"login_timeout_seconds"`
+	LoginTimeoutSeconds int64 `koanf:"login_timeout_seconds" validate:"gt=0"`
 	// RefreshMarginSeconds is how long before its expiry a token is
 	// refreshed.
-	RefreshMarginSeconds int64 `koanf:"refresh_margin_seconds"`
+	RefreshMarginSeconds int64 `koanf:"refresh_margin_seconds" validate:"gte=0"`
 }
 
 // MCPServer is one server from configuration.
 type MCPServer struct {
-	Name string `koanf:"name"`
+	Name string `koanf:"name" validate:"required"`
 	// Transport is one of the MCPTransport values.
-	Transport string `koanf:"transport"`
+	Transport string `koanf:"transport" validate:"oneof=stdio streamable_http sse"`
 	// Command, Args and Env start a stdio server. Env is added to the
 	// harness's own environment.
 	Command string            `koanf:"command"`
@@ -124,15 +124,8 @@ var mcpDefaults = map[string]any{
 }
 
 func (m MCP) validate() error {
-	switch {
-	case m.IdleCloseSeconds < 0:
-		return fmt.Errorf("mcp.idle_close_seconds: %d is negative", m.IdleCloseSeconds)
-	case m.ConnectTimeoutSeconds <= 0:
-		return fmt.Errorf("mcp.connect_timeout_seconds: %d is not positive", m.ConnectTimeoutSeconds)
-	case m.TerminateGraceSeconds <= 0:
-		return fmt.Errorf("mcp.terminate_grace_seconds: %d is not positive", m.TerminateGraceSeconds)
-	case m.SearchResults <= 0:
-		return fmt.Errorf("mcp.search_results: %d is not positive", m.SearchResults)
+	if err := validateFields("mcp", m); err != nil {
+		return err
 	}
 	host, _, err := net.SplitHostPort(m.OAuth.CallbackAddr)
 	if err != nil {
@@ -146,19 +139,10 @@ func (m MCP) validate() error {
 	if len(m.OAuth.CallbackPath) == 0 || m.OAuth.CallbackPath[0] != '/' {
 		return fmt.Errorf("mcp.oauth.callback_path: %q does not start with /", m.OAuth.CallbackPath)
 	}
-	switch {
-	case m.OAuth.LoginTimeoutSeconds <= 0:
-		return fmt.Errorf("mcp.oauth.login_timeout_seconds: %d is not positive", m.OAuth.LoginTimeoutSeconds)
-	case m.OAuth.RefreshMarginSeconds < 0:
-		return fmt.Errorf("mcp.oauth.refresh_margin_seconds: %d is negative", m.OAuth.RefreshMarginSeconds)
-	}
 	seen := map[string]bool{}
 	for i, s := range m.Servers {
 		at := fmt.Sprintf("mcp.servers[%d]", i)
-		switch {
-		case s.Name == "":
-			return fmt.Errorf("%s.name is empty", at)
-		case seen[s.Name]:
+		if seen[s.Name] {
 			return fmt.Errorf("%s.name: %q is used by more than one server", at, s.Name)
 		}
 		seen[s.Name] = true
@@ -170,6 +154,9 @@ func (m MCP) validate() error {
 }
 
 func (s MCPServer) validate(at string) error {
+	if err := validateFields(at, s); err != nil {
+		return err
+	}
 	remote := s.URL != "" || len(s.Headers) > 0 || len(s.HeadersEnv) > 0 || s.OAuth != (MCPServerOAuth{})
 	local := s.Command != "" || len(s.Args) > 0 || len(s.Env) > 0
 	switch s.Transport {
@@ -199,9 +186,6 @@ func (s MCPServer) validate(at string) error {
 		if s.OAuth.ClientSecretEnv != "" && s.OAuth.ClientID == "" {
 			return fmt.Errorf("%s.oauth.client_secret_env is set without client_id", at)
 		}
-	default:
-		return fmt.Errorf("%s.transport: %q is not %q, %q or %q", at, s.Transport,
-			MCPTransportStdio, MCPTransportStreamableHTTP, MCPTransportSSE)
 	}
 	return nil
 }

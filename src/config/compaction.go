@@ -12,78 +12,78 @@ type Compaction struct {
 	// Mode is when to compact: CompactionReactive, CompactionProactive,
 	// CompactionSemantic or CompactionOff. Off stops the turn with a
 	// context-full reason when the next request would not fit.
-	Mode string `koanf:"mode"`
+	Mode string `koanf:"mode" validate:"oneof=reactive proactive semantic off"`
 	// SummaryPrompt selects the prompt of the summary request:
 	// SummaryCheckpoint or SummaryShort.
-	SummaryPrompt string `koanf:"summary_prompt"`
+	SummaryPrompt string `koanf:"summary_prompt" validate:"oneof=checkpoint short"`
 	// MaxContextTokens caps the budget the thresholds are measured against
 	// below the model's context window. Zero means the window.
-	MaxContextTokens int64 `koanf:"max_context_tokens"`
+	MaxContextTokens int64 `koanf:"max_context_tokens" validate:"gte=0"`
 	// KeepRecentMessages is how many of the latest messages a compaction
 	// leaves as they are. A message is a run of items of one role.
-	KeepRecentMessages int `koanf:"keep_recent_messages"`
+	KeepRecentMessages int `koanf:"keep_recent_messages" validate:"gte=0"`
 
 	// EmergencyThreshold is the fraction of the budget at which the next
 	// request is taken not to fit. The context is then cut without a model
 	// summary, keeping EmergencyKeepRecentMessages.
-	EmergencyThreshold          float64 `koanf:"emergency_threshold"`
-	EmergencyKeepRecentMessages int     `koanf:"emergency_keep_recent_messages"`
+	EmergencyThreshold          float64 `koanf:"emergency_threshold" validate:"gt=0,lte=1,gtefield=ReactiveThreshold"`
+	EmergencyKeepRecentMessages int     `koanf:"emergency_keep_recent_messages" validate:"gte=0,ltefield=KeepRecentMessages"`
 	// PendingWaitMillis bounds the emergency wait for an existing summary.
 	// The caller's context may end it sooner.
-	PendingWaitMillis int64 `koanf:"pending_wait_ms"`
+	PendingWaitMillis int64 `koanf:"pending_wait_ms" validate:"gte=0"`
 
 	// ReactiveThreshold is the fraction of the budget that starts a
 	// compaction in reactive mode. ReactiveThresholdTokens is a token count
 	// that starts one too, whichever is reached first. Zero turns the count
 	// off.
-	ReactiveThreshold       float64 `koanf:"reactive_threshold"`
-	ReactiveThresholdTokens int64   `koanf:"reactive_threshold_tokens"`
+	ReactiveThreshold       float64 `koanf:"reactive_threshold" validate:"gt=0,lte=1"`
+	ReactiveThresholdTokens int64   `koanf:"reactive_threshold_tokens" validate:"gte=0"`
 
 	// The proactive settings also gate semantic mode.
 	//
 	// ProactiveThreshold is the fraction of the budget the projected
 	// context has to reach. The projection is the current context plus
 	// LookaheadTurns times the growth per turn, smoothed with EWMAAlpha.
-	ProactiveThreshold float64 `koanf:"proactive_threshold"`
-	LookaheadTurns     int     `koanf:"lookahead_turns"`
-	EWMAAlpha          float64 `koanf:"ewma_alpha"`
+	ProactiveThreshold float64 `koanf:"proactive_threshold" validate:"gt=0,lte=1"`
+	LookaheadTurns     int     `koanf:"lookahead_turns" validate:"gt=0"`
+	EWMAAlpha          float64 `koanf:"ewma_alpha" validate:"gt=0,lte=1"`
 	// ProactiveFloor is the fraction of the budget below which nothing is
 	// projected, unless ProactiveFloorTokens is reached. Zero turns the
 	// count off.
-	ProactiveFloor       float64 `koanf:"proactive_floor"`
-	ProactiveFloorTokens int64   `koanf:"proactive_floor_tokens"`
+	ProactiveFloor       float64 `koanf:"proactive_floor" validate:"gte=0,lte=1"`
+	ProactiveFloorTokens int64   `koanf:"proactive_floor_tokens" validate:"gte=0"`
 	// MinSamples is how many per-turn context sizes are needed to project.
-	MinSamples int `koanf:"min_samples"`
+	MinSamples int `koanf:"min_samples" validate:"gte=2"`
 	// StallWindow is how many of the latest turns must show growth. No
 	// growth across them means there is nothing to get ahead of.
-	StallWindow int `koanf:"stall_window"`
+	StallWindow int `koanf:"stall_window" validate:"gt=0"`
 	// MinTurnsBetween is how many turns pass after a compaction before
 	// another is started ahead of need.
-	MinTurnsBetween int `koanf:"min_turns_between"`
+	MinTurnsBetween int `koanf:"min_turns_between" validate:"gte=0"`
 	// HistoryWindow is how many per-turn context sizes are kept.
-	HistoryWindow int `koanf:"history_window"`
+	HistoryWindow int `koanf:"history_window" validate:"gtefield=MinSamples,gtefield=StallWindow"`
 
 	// TopicShiftThreshold is the cosine similarity between the older and
 	// the newer half of the turn embeddings below which the topic is taken
 	// to have changed.
-	TopicShiftThreshold float64 `koanf:"topic_shift_threshold"`
+	TopicShiftThreshold float64 `koanf:"topic_shift_threshold" validate:"gte=0,lte=1"`
 	// RelevanceKeepThreshold is the cosine similarity to the current goal
 	// at or above which an older message is kept and not summarised.
-	RelevanceKeepThreshold float64 `koanf:"relevance_keep_threshold"`
+	RelevanceKeepThreshold float64 `koanf:"relevance_keep_threshold" validate:"gte=0,lte=1"`
 	// GoalWindowMessages is how many of the latest messages make up the
 	// current goal.
-	GoalWindowMessages int `koanf:"goal_window_messages"`
+	GoalWindowMessages int `koanf:"goal_window_messages" validate:"gt=0"`
 	// EmbedMaxChars is how much of a message is embedded, from its start.
-	EmbedMaxChars int `koanf:"embed_max_chars"`
+	EmbedMaxChars int `koanf:"embed_max_chars" validate:"gt=0"`
 	// EmbeddingHistoryWindow is how many turn embeddings are kept for
 	// topic-shift detection.
-	EmbeddingHistoryWindow int `koanf:"embedding_history_window"`
+	EmbeddingHistoryWindow int `koanf:"embedding_history_window" validate:"gte=4"`
 
 	// OpenAINative is how a conversation with an OpenAI Responses endpoint
 	// is compacted: NativeAuto lets the server compact at
 	// OpenAINativeThresholdTokens, NativeExplicit calls the compact
 	// endpoint at that count, NativeOff uses Mode as for any provider.
-	OpenAINative                string `koanf:"openai_native"`
+	OpenAINative                string `koanf:"openai_native" validate:"oneof=auto explicit off"`
 	OpenAINativeThresholdTokens int64  `koanf:"openai_native_threshold_tokens"`
 }
 
@@ -146,16 +146,8 @@ var compactionDefaults = map[string]any{
 }
 
 func (c Compaction) validate() error {
-	switch c.Mode {
-	case CompactionReactive, CompactionProactive, CompactionSemantic, CompactionOff:
-	default:
-		return fmt.Errorf("compaction.mode: %q is not %q, %q, %q or %q",
-			c.Mode, CompactionReactive, CompactionProactive, CompactionSemantic, CompactionOff)
-	}
-	switch c.SummaryPrompt {
-	case SummaryCheckpoint, SummaryShort:
-	default:
-		return fmt.Errorf("compaction.summary_prompt: %q is not %q or %q", c.SummaryPrompt, SummaryCheckpoint, SummaryShort)
+	if err := validateFields("compaction", c); err != nil {
+		return err
 	}
 	switch c.OpenAINative {
 	case NativeAuto, NativeExplicit:
@@ -163,76 +155,9 @@ func (c Compaction) validate() error {
 			return fmt.Errorf("compaction.openai_native_threshold_tokens: %d is not positive, and compaction.openai_native %q needs it",
 				c.OpenAINativeThresholdTokens, c.OpenAINative)
 		}
-	case NativeOff:
-	default:
-		return fmt.Errorf("compaction.openai_native: %q is not %q, %q or %q", c.OpenAINative, NativeAuto, NativeExplicit, NativeOff)
-	}
-	// A fraction of the budget. Above 1 it could never be reached.
-	for key, value := range map[string]float64{
-		"compaction.emergency_threshold": c.EmergencyThreshold,
-		"compaction.reactive_threshold":  c.ReactiveThreshold,
-		"compaction.proactive_threshold": c.ProactiveThreshold,
-		"compaction.ewma_alpha":          c.EWMAAlpha,
-	} {
-		if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
-			return fmt.Errorf("%s: %v is not above 0 and at most 1", key, value)
-		}
-	}
-	// The floor may be 0, which projects from the first turn. A similarity
-	// is a cosine.
-	for key, value := range map[string]float64{
-		"compaction.proactive_floor":          c.ProactiveFloor,
-		"compaction.topic_shift_threshold":    c.TopicShiftThreshold,
-		"compaction.relevance_keep_threshold": c.RelevanceKeepThreshold,
-	} {
-		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
-			return fmt.Errorf("%s: %v is not between 0 and 1", key, value)
-		}
-	}
-	for key, value := range map[string]int64{
-		"compaction.pending_wait_ms":                c.PendingWaitMillis,
-		"compaction.max_context_tokens":             c.MaxContextTokens,
-		"compaction.reactive_threshold_tokens":      c.ReactiveThresholdTokens,
-		"compaction.proactive_floor_tokens":         c.ProactiveFloorTokens,
-		"compaction.keep_recent_messages":           int64(c.KeepRecentMessages),
-		"compaction.emergency_keep_recent_messages": int64(c.EmergencyKeepRecentMessages),
-		"compaction.min_turns_between":              int64(c.MinTurnsBetween),
-	} {
-		if value < 0 {
-			return fmt.Errorf("%s: %d is negative", key, value)
-		}
 	}
 	if c.PendingWaitMillis > math.MaxInt64/int64(time.Millisecond) {
 		return fmt.Errorf("compaction.pending_wait_ms: %d overflows a duration", c.PendingWaitMillis)
-	}
-	for key, value := range map[string]int{
-		"compaction.lookahead_turns":      c.LookaheadTurns,
-		"compaction.stall_window":         c.StallWindow,
-		"compaction.goal_window_messages": c.GoalWindowMessages,
-		"compaction.embed_max_chars":      c.EmbedMaxChars,
-	} {
-		if value <= 0 {
-			return fmt.Errorf("%s: %d is not positive", key, value)
-		}
-	}
-	// A growth needs two sizes, and the two halves compared for a topic
-	// shift need two embeddings each.
-	if c.MinSamples < 2 {
-		return fmt.Errorf("compaction.min_samples: %d is below 2", c.MinSamples)
-	}
-	if c.HistoryWindow < c.MinSamples || c.HistoryWindow < c.StallWindow {
-		return fmt.Errorf("compaction.history_window: %d is below compaction.min_samples or compaction.stall_window", c.HistoryWindow)
-	}
-	if c.EmbeddingHistoryWindow < 4 {
-		return fmt.Errorf("compaction.embedding_history_window: %d is below 4", c.EmbeddingHistoryWindow)
-	}
-	if c.EmergencyThreshold < c.ReactiveThreshold {
-		return fmt.Errorf("compaction.emergency_threshold: %v is below compaction.reactive_threshold %v",
-			c.EmergencyThreshold, c.ReactiveThreshold)
-	}
-	if c.EmergencyKeepRecentMessages > c.KeepRecentMessages {
-		return fmt.Errorf("compaction.emergency_keep_recent_messages: %d is above compaction.keep_recent_messages %d",
-			c.EmergencyKeepRecentMessages, c.KeepRecentMessages)
 	}
 	return nil
 }

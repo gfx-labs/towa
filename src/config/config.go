@@ -57,7 +57,7 @@ type Logs struct {
 type StderrLog struct {
 	Enabled bool       `koanf:"enabled"`
 	Level   slog.Level `koanf:"level"`
-	Format  string     `koanf:"format"`
+	Format  string     `koanf:"format" validate:"oneof=text json"`
 }
 
 // Log formats for StderrLog.Format.
@@ -106,10 +106,8 @@ var FlagKeys = map[string]string{
 
 // validate reports values that decode but that the program cannot act on.
 func (c *Config) validate() error {
-	switch f := c.Telemetry.Logs.Stderr.Format; f {
-	case FormatText, FormatJSON:
-	default:
-		return fmt.Errorf("telemetry.logs.stderr.format: %q is not %q or %q", f, FormatText, FormatJSON)
+	if err := validateFields("telemetry", c.Telemetry); err != nil {
+		return err
 	}
 	for _, section := range []func() error{
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,

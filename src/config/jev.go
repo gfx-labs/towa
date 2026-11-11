@@ -25,7 +25,7 @@ const (
 // endpoint and default model.
 type Jev struct {
 	// Route is openrouter, typesafe, aimlapi or custom.
-	Route string `koanf:"route"`
+	Route string `koanf:"route" validate:"omitempty,oneof=openrouter typesafe aimlapi custom"`
 	// Model is the route's own name for the model. Empty means the route's
 	// default. The custom route has no default.
 	Model string `koanf:"model"`
@@ -40,17 +40,17 @@ type Jev struct {
 	Referer string `koanf:"referer"`
 	Title   string `koanf:"title"`
 	// Timeout bounds a decision that names no timeout of its own.
-	Timeout time.Duration `koanf:"timeout"`
+	Timeout time.Duration `koanf:"timeout" validate:"gt=0"`
 	// MaxTimeout is the longest timeout a decision may ask for.
-	MaxTimeout time.Duration `koanf:"max_timeout"`
+	MaxTimeout time.Duration `koanf:"max_timeout" validate:"gtefield=Timeout"`
 	// MaxRequestBytes is the largest request body that is sent. A larger
 	// one is an error before anything is sent.
-	MaxRequestBytes int64 `koanf:"max_request_bytes"`
+	MaxRequestBytes int64 `koanf:"max_request_bytes" validate:"gt=0"`
 	// MaxResponseBytes is the largest response body that is read.
-	MaxResponseBytes int64 `koanf:"max_response_bytes"`
+	MaxResponseBytes int64 `koanf:"max_response_bytes" validate:"gt=0"`
 	// MaxTextChars is the most characters the instructions, or one
 	// option's description, may hold.
-	MaxTextChars int `koanf:"max_text_chars"`
+	MaxTextChars int `koanf:"max_text_chars" validate:"gt=0"`
 }
 
 // The limits are jcode's. docs/notes/2026-11-11-webfetch-and-jev.md gives
@@ -73,17 +73,8 @@ var jevDefaults = map[string]any{
 }
 
 func (j Jev) validate() error {
-	switch {
-	case j.Timeout <= 0:
-		return fmt.Errorf("jev.timeout: %s is not positive", j.Timeout)
-	case j.MaxTimeout < j.Timeout:
-		return fmt.Errorf("jev.max_timeout: %s is under jev.timeout, %s", j.MaxTimeout, j.Timeout)
-	case j.MaxRequestBytes <= 0:
-		return fmt.Errorf("jev.max_request_bytes: %d is not positive", j.MaxRequestBytes)
-	case j.MaxResponseBytes <= 0:
-		return fmt.Errorf("jev.max_response_bytes: %d is not positive", j.MaxResponseBytes)
-	case j.MaxTextChars <= 0:
-		return fmt.Errorf("jev.max_text_chars: %d is not positive", j.MaxTextChars)
+	if err := validateFields("jev", j); err != nil {
+		return err
 	}
 
 	switch j.Route {
@@ -112,9 +103,6 @@ func (j Jev) validate() error {
 		if err := validateJevBaseURL(j.BaseURL); err != nil {
 			return err
 		}
-	default:
-		return fmt.Errorf("jev.route: %q is not %s, %s, %s or %s",
-			j.Route, JevOpenRouter, JevTypeSafe, JevAIMLAPI, JevCustom)
 	}
 	if j.Route != JevOpenRouter && (j.Referer != "" || j.Title != "") {
 		return fmt.Errorf("jev.referer and jev.title are sent only on the %s route", JevOpenRouter)

@@ -1,16 +1,12 @@
 package config
 
-import (
-	"errors"
-	"fmt"
-	"time"
-)
+import "time"
 
 // Tools configures the tools a model can call.
 type Tools struct {
 	// MaxOutputBytes is the most output one shell or search call keeps in
 	// memory. What is over it is dropped and the result says how much.
-	MaxOutputBytes int64       `koanf:"max_output_bytes"`
+	MaxOutputBytes int64       `koanf:"max_output_bytes" validate:"gt=0"`
 	Files          ToolsFiles  `koanf:"files"`
 	Shell          ToolsShell  `koanf:"shell"`
 	Search         ToolsSearch `koanf:"search"`
@@ -28,34 +24,34 @@ type ToolsFiles struct {
 	Confine bool `koanf:"confine"`
 	// ReadMaxBytes is the most one read returns. A larger range is an error
 	// that tells the caller to ask for fewer lines.
-	ReadMaxBytes int64 `koanf:"read_max_bytes"`
+	ReadMaxBytes int64 `koanf:"read_max_bytes" validate:"gt=0"`
 	// ReadDefaultLines is how many lines a read returns when the call names
 	// no limit.
-	ReadDefaultLines int `koanf:"read_default_lines"`
+	ReadDefaultLines int `koanf:"read_default_lines" validate:"gt=0"`
 	// ImageMaxBytes is the largest image a read returns.
-	ImageMaxBytes int64 `koanf:"image_max_bytes"`
+	ImageMaxBytes int64 `koanf:"image_max_bytes" validate:"gt=0"`
 	// EditMaxBytes is the largest file an edit or an overwrite accepts. The
 	// old and the new content are both held in memory for the diff.
-	EditMaxBytes int64 `koanf:"edit_max_bytes"`
+	EditMaxBytes int64 `koanf:"edit_max_bytes" validate:"gt=0"`
 }
 
 // ToolsShell configures the shell tool.
 type ToolsShell struct {
 	// Program runs a command given as text: `program -c command`.
-	Program string `koanf:"program"`
+	Program string `koanf:"program" validate:"required"`
 	// Timeout applies to a call that names none.
-	Timeout time.Duration `koanf:"timeout"`
+	Timeout time.Duration `koanf:"timeout" validate:"gt=0,ltefield=MaxTimeout"`
 	// MaxTimeout is the longest timeout a call may ask for.
-	MaxTimeout time.Duration `koanf:"max_timeout"`
+	MaxTimeout time.Duration `koanf:"max_timeout" validate:"gt=0"`
 	// PipeWait is how long output is still read after the command has
 	// exited or been killed, while a process it left behind holds the pipe.
-	PipeWait time.Duration `koanf:"pipe_wait"`
+	PipeWait time.Duration `koanf:"pipe_wait" validate:"gt=0"`
 }
 
 // ToolsSearch configures search.
 type ToolsSearch struct {
 	// Ripgrep is the rg binary, a path or a name looked up on PATH.
-	Ripgrep string `koanf:"ripgrep"`
+	Ripgrep string `koanf:"ripgrep" validate:"required"`
 }
 
 // ToolsRepair configures argument repair.
@@ -69,9 +65,9 @@ type ToolsGate struct {
 	Enabled bool `koanf:"enabled"`
 	// BudgetTokens is the largest result, in estimated tokens, that goes to
 	// the model without it asking for the full output.
-	BudgetTokens int64 `koanf:"budget_tokens"`
+	BudgetTokens int64 `koanf:"budget_tokens" validate:"gt=0"`
 	// BytesPerToken is the estimate: a result's text bytes divided by it.
-	BytesPerToken int64 `koanf:"bytes_per_token"`
+	BytesPerToken int64 `koanf:"bytes_per_token" validate:"gt=0"`
 }
 
 // ToolsBatch configures the batch tool.
@@ -80,7 +76,7 @@ type ToolsBatch struct {
 	Enabled bool `koanf:"enabled"`
 	// MaxCalls is the most calls one batch may hold. They may all run at
 	// once.
-	MaxCalls int `koanf:"max_calls"`
+	MaxCalls int `koanf:"max_calls" validate:"gt=0"`
 }
 
 // toolsDefaults names where each default comes from. A Codex figure cites
@@ -148,35 +144,5 @@ var toolsDefaults = map[string]any{
 }
 
 func (t Tools) validate() error {
-	positive := []struct {
-		key   string
-		value int64
-	}{
-		{"tools.max_output_bytes", t.MaxOutputBytes},
-		{"tools.files.read_max_bytes", t.Files.ReadMaxBytes},
-		{"tools.files.read_default_lines", int64(t.Files.ReadDefaultLines)},
-		{"tools.files.image_max_bytes", t.Files.ImageMaxBytes},
-		{"tools.files.edit_max_bytes", t.Files.EditMaxBytes},
-		{"tools.shell.timeout", int64(t.Shell.Timeout)},
-		{"tools.shell.max_timeout", int64(t.Shell.MaxTimeout)},
-		{"tools.shell.pipe_wait", int64(t.Shell.PipeWait)},
-		{"tools.gate.budget_tokens", t.Gate.BudgetTokens},
-		{"tools.gate.bytes_per_token", t.Gate.BytesPerToken},
-		{"tools.batch.max_calls", int64(t.Batch.MaxCalls)},
-	}
-	for _, p := range positive {
-		if p.value <= 0 {
-			return fmt.Errorf("%s: must be greater than zero", p.key)
-		}
-	}
-	if t.Shell.Timeout > t.Shell.MaxTimeout {
-		return fmt.Errorf("tools.shell.timeout: %s is over tools.shell.max_timeout, %s", t.Shell.Timeout, t.Shell.MaxTimeout)
-	}
-	if t.Shell.Program == "" {
-		return errors.New("tools.shell.program: must not be empty")
-	}
-	if t.Search.Ripgrep == "" {
-		return errors.New("tools.search.ripgrep: must not be empty")
-	}
-	return nil
+	return validateFields("tools", t)
 }

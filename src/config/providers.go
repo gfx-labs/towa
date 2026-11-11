@@ -3,15 +3,14 @@ package config
 import (
 	"fmt"
 	"net/url"
-	"slices"
 )
 
 // Provider is an endpoint that is not built in, such as an OpenAI-compatible
 // API. The package that reads it adds the fields it needs here.
 type Provider struct {
 	// ID names the provider in accounts and model chains.
-	ID   string `koanf:"id"`
-	Kind string `koanf:"kind"`
+	ID   string `koanf:"id" validate:"required"`
+	Kind string `koanf:"kind" validate:"oneof=chat responses"`
 	// BaseURL is the endpoint's root, such as https://openrouter.ai/api/v1.
 	BaseURL string `koanf:"base_url"`
 
@@ -23,7 +22,7 @@ type Provider struct {
 	// CacheKeyField is the request body member that carries the session id
 	// for the provider's prompt cache. Nothing is sent when it is empty,
 	// because an endpoint may reject a member it does not know.
-	CacheKeyField string `koanf:"cache_key_field"`
+	CacheKeyField string `koanf:"cache_key_field" validate:"omitempty,oneof=prompt_cache_key session_id"`
 	// OpenRouter holds what only OpenRouter understands. It applies to a
 	// provider of kind chat.
 	OpenRouter OpenRouter `koanf:"openrouter"`
@@ -69,20 +68,20 @@ type OpenRouterRouting struct {
 	// parameter of the request.
 	RequireParameters *bool `koanf:"require_parameters"`
 	// DataCollection is "allow" or "deny".
-	DataCollection string `koanf:"data_collection"`
+	DataCollection string `koanf:"data_collection" validate:"omitempty,oneof=allow deny"`
 	// ZDR limits routing to zero data retention endpoints.
 	ZDR *bool `koanf:"zdr"`
 	// Sort is "price", "throughput" or "latency".
-	Sort string `koanf:"sort"`
+	Sort string `koanf:"sort" validate:"omitempty,oneof=price throughput latency"`
 	// Quantizations lists the quantization levels to allow, such as "fp8".
 	Quantizations []string `koanf:"quantizations"`
 	// MaxPrice is the most to pay, in USD per million tokens for "prompt"
 	// and "completion" and per unit for "request" and "image".
-	MaxPrice map[string]float64 `koanf:"max_price"`
+	MaxPrice map[string]float64 `koanf:"max_price" validate:"dive,keys,oneof=prompt completion request image,endkeys,gte=0,finite"`
 	// PreferredMinThroughputTPS is in tokens per second and
 	// PreferredMaxLatencySeconds in seconds. Zero is not sent.
-	PreferredMinThroughputTPS  float64 `koanf:"preferred_min_throughput_tps"`
-	PreferredMaxLatencySeconds float64 `koanf:"preferred_max_latency_seconds"`
+	PreferredMinThroughputTPS  float64 `koanf:"preferred_min_throughput_tps" validate:"gte=0,finite"`
+	PreferredMaxLatencySeconds float64 `koanf:"preferred_max_latency_seconds" validate:"gte=0,finite"`
 }
 
 // OpenRouterReasoning is the part of the request's reasoning object that
@@ -92,13 +91,6 @@ type OpenRouterReasoning struct {
 	// still reasons and the tokens are still billed.
 	Exclude bool `koanf:"exclude"`
 }
-
-// Values of OpenRouterRouting fields.
-var (
-	openRouterSorts          = []string{"", "price", "throughput", "latency"}
-	openRouterDataCollection = []string{"", "allow", "deny"}
-	openRouterMaxPriceKeys   = []string{"prompt", "completion", "request", "image"}
-)
 
 func (c *Config) validateProviders() error {
 	seen := map[string]bool{}
@@ -118,20 +110,12 @@ func (c *Config) validateProviders() error {
 // Validate reports a provider the program cannot act on. at names the
 // provider in the error, as a config key.
 func (p Provider) Validate(at string) error {
-	switch {
-	case p.ID == "":
-		return fmt.Errorf("%s.id is empty", at)
-	case p.Kind != ProviderChat && p.Kind != ProviderResponses:
-		return fmt.Errorf("%s.kind: %q is not %q or %q", at, p.Kind, ProviderChat, ProviderResponses)
+	if err := validateFields(at, p); err != nil {
+		return err
 	}
 	u, err := url.Parse(p.BaseURL)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 		return fmt.Errorf("%s.base_url: %q is not an http or https URL", at, p.BaseURL)
-	}
-	switch p.CacheKeyField {
-	case "", CacheKeyPromptCacheKey, CacheKeySessionID:
-	default:
-		return fmt.Errorf("%s.cache_key_field: %q is not %q or %q", at, p.CacheKeyField, CacheKeyPromptCacheKey, CacheKeySessionID)
 	}
 	return p.OpenRouter.validate(at+".openrouter", p.Kind)
 }
@@ -146,22 +130,6 @@ func (o OpenRouter) validate(at, kind string) error {
 		return fmt.Errorf("%s.enabled is set for a provider of kind %q, and applies only to %q", at, kind, ProviderChat)
 	case !o.Enabled && (routingSet || o.Reasoning.Exclude):
 		return fmt.Errorf("%s has settings and %s.enabled is false, so they would not be sent", at, at)
-	case !slices.Contains(openRouterSorts, r.Sort):
-		return fmt.Errorf("%s.routing.sort: %q is not one of %q", at, r.Sort, openRouterSorts[1:])
-	case !slices.Contains(openRouterDataCollection, r.DataCollection):
-		return fmt.Errorf("%s.routing.data_collection: %q is not one of %q", at, r.DataCollection, openRouterDataCollection[1:])
-	case r.PreferredMinThroughputTPS < 0:
-		return fmt.Errorf("%s.routing.preferred_min_throughput_tps: %v is negative", at, r.PreferredMinThroughputTPS)
-	case r.PreferredMaxLatencySeconds < 0:
-		return fmt.Errorf("%s.routing.preferred_max_latency_seconds: %v is negative", at, r.PreferredMaxLatencySeconds)
-	}
-	for key, price := range r.MaxPrice {
-		if !slices.Contains(openRouterMaxPriceKeys, key) {
-			return fmt.Errorf("%s.routing.max_price.%s is not one of %q", at, key, openRouterMaxPriceKeys)
-		}
-		if price < 0 {
-			return fmt.Errorf("%s.routing.max_price.%s: %v is negative", at, key, price)
-		}
 	}
 	return nil
 }

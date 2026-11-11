@@ -90,7 +90,16 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"unknown key in --set", config.Sources{Set: []string{"telemetry.otle=1"}}, "otle"},
 		{"value of the wrong type", config.Sources{Set: []string{"telemetry.otel=sometimes"}}, "telemetry.otel"},
 		{"unknown log level", config.Sources{Set: []string{"telemetry.logs.stderr.level=loud"}}, "loud"},
-		{"unknown log format", config.Sources{Set: []string{"telemetry.logs.stderr.format=xml"}}, "xml"},
+		{"unknown log format", config.Sources{Set: []string{"telemetry.logs.stderr.format=xml"}}, "telemetry.logs.stderr.format"},
+		{"shell timeout over maximum", config.Sources{Set: []string{"tools.shell.timeout=11m"}}, "tools.shell.timeout"},
+		{"disabled gate still requires budget", config.Sources{Set: []string{"tools.gate.enabled=false", "tools.gate.budget_tokens=0"}}, "tools.gate.budget_tokens"},
+		{"retry nan", config.Sources{Set: []string{"limits.retry.multiplier=NaN"}}, "limits.retry.multiplier"},
+		{"retry infinity", config.Sources{Set: []string{"limits.retry.multiplier=+Inf"}}, "limits.retry.multiplier"},
+		{"compaction nan", config.Sources{Set: []string{"compaction.reactive_threshold=NaN"}}, "compaction."},
+		{"compaction duration overflow", config.Sources{Set: []string{"compaction.pending_wait_ms=9223372036855"}}, "compaction.pending_wait_ms"},
+		{"history shorter than samples", config.Sources{Set: []string{"compaction.history_window=2"}}, "compaction.history_window"},
+		{"nested section requires one source", config.Sources{Files: []string{write(t, filepath.Join(dir, "section.toml"), "[[context.sections]]\nname='policy'\ntext='rule'\nfile='rule.md'\n")}}, "context.sections[0].text"},
+		{"nested hook tool name", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook.toml"), "[[hooks]]\nevent='pre_tool'\ncommand=['true']\ntimeout='1s'\ntools=['']\n")}}, "hooks[0].tools[0]"},
 		{"--set without a value", config.Sources{Set: []string{"telemetry.otel"}}, "key=value"},
 		{"listed file is missing", config.Sources{Files: []string{filepath.Join(dir, "absent.toml")}}, "absent.toml"},
 		{"listed file of an unknown format", config.Sources{Files: []string{write(t, filepath.Join(dir, "c.ini"), "")}}, ".ini"},
@@ -102,4 +111,36 @@ func TestInvalidInputIsAnError(t *testing.T) {
 			require.ErrorContains(t, err, tt.want)
 		})
 	}
+}
+
+func TestOptionalSectionsPreserveLoaderPolicy(t *testing.T) {
+	path := write(t, filepath.Join(t.TempDir(), "config.toml"), `
+[subagents]
+max_depth = 0
+max_concurrent = 0
+[compaction]
+mode = "off"
+openai_native = "off"
+openai_native_threshold_tokens = -1
+[embeddings]
+base_url = "http://127.0.0.1:11434/v1"
+model = "embedding-model"
+[jev]
+route = "custom"
+base_url = "http://127.0.0.1:8080/v1"
+model = "decision-model"
+[[providers]]
+id = "gateway"
+kind = "chat"
+base_url = "https://example.com/v1?accepted=query#fragment"
+[[hooks]]
+event = "prompt"
+command = ["printf", ""]
+timeout = "1s"
+[[context.sections]]
+name = "policy"
+file = "policy.md"
+`)
+	_, err := config.Load(config.Sources{Files: []string{path}})
+	require.NoError(t, err)
 }

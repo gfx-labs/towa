@@ -1,25 +1,21 @@
 package config
 
-import (
-	"errors"
-	"fmt"
-	"time"
-)
+import "time"
 
 // WebFetch configures the fetch of one URL for the model.
 type WebFetch struct {
 	Enabled bool `koanf:"enabled"`
 	// Timeout bounds one fetch, from the request to the last byte of the
 	// body, across redirects.
-	Timeout time.Duration `koanf:"timeout"`
+	Timeout time.Duration `koanf:"timeout" validate:"gt=0"`
 	// MaxBodyBytes is the largest response body that is read. A larger one
 	// is an error: half an HTML document does not convert to half a page.
-	MaxBodyBytes int64 `koanf:"max_body_bytes"`
+	MaxBodyBytes int64 `koanf:"max_body_bytes" validate:"gt=0"`
 	// MaxResultBytes is the most text one fetch returns. What is over it is
 	// left out, and the result says how many bytes that was.
-	MaxResultBytes int64 `koanf:"max_result_bytes"`
+	MaxResultBytes int64 `koanf:"max_result_bytes" validate:"gt=0"`
 	// UserAgent is sent with the request.
-	UserAgent string `koanf:"user_agent"`
+	UserAgent string `koanf:"user_agent" validate:"required"`
 }
 
 // The three limits are jcode's, from crates/jcode-app-core/src/tool/webfetch.rs
@@ -35,15 +31,5 @@ var webfetchDefaults = map[string]any{
 }
 
 func (w WebFetch) validate() error {
-	switch {
-	case w.Timeout <= 0:
-		return fmt.Errorf("webfetch.timeout: %s is not positive", w.Timeout)
-	case w.MaxBodyBytes <= 0:
-		return fmt.Errorf("webfetch.max_body_bytes: %d is not positive", w.MaxBodyBytes)
-	case w.MaxResultBytes <= 0:
-		return fmt.Errorf("webfetch.max_result_bytes: %d is not positive", w.MaxResultBytes)
-	case w.UserAgent == "":
-		return errors.New("webfetch.user_agent: must not be empty")
-	}
-	return nil
+	return validateFields("webfetch", w)
 }
