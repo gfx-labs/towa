@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/messages",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Anthropic-Version": [
+        "2023-06-01"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/recording"
+      ],
+      "X-Api-Key": [
+        "REDACTED"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"acpharness-no-such-model\",\"max_tokens\":16,\"system\":[{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Reply with the single word: ready\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"stream\":true}"
+    }
+  },
+  "response": {
+    "status": 404,
+    "header": {
+      "Cache-Control": [
+        "no-cache"
+      ],
+      "Connection": [
+        "keep-alive"
+      ],
+      "Content-Length": [
+        "151"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:55:22 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model 'acpharness-no-such-model' not found\"},\"request_id\":\"req_b9f59656130bb92ea56ef22f\"}\n"
+      }
+    ]
+  }
+}

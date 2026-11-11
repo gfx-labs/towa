@@ -100,13 +100,21 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./src/provider/anthropic/...
 CGO_ENABLED=0 go build ./src/provider/anthropic/...
 ```
 
-All pass. The ten `TestExchange` scenarios skip, because their recordings do not exist. While writing, a throwaway test fed the stream example from Anthropic's documentation (thinking with a signature, redacted thinking, text, a server tool use and result, a tool call, usage) through the client over HTTP, sent the items back, and tried each error status. It behaved as described above and was deleted: it was a hand-written stand-in, which the repo does not keep.
+All pass. The ten Anthropic `TestExchange` scenarios skip, because their recordings do not exist. The three `ollama_` scenarios replay (see below). While writing, a throwaway test fed the stream example from Anthropic's documentation (thinking with a signature, redacted thinking, text, a server tool use and result, a tool call, usage) through the client over HTTP, sent the items back, and tried each error status. It behaved as described above and was deleted: it was a hand-written stand-in, which the repo does not keep.
 
 The request body is encoded into a `bytebufferpool` buffer for the length of the request. No benchmark: there was never an unpooled version to compare with.
 
+## Recordings from Ollama
+
+Three recordings were made from the local Ollama server (0.24.0, `llama3.2:3b`, `http://127.0.0.1:11434/v1/messages`) with three requests, as `docs/notes/2026-11-11-parallel-build.md` allows: `ollama_text`, `ollama_tool_call` and `ollama_unknown_model`. The command is at the top of `replay_test.go`. The parser read all three without a change.
+
+They are Ollama's emulation of the Messages API. They show that the client's request is accepted by a real server and that the parser reads a real server's stream: text deltas adding up to the finished text, a tool call with its progress and input, usage at the start and at the end, the stops `end_turn` and `tool_use`, and a 404 `not_found_error` body classified as `request`. They show nothing about thinking blocks and signatures, cache usage fields, the OAuth billing block and beta headers, 429 and 529 responses, or reset headers. All of those stay untested until an Anthropic account is supplied. The OAuth shape was not sent to Ollama.
+
+Seen in them: Ollama's `message_delta` repeats `input_tokens` with a larger value than `message_start` gave (171 after 61), and the later value is the one reported. The recordings are marked `incomplete` because the client stops reading at `message_stop`, before the end of the body. The files hold no host name, user name or home path (checked with grep), and the `x-api-key` placeholder is replaced.
+
 ## Not done
 
-- **Recordings.** None exist. `ANTHROPIC_API_KEY` and `ACPHARNESS_CLAUDE_OAUTH_TOKEN` were not set, and no token store was read. Missing files, all under `src/provider/anthropic/testdata/`: `api_text`, `api_tool_call`, `api_thinking`, `api_max_tokens`, `api_rejected_credential`, and the same five with the `oauth_` prefix. The commands are at the top of `replay_test.go`. Not covered by any scenario, because they cannot be provoked on demand: a real 429 with its reset headers, a 529, a context-length rejection, a mid-stream `error` event, a cut-off stream, redacted thinking, a server tool.
+- **Recordings from Anthropic.** None exist. `ANTHROPIC_API_KEY` and `ACPHARNESS_CLAUDE_OAUTH_TOKEN` were not set, and no token store was read. Missing files, all under `src/provider/anthropic/testdata/`: `api_text`, `api_tool_call`, `api_thinking`, `api_max_tokens`, `api_rejected_credential`, and the same five with the `oauth_` prefix. The commands are at the top of `replay_test.go`. Not covered by any scenario, because they cannot be provoked on demand: a real 429 with its reset headers, a 529, a context-length rejection, a mid-stream `error` event, a cut-off stream, redacted thinking, a server tool.
 - **The `cc_entrypoint` probe**, above.
 - `pause_turn` has no `provider.StopReason`. It ends the turn with an error until the contract has one (a server tool that runs long needs it).
 - Citations (`citations_delta`) are dropped. Text with citations is sent back as plain text.

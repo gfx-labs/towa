@@ -34,6 +34,16 @@ import (
 // the billing block, so it proves nothing about the request shape. A
 // recording holds the model it was made with. Without the record variable a
 // scenario replays its file, and is skipped when the file does not exist.
+//
+// The ollama_ scenarios are recorded from a local Ollama server, which
+// serves the Messages shape and needs no key:
+//
+//	ACPHARNESS_RECORD_ANTHROPIC=1 ACPHARNESS_OLLAMA_URL=http://127.0.0.1:11434 ACPHARNESS_OLLAMA_MODEL=llama3.2:3b \
+//	    go test ./src/provider/anthropic -run TestExchange/ollama_
+//
+// They show that the parser reads a real server's stream. They are Ollama's
+// emulation, and show nothing about Anthropic's thinking blocks, cache
+// usage, OAuth shape, errors or headers.
 const (
 	recordEnv = "ACPHARNESS_RECORD_ANTHROPIC"
 	// version is fixed so that the user agent of a replay matches the
@@ -52,7 +62,12 @@ type scenario struct {
 	maxOutput int64
 	// badToken sends a token the API rejects, to record the refusal.
 	badToken bool
-	check    func(t *testing.T, events []provider.Event, err error)
+	// ollama records from the local Ollama server.
+	ollama bool
+	// model is sent in place of the model from the environment, to record
+	// the answer to a model that does not exist.
+	model string
+	check func(t *testing.T, events []provider.Event, err error)
 }
 
 var readTool = provider.Tool{
@@ -105,7 +120,29 @@ func scenarios() []scenario {
 			},
 		)
 	}
-	return out
+	return append(out,
+		scenario{
+			name: "ollama_text", scheme: auth.SchemeAPIKey, ollama: true, maxOutput: 256,
+			prompt: "Reply with the single word: ready",
+			check:  checkText,
+		},
+		scenario{
+			name: "ollama_tool_call", scheme: auth.SchemeAPIKey, ollama: true, maxOutput: 1024,
+			prompt: "Read the file notes.txt with the read tool.", tools: []provider.Tool{readTool},
+			check: checkToolCall,
+		},
+		scenario{
+			name: "ollama_unknown_model", scheme: auth.SchemeAPIKey, ollama: true, maxOutput: 16,
+			model:  "acpharness-no-such-model",
+			prompt: "Reply with the single word: ready",
+			check: func(t *testing.T, _ []provider.Event, err error) {
+				var perr *provider.Error
+				require.ErrorAs(t, err, &perr)
+				require.Equal(t, provider.ReasonRequest, perr.Reason)
+				require.Equal(t, provider.Fail, perr.Class)
+			},
+		},
+	)
 }
 
 func checkText(t *testing.T, events []provider.Event, err error) {
@@ -197,14 +234,28 @@ func TestExchange(t *testing.T) {
 				if s.scheme == auth.SchemeOAuth {
 					model, cred.Token = os.Getenv("ACPHARNESS_CLAUDE_MODEL"), os.Getenv("ACPHARNESS_CLAUDE_OAUTH_TOKEN")
 				}
-				if cred.Token == "" || model == "" {
+				if s.ollama {
+					// Ollama reads no key. The header is replaced in the
+					// recording by its name.
+					model, cred.Token, baseURL = os.Getenv("ACPHARNESS_OLLAMA_MODEL"), "ollama", os.Getenv("ACPHARNESS_OLLAMA_URL")
+				}
+				if cred.Token == "" || model == "" || (s.ollama && baseURL == "") {
 					t.Skip("the credential or the model for this scheme is not in the environment")
 				}
 				if s.badToken {
 					cred.Token = "acpharness-rejected-credential"
 				}
+				if s.model != "" {
+					model = s.model
+				}
 				require.NoError(t, os.MkdirAll("testdata", 0o755))
-				httpClient.Transport = &providertest.Recorder{Next: httpClient.Transport, Path: path, Secrets: []string{cred.Token}}
+				secrets := []string{cred.Token}
+				if s.ollama {
+					// The placeholder is no secret, and replacing the word
+					// everywhere would change what the server said.
+					secrets = nil
+				}
+				httpClient.Transport = &providertest.Recorder{Next: httpClient.Transport, Path: path, Secrets: secrets}
 			} else {
 				ex, err := providertest.Load(path)
 				if errors.Is(err, fs.ErrNotExist) {
