@@ -4,10 +4,11 @@ package acp
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 )
 
-func (c *ClientSideConnection) handle(ctx context.Context, method string, params json.RawMessage) (any, *RequestError) {
+func (c *ClientSideConnection) handle(ctx context.Context, method string, params jsontext.Value) (any, *RequestError) {
 	switch method {
 	case ClientMethodAuthStatusUpdate:
 		var p UnstableAuthStatusUpdateNotification

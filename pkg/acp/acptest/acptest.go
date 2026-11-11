@@ -4,7 +4,8 @@ package acptest
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"strings"
 	"testing"
@@ -24,10 +25,10 @@ type Wire struct {
 
 // Message is one JSON-RPC message from the agent.
 type Message struct {
-	ID     json.RawMessage   `json:"id"`
+	ID     jsontext.Value    `json:"id"`
 	Method string            `json:"method"`
-	Params json.RawMessage   `json:"params"`
-	Result json.RawMessage   `json:"result"`
+	Params jsontext.Value    `json:"params"`
+	Result jsontext.Value    `json:"result"`
 	Error  *acp.RequestError `json:"error"`
 }
 

@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -35,26 +36,65 @@ var errEmptyResponse = errors.New("acp: response has neither result nor error")
 
 // MethodHandler handles one inbound request or notification. For a
 // notification the result is discarded.
-type MethodHandler func(ctx context.Context, method string, params json.RawMessage) (any, *RequestError)
+//
+// params is only valid until the handler returns.
+type MethodHandler func(ctx context.Context, method string, params jsontext.Value) (any, *RequestError)
 
-// message is one JSON-RPC 2.0 message of any kind.
-type message struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *RequestError   `json:"error,omitempty"`
+// version is the value of every message's jsonrpc member.
+const version = "2.0"
+
+// inbound is a JSON-RPC 2.0 message of any kind, as read. A member that is
+// absent leaves its field nil. A member that is null leaves it "null".
+type inbound struct {
+	ID     jsontext.Value `json:"id"`
+	Method string         `json:"method"`
+	Params jsontext.Value `json:"params"`
+	Result jsontext.Value `json:"result"`
+	Error  *RequestError  `json:"error"`
+}
+
+// The outbound messages hold the params and the result as Go values, so a
+// message is encoded once, into one buffer. The members are written in the
+// order jsonrpc, id, method, params, result, error.
+
+// outboundCall is a request, or a notification when ID is nil.
+type outboundCall struct {
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id,omitzero"`
+	Method  string         `json:"method"`
+	Params  any            `json:"params,omitzero"`
+}
+
+// outboundResult is a response that carries a result. A nil result is
+// written as null: a response needs a result or an error.
+type outboundResult struct {
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id"`
+	Result  any            `json:"result"`
+}
+
+// outboundError is a response that carries an error.
+type outboundError struct {
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id"`
+	Error   *RequestError  `json:"error"`
 }
 
 type cancelRequestParams struct {
-	RequestID json.RawMessage `json:"requestId"`
+	RequestID jsontext.Value `json:"requestId"`
 }
 
 type response struct {
-	result json.RawMessage
+	result jsontext.Value
 	err    error
 }
+
+// wireOptions are the options every outbound message is encoded with. They
+// keep the bytes what encoding/json v1 wrote with HTML escaping off: the
+// members of a map in sorted order, and U+2028 and U+2029 escaped. <, > and &
+// are left as they are: the messages carry source code, and escaping makes
+// each of those six bytes long.
+var wireOptions = json.JoinOptions(json.Deterministic(true), jsontext.EscapeForJS(true))
 
 type (
 	arrivalKey struct{}
@@ -200,14 +240,17 @@ func (c *Connection) read(lines chan<- []byte) error {
 }
 
 func (c *Connection) dispatch(ctx context.Context, line []byte) {
-	var msg message
+	var msg inbound
 	if err := json.Unmarshal(line, &msg); err != nil {
 		rerr := NewInvalidRequest(map[string]any{"error": err.Error()})
-		if !json.Valid(line) {
+		// A syntactic error is JSON that cannot be read: malformed, invalid
+		// UTF-8, or an object with the same member name twice.
+		var syntax *jsontext.SyntacticError
+		if errors.As(err, &syntax) {
 			rerr = NewParseError(map[string]any{"error": err.Error()})
 		}
 		c.logger.Warn("acp: unreadable message", "err", err)
-		c.respond(json.RawMessage("null"), nil, rerr)
+		c.respond(jsontext.Value("null"), nil, rerr)
 		return
 	}
 	switch {
@@ -222,7 +265,7 @@ func (c *Connection) dispatch(ctx context.Context, line []byte) {
 	}
 }
 
-func (c *Connection) handleNotification(ctx context.Context, msg *message) {
+func (c *Connection) handleNotification(ctx context.Context, msg *inbound) {
 	if msg.Method == methodCancelRequest {
 		var p cancelRequestParams
 		if err := json.Unmarshal(msg.Params, &p); err != nil || p.RequestID == nil {
@@ -248,7 +291,7 @@ func (c *Connection) handleNotification(ctx context.Context, msg *message) {
 	}
 }
 
-func (c *Connection) handleRequest(ctx context.Context, msg *message) {
+func (c *Connection) handleRequest(ctx context.Context, msg *inbound) {
 	if c.inOrder != nil && c.inOrder(msg.Method) {
 		result, rerr := c.handler(context.WithValue(ctx, inOrderKey{}, true), msg.Method, msg.Params)
 		c.respond(msg.ID, result, rerr)
@@ -279,7 +322,7 @@ func (c *Connection) handleRequest(ctx context.Context, msg *message) {
 	})
 }
 
-func (c *Connection) handleResponse(msg *message) {
+func (c *Connection) handleResponse(msg *inbound) {
 	id, err := strconv.ParseUint(string(msg.ID), 10, 64)
 	if err != nil {
 		c.logger.Warn("acp: response with an id this side never sent", "id", string(msg.ID))
@@ -305,17 +348,19 @@ func (c *Connection) handleResponse(msg *message) {
 }
 
 // respond answers the inbound request id with result, or with rerr when set.
-func (c *Connection) respond(id json.RawMessage, result any, rerr *RequestError) {
-	msg := message{JSONRPC: "2.0", ID: id, Error: rerr}
+func (c *Connection) respond(id jsontext.Value, result any, rerr *RequestError) {
+	var err error
 	if rerr == nil {
-		raw, err := marshal(result)
-		if err != nil {
-			msg.Error = NewInternalError(map[string]any{"error": err.Error()})
-		} else {
-			msg.Result = raw
+		var encodeErr error
+		if err, encodeErr = c.write(&outboundResult{JSONRPC: version, ID: id, Result: result}); encodeErr != nil {
+			// Nothing was written, so the request can still be answered.
+			rerr = NewInternalError(map[string]any{"error": encodeErr.Error()})
 		}
 	}
-	if err := c.write(&msg); err != nil {
+	if rerr != nil {
+		err, _ = c.write(&outboundError{JSONRPC: version, ID: id, Error: rerr})
+	}
+	if err != nil {
 		c.logger.Debug("acp: response not written", "err", err)
 	}
 }
@@ -344,23 +389,24 @@ func (c *Connection) SendRequestNoResult(ctx context.Context, method string, par
 // SendNotification sends a notification. It returns once the message has
 // been written, so notifications reach the peer in the order they were sent.
 func (c *Connection) SendNotification(_ context.Context, method string, params any) error {
-	raw, err := marshalParams(params)
-	if err != nil {
-		return fmt.Errorf("acp: encode %s params: %w", method, err)
-	}
-	return c.write(&message{JSONRPC: "2.0", Method: method, Params: raw})
+	return c.send(&outboundCall{JSONRPC: version, Method: method, Params: params})
 }
 
-func (c *Connection) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+// send writes a request or a notification.
+func (c *Connection) send(msg *outboundCall) error {
+	err, encodeErr := c.write(msg)
+	if encodeErr != nil {
+		return fmt.Errorf("acp: encode %s: %w", msg.Method, encodeErr)
+	}
+	return err
+}
+
+func (c *Connection) call(ctx context.Context, method string, params any) (jsontext.Value, error) {
 	if ctx.Value(inOrderKey{}) != nil {
 		return nil, ErrWaitInOrder
 	}
-	raw, err := marshalParams(params)
-	if err != nil {
-		return nil, fmt.Errorf("acp: encode %s params: %w", method, err)
-	}
 	id := c.nextID.Add(1)
-	idRaw := json.RawMessage(strconv.FormatUint(id, 10))
+	idRaw := jsontext.Value(strconv.FormatUint(id, 10))
 	ch := make(chan response, 1)
 
 	c.mu.Lock()
@@ -371,7 +417,7 @@ func (c *Connection) call(ctx context.Context, method string, params any) (json.
 		return nil, err
 	}
 
-	if err := c.write(&message{JSONRPC: "2.0", ID: idRaw, Method: method, Params: raw}); err != nil {
+	if err := c.send(&outboundCall{JSONRPC: version, ID: idRaw, Method: method, Params: params}); err != nil {
 		c.forget(id)
 		return nil, err
 	}
@@ -416,44 +462,25 @@ func (c *Connection) forget(id uint64) {
 	c.mu.Unlock()
 }
 
-func (r response) unwrap() (json.RawMessage, error) {
+func (r response) unwrap() (jsontext.Value, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
 	return r.result, nil
 }
 
-// write sends one message as a single Write, so a message is never split by
-// another goroutine's message.
-func (c *Connection) write(msg *message) error {
-	b, err := marshal(msg)
-	if err != nil {
-		return err
-	}
-	b = append(b, '\n')
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	_, err = c.w.Write(b)
-	return err
-}
-
-// marshal encodes v on one line. It leaves <, > and & as they are: the
-// messages carry source code, and the default escaping makes each of those
-// six bytes long.
-func marshal(v any) (json.RawMessage, error) {
+// write encodes msg and sends it as a single Write, so a message is never
+// split by another goroutine's message. The message is encoded whole before
+// any of it is written: when it cannot be encoded, encodeErr says why and
+// nothing has reached the peer.
+func (c *Connection) write(msg any) (err, encodeErr error) {
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	if err := json.MarshalWrite(&buf, msg, wireOptions); err != nil {
 		return nil, err
 	}
-	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
-}
-
-// marshalParams encodes params, leaving the field out when there are none.
-func marshalParams(params any) (json.RawMessage, error) {
-	if params == nil {
-		return nil, nil
-	}
-	return marshal(params)
+	buf.WriteByte('\n')
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_, err = c.w.Write(buf.Bytes())
+	return err, nil
 }

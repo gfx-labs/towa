@@ -4,7 +4,7 @@
 package emit
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"go/ast"
 	"go/parser"
 	"go/token"
