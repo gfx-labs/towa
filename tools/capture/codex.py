@@ -46,6 +46,9 @@ VERBATIM = [
     "codex-rs/core/src/tools/handlers/*_spec.rs",
     "codex-rs/core/src/context/turn_aborted.rs",
     "codex-rs/core/src/tasks/mod.rs",
+    # Which multi-agent version applies when the model catalog gives none;
+    # that choice selects the interruption marker's role.
+    "codex-rs/core/src/config/mod.rs",
     "codex-rs/ext/web-search/web_run_description.md",
     "codex-rs/ext/image-generation/imagegen_description.md",
 ]

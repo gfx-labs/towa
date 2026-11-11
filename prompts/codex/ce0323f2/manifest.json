@@ -2059,6 +2059,15 @@
       }
     },
     {
+      "path": "source/codex-rs/core/src/config/mod.rs",
+      "sha256": "b08b99a764df58c8647c3408127b99a9f2e0b94558e6eca23df274033b446d2e",
+      "bytes": 210569,
+      "source": {
+        "kind": "verbatim",
+        "path": "codex-rs/core/src/config/mod.rs"
+      }
+    },
+    {
       "path": "source/codex-rs/core/src/context/turn_aborted.rs",
       "sha256": "bf98a0c4ca4bca8b27382c246615c3f0f4925d25c9a8bb13c23e2da1955e8f9e",
       "bytes": 1456,
