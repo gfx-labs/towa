@@ -1,7 +1,7 @@
 package conformance
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"io"
@@ -24,7 +24,6 @@ import (
 type socketProcess struct {
 	cmd      *exec.Cmd
 	done     chan struct{}
-	logged   chan struct{}
 	err      error
 	stderr   *wire
 	stdout   *wire
@@ -32,11 +31,38 @@ type socketProcess struct {
 	tcpAddr  string
 }
 
+// socketLog is written by exec's stderr copier. Letting exec own the pipe
+// means Wait joins that copier before the exit error is reported.
+type socketLog struct {
+	wire      *wire
+	addresses chan string
+	pending   bytes.Buffer
+}
+
+func (l *socketLog) Write(p []byte) (int, error) {
+	n, err := l.wire.Write(p)
+	_, _ = l.pending.Write(p)
+	for {
+		end := bytes.IndexByte(l.pending.Bytes(), '\n')
+		if end < 0 {
+			return n, err
+		}
+		line := l.pending.Next(end + 1)
+		var record struct {
+			Network string `json:"network"`
+			Address string `json:"address"`
+		}
+		if json.Unmarshal(line, &record) == nil && record.Network == "tcp" {
+			l.addresses <- record.Address
+		}
+	}
+}
+
 func startSockets(t *testing.T) *socketProcess {
 	t.Helper()
 	dir := t.TempDir()
 	p := &socketProcess{
-		done: make(chan struct{}), logged: make(chan struct{}),
+		done:   make(chan struct{}),
 		stderr: &wire{}, stdout: &wire{}, unixPath: filepath.Join(dir, "acp.sock"),
 	}
 	configFile := filepath.Join(dir, "config.toml")
@@ -51,31 +77,9 @@ func startSockets(t *testing.T) *socketProcess {
 	}
 	p.cmd.Dir = dir
 	p.cmd.Stdout = p.stdout
-	stderr, err := p.cmd.StderrPipe()
-	require.NoError(t, err)
-	require.NoError(t, p.cmd.Start())
-
 	addresses := make(chan string, 2)
-	go func() {
-		defer close(p.logged)
-		reader := bufio.NewReader(stderr)
-		for {
-			line, err := reader.ReadBytes('\n')
-			if len(line) > 0 {
-				_, _ = p.stderr.Write(line)
-				var record struct {
-					Network string `json:"network"`
-					Address string `json:"address"`
-				}
-				if json.Unmarshal(line, &record) == nil && record.Network == "tcp" {
-					addresses <- record.Address
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
+	p.cmd.Stderr = &socketLog{wire: p.stderr, addresses: addresses}
+	require.NoError(t, p.cmd.Start())
 	go func() {
 		p.err = p.cmd.Wait()
 		close(p.done)
@@ -90,7 +94,6 @@ func startSockets(t *testing.T) *socketProcess {
 	select {
 	case p.tcpAddr = <-addresses:
 	case <-p.done:
-		<-p.logged
 		t.Fatalf("socket daemon exited before startup: %v\n%s", p.err, strings.Join(p.stderr.lines(), "\n"))
 	case <-time.After(timeout):
 		t.Fatal("socket daemon did not announce its bound TCP address")
@@ -107,7 +110,6 @@ func (p *socketProcess) stop(t *testing.T) {
 	}
 	select {
 	case <-p.done:
-		<-p.logged
 		require.NoError(t, p.err, "stderr:\n%s", strings.Join(p.stderr.lines(), "\n"))
 	case <-time.After(timeout):
 		_ = p.cmd.Process.Kill()
