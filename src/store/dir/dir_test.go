@@ -353,6 +353,17 @@ func TestTornAppendIsAbsentAndReported(t *testing.T) {
 				same(t, whole, entries)
 				// A range that ends before the tail does not reach it.
 				same(t, whole, history(t, s, id, store.Range{To: 2}))
+				for _, r := range []store.Range{{To: 3}, {From: 1, To: 3}, {From: 4, To: 5}, {From: 4, To: 4}} {
+					seq, err = s.History(t.Context(), id, r)
+					require.NoError(t, err)
+					entries, err = collect(t, seq)
+					require.ErrorIs(t, err, store.ErrTorn, "cut at %d, range %+v", cut, r)
+					if r.From < len(whole) {
+						same(t, whole[r.From:], entries)
+					} else {
+						require.Empty(t, entries)
+					}
+				}
 			}
 
 			// Nothing is appended after a torn record until it is set aside.
@@ -613,8 +624,12 @@ func TestBlobs(t *testing.T) {
 	assert.Equal(t, transcript.Stored{Hash: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(content)), MimeType: "text/plain"}, stored)
 
 	// The same content again keeps one copy and leaves nothing else behind.
+	before := s.Stats()
 	again, err := s.PutBlob(t.Context(), id, "text/plain", bytes.NewReader(content))
 	require.NoError(t, err)
+	// A visible hash might belong to a publisher that has not synced yet.
+	// This call must flush its own file and both namespace boundaries.
+	assert.GreaterOrEqual(t, s.Stats().Syncs-before.Syncs, int64(3))
 	assert.Equal(t, stored, again)
 	files, err := os.ReadDir(filepath.Join(s.SessionDir(id), "blobs"))
 	require.NoError(t, err)

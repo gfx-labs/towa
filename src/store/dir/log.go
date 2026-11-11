@@ -299,13 +299,34 @@ func (s *Store) History(ctx context.Context, id uuid.UUID, r store.Range) (iter.
 	if err != nil {
 		return nil, err
 	}
-	if r.To != 0 {
-		// A bounded range does not claim to reach the end.
-		v.size = v.end
+	if v.end == v.size || r.To == 0 {
+		return v.read(ctx, func(f *os.File) iter.Seq2[transcript.Entry, error] {
+			return v.format.history(f, v.end, r)
+		}), nil
 	}
-	return v.read(ctx, func(f *os.File) iter.Seq2[transcript.Entry, error] {
+	to := r.To
+	// Read until the requested bound is satisfied or the torn tail is
+	// reached. A bound beyond the intact entries cannot hide the fault.
+	r.To = 0
+	seq := v.read(ctx, func(f *os.File) iter.Seq2[transcript.Entry, error] {
 		return v.format.history(f, v.end, r)
-	}), nil
+	})
+	return func(yield func(transcript.Entry, error) bool) {
+		position := r.From
+		for e, err := range seq {
+			if err != nil {
+				yield(e, err)
+				return
+			}
+			if to != 0 && position >= to {
+				return
+			}
+			position++
+			if !yield(e, nil) || (to != 0 && position == to) {
+				return
+			}
+		}
+	}, nil
 }
 
 // Repair sets the torn tail of a session's log aside, in a file named

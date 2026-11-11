@@ -50,11 +50,11 @@ func (s *Store) PutBlob(ctx context.Context, id uuid.UUID, mimeType string, cont
 
 	session := s.SessionDir(id)
 	blobs := filepath.Join(session, blobsName)
-	if err := os.Mkdir(blobs, dirMode); err == nil {
-		if err := s.syncDir(session); err != nil {
-			return transcript.Stored{}, err
-		}
-	} else if !errors.Is(err, fs.ErrExist) {
+	if err := os.Mkdir(blobs, dirMode); err != nil && !errors.Is(err, fs.ErrExist) {
+		return transcript.Stored{}, err
+	}
+	// Another publisher may have created blobs without syncing its parent yet.
+	if err := s.syncDir(session); err != nil {
 		return transcript.Stored{}, err
 	}
 	// The hash is known only after the content is read, so it is written
@@ -81,13 +81,8 @@ func (s *Store) putBlob(ctx context.Context, blobs string, tmp *os.File, content
 	digest := hex.EncodeToString(sum.Sum(nil))
 	stored := transcript.Stored{Hash: hashPrefix + digest, Size: size}
 	final := filepath.Join(blobs, digest)
-	if _, err := os.Lstat(final); err == nil {
-		// The session already holds this content, and it was made durable
-		// when it was first stored.
-		return stored, errors.Join(tmp.Close(), os.Remove(tmp.Name()))
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return transcript.Stored{}, errors.Join(err, tmp.Close())
-	}
+	// Even an existing hash can be another publisher's unsynced rename.
+	// Publish and sync our own copy rather than acknowledging its write.
 	s.syncs.Add(1)
 	if err := tmp.Sync(); err != nil {
 		return transcript.Stored{}, errors.Join(err, tmp.Close())
