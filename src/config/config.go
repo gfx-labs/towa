@@ -24,6 +24,7 @@ type Config struct {
 	Context   Context    `koanf:"context"`
 	Listen    Listen     `koanf:"listen"`
 	Limits    Limits     `koanf:"limits"`
+	Hooks     []Hook     `koanf:"hooks"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -101,6 +102,7 @@ func (c *Config) validate() error {
 	for _, section := range []func() error{
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
+		func() error { return validateHookList(c.Hooks) },
 	} {
 		if err := section(); err != nil {
 			return err
