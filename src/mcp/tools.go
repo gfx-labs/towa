@@ -140,6 +140,13 @@ func marshalStable(v any) (jsontext.Value, error) {
 	return json.Marshal(v, json.Deterministic(true))
 }
 
+// sdkTransportRejected is the code the SDK gives an error its own HTTP
+// transport made, as opposed to one a server sent: ErrRejected in
+// internal/jsonrpc2/wire.go of go-sdk v1.8.0, which the SDK does not
+// export. It covers a request that failed on the way and a status such as
+// 502 from something in front of the server.
+const sdkTransportRejected = -32005
+
 // run calls a tool and turns what happened into a result for the model.
 func (m *Manager) run(ctx context.Context, server, tool string, arguments jsontext.Value) tools.Result {
 	res, err := m.CallTool(ctx, server, tool, arguments)
@@ -147,10 +154,13 @@ func (m *Manager) run(ctx context.Context, server, tool string, arguments jsonte
 		var callErr *CallError
 		var refused *jsonrpc.Error
 		var login *LoginRequiredError
+		var notSent *notSentError
 		switch {
 		case errors.As(err, &login):
 			return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q needs an OAuth login, which only the user can do. The call to %q did not run.", server, tool))
-		case errors.As(err, &refused):
+		case errors.As(err, &notSent):
+			return textResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, notSent.err))
+		case errors.As(err, &refused) && refused.Code != sdkTransportRejected:
 			return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q refused the call to %q: %s (code %d)", server, tool, refused.Message, refused.Code))
 		case errors.As(err, &callErr):
 			// The call was sent. It is not sent again.

@@ -74,8 +74,14 @@ type MCPServer struct {
 	// TrustAnnotations treats a tool that declares readOnlyHint as
 	// read-only. Without it every tool of the server counts as one that
 	// executes, because a server can declare anything.
-	TrustAnnotations *bool          `koanf:"trust_annotations"`
-	OAuth            MCPServerOAuth `koanf:"oauth"`
+	TrustAnnotations *bool `koanf:"trust_annotations"`
+	// Shared gives the server one connection for the whole process, used by
+	// every session, in place of one per session. A shared stdio server
+	// runs once, in the process's working directory and environment, and
+	// whatever state it keeps is seen by every session. It does not apply
+	// to a server a session names.
+	Shared bool           `koanf:"shared"`
+	OAuth  MCPServerOAuth `koanf:"oauth"`
 }
 
 // MCPServerOAuth names a client registered with the server's authorization

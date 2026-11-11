@@ -1,11 +1,20 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"maps"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
@@ -281,4 +290,172 @@ func TestCallThatGetsNoAnswerIsUnknown(t *testing.T) {
 	require.NoError(t, err)
 	res = run(t, list[0], `{"action":"call","server":"gone","tool":"echo"}`)
 	require.Equal(t, transcript.OutcomeFailed, res.Outcome)
+}
+
+// The same over streamable HTTP, for the two ways an answer is lost there:
+// the connection the call arrived on is closed without a response, and
+// something in front of the server answers 504 in the server's place. In
+// both the tool has run.
+func TestCallDroppedOverHTTPIsUnknown(t *testing.T) {
+	for _, loss := range []string{"connection closed", "gateway timeout"} {
+		t.Run(loss, func(t *testing.T) { testCallDroppedOverHTTP(t, loss == "gateway timeout") })
+	}
+}
+
+// droppable is a response whose connection can be closed under the handler
+// that is writing it. After drop the handler's writes fail, as they do on
+// a connection that broke, and reach nothing.
+type droppable struct {
+	http.ResponseWriter
+	mu      sync.Mutex
+	dropped bool
+}
+
+func (d *droppable) Write(p []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.dropped {
+		return 0, net.ErrClosed
+	}
+	return d.ResponseWriter.Write(p)
+}
+
+func (d *droppable) WriteHeader(status int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.dropped {
+		d.ResponseWriter.WriteHeader(status)
+	}
+}
+
+// FlushError is what http.ResponseController calls.
+func (d *droppable) FlushError() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.dropped {
+		return net.ErrClosed
+	}
+	return http.NewResponseController(d.ResponseWriter).Flush()
+}
+
+func (d *droppable) drop() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	conn, _, err := d.ResponseWriter.(http.Hijacker).Hijack()
+	if err != nil {
+		return err
+	}
+	d.dropped = true
+	return conn.Close()
+}
+
+func testCallDroppedOverHTTP(t *testing.T, gateway bool) {
+	var (
+		mu sync.Mutex
+		// posts are the responses of the POST requests still being served.
+		posts = map[*droppable]struct{}{}
+		// ran is set by the tool, for the handler that plays the gateway.
+		ran   atomic.Bool
+		calls atomic.Int64
+		// A concurrent 401 must not change this call's unknown outcome.
+		rejectNext atomic.Bool
+		beforeLoss func()
+	)
+	server := newTestServer()
+	sdk.AddTool(server, &sdk.Tool{
+		Name:        "vanish",
+		Description: "Write the file named by path, then lose the answer.",
+	}, func(_ context.Context, _ *sdk.CallToolRequest, in vanishInput) (*sdk.CallToolResult, any, error) {
+		calls.Add(1)
+		if err := os.WriteFile(in.Path, []byte("ran"), 0o600); err != nil {
+			return nil, nil, err
+		}
+		ran.Store(true)
+		mu.Lock()
+		defer mu.Unlock()
+		for w := range posts {
+			if gateway {
+				break
+			}
+			if err := w.drop(); err != nil {
+				return nil, nil, err
+			}
+		}
+		return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "never received"}}}, nil, nil
+	})
+	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, nil)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && rejectNext.Swap(false) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if gateway {
+			// The server's answer is held back, and a 504 goes out for
+			// the request the tool ran in.
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, r)
+			if ran.Swap(false) {
+				beforeLoss()
+				w.WriteHeader(http.StatusGatewayTimeout)
+				return
+			}
+			maps.Copy(w.Header(), rec.Header())
+			w.WriteHeader(rec.Code)
+			_, _ = w.Write(rec.Body.Bytes())
+			return
+		}
+		d := &droppable{ResponseWriter: w}
+		mu.Lock()
+		posts[d] = struct{}{}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			delete(posts, d)
+			mu.Unlock()
+		}()
+		handler.ServeHTTP(d, r)
+	}))
+	t.Cleanup(func() {
+		ts.CloseClientConnections()
+		ts.Close()
+	})
+
+	remote := Server{Name: "s", Transport: config.MCPTransportStreamableHTTP, URL: ts.URL, Direct: true}
+	m := newTestManager(t, Options{Servers: []Server{remote}, HTTPClient: newCountingClient().Client})
+	list, err := m.Tools(t.Context(), nil)
+	require.NoError(t, err)
+	set := tools.Set{Tools: list}
+	vanish, ok := set.Lookup("vanish")
+	require.True(t, ok)
+	otherResult := make(chan error, 1)
+	beforeLoss = func() {
+		rejectNext.Store(true)
+		_, err := m.CallTool(t.Context(), "s", "echo", jsontext.Value(`{"text":"needs login"}`))
+		otherResult <- err
+	}
+
+	marker := filepath.Join(t.TempDir(), "ran")
+	input, err := json.Marshal(vanishInput{Path: marker})
+	require.NoError(t, err)
+	res := run(t, vanish, string(input))
+	require.Equal(t, transcript.OutcomeUnknown, res.Outcome, "%+v", res)
+	require.FileExists(t, marker)
+	require.EqualValues(t, 1, calls.Load(), "an unknown outcome is not retried")
+	if gateway {
+		var login *LoginRequiredError
+		require.ErrorAs(t, <-otherResult, &login, "the concurrent call was refused, not this one")
+	}
+
+	// A server that is gone gets nothing written to it, which is a
+	// failure and not an unknown.
+	ts.CloseClientConnections()
+	ts.Close()
+	echo, ok := set.Lookup("echo")
+	require.True(t, ok)
+	res = run(t, echo, `{"text":"x"}`)
+	require.Equal(t, transcript.OutcomeFailed, res.Outcome, "%+v", res)
 }

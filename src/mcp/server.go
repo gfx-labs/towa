@@ -34,6 +34,9 @@ type Server struct {
 	TrustAnnotations bool
 	// FromSession says the session named the server, not configuration.
 	FromSession bool
+	// Shared says the server has one connection for the process, held by a
+	// Pool. A server a session names is never shared.
+	Shared bool
 	// OAuthClientID and OAuthClientSecret name a client registered by hand.
 	// When the id is empty a login registers a client dynamically.
 	OAuthClientID     string
@@ -87,6 +90,7 @@ func fromConfig(c config.MCPServer, lookupEnv func(string) (string, bool)) (Serv
 		URL:           c.URL,
 		Headers:       maps.Clone(c.Headers),
 		OAuthClientID: c.OAuth.ClientID,
+		Shared:        c.Shared,
 	}
 	if c.Direct != nil {
 		s.Direct = *c.Direct

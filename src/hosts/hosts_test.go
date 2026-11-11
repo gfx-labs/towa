@@ -3,6 +3,7 @@ package hosts_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -61,10 +62,30 @@ provider = "openrouter"
 kind = "api_key"
 api_key_env = "OPENROUTER_API_KEY"
 
+[[accounts]]
+id = "codex-key"
+provider = "codex"
+kind = "api_key"
+api_key_env = "OPENAI_API_KEY"
+
+[embeddings]
+base_url = "http://127.0.0.1:8080/v1"
+model = "bge"
+
+[jev]
+route = "custom"
+model = "jev-local"
+base_url = "https://jev.internal.example"
+
 [[mcp.servers]]
 name = "docs"
 transport = "streamable_http"
 url = "https://mcp.example.com/mcp"
+
+[[mcp.servers]]
+name = "tickets"
+transport = "sse"
+url = "https://tickets.example.com/sse"
 
 [[mcp.servers]]
 name = "files"
@@ -80,27 +101,62 @@ command = "mcp-files"
 	report, err := hosts.List(cfg, hosts.Inputs{
 		Flows: map[string]auth.Flow{"claude": claude, "codex": codex},
 		OTLP:  hosts.OTLP{Endpoint: "http://collector:4318", MetricsEndpoint: "https://metrics.example/v1/metrics"},
+		BuiltIn: hosts.BuiltIn{
+			Claude: "https://claude-api.example", CodexAPIKey: "https://codex-api.example/v1", CodexOAuth: "https://codex-login-api.example/backend",
+		},
+		JevEndpoint:       "https://jev.internal.example/v1/systemone",
+		MCPTokenEndpoints: map[string]string{"docs": "https://auth.example.com/token"},
 	})
 	require.NoError(t, err)
 
 	require.Equal(t, map[string][]string{
 		"providers[0].base_url": {"openrouter.ai:443"},
 		"providers[1].base_url": {"[::1]:8080"},
-		// The oauth account's flow. The proxied account's flow is not
-		// listed: its proxy refreshes the token.
-		"accounts[0].provider": {"login.example:443", "token.example:8443"},
+		// The built-in provider's endpoint, then the oauth account's flow.
+		"accounts[0].provider": {"claude-api.example:443", "login.example:443", "token.example:8443"},
+		// The proxied account contacts its provider's login endpoint. Its
+		// flow is not listed: its proxy refreshes the token.
+		"accounts[1].provider": {"codex-login-api.example:443"},
+		// An API key for the same provider goes to another endpoint.
+		"accounts[3].provider": {"codex-api.example:443"},
 		"mcp.servers[0].url":   {"mcp.example.com:443"},
+		"mcp.servers[0].oauth": {"auth.example.com:443"},
+		"mcp.servers[1].url":   {"tickets.example.com:443"},
+		"embeddings.base_url":  {"127.0.0.1:8080"},
+		"jev.base_url":         {"jev.internal.example:443"},
 		// Traces and logs fall back to the general variable.
 		"telemetry.otel:" + hosts.EnvOTLPEndpoint:        {"collector:4318"},
 		"telemetry.otel:" + hosts.EnvOTLPMetricsEndpoint: {"metrics.example:443"},
 	}, addresses(report))
 	require.IsIncreasingf(t, hostLines(report), "hosts are sorted")
 
-	// Both accounts of a built-in provider contact a host that is not
-	// listed, the proxied one included, and the stdio server is named.
-	require.Contains(t, report.NotCovered, `accounts[0].provider: the base URL of the built-in provider "claude" is not listed yet`)
-	require.Contains(t, report.NotCovered, `accounts[1].provider: the base URL of the built-in provider "codex" is not listed yet`)
-	require.Contains(t, report.NotCovered, `mcp.servers[1]: "files" is a stdio server, and what the command "mcp-files" contacts cannot be known`)
+	// What is left out is said: the server without a stored login, the
+	// stdio server, and webfetch, which no list can hold.
+	gaps := strings.Join(report.NotCovered, "\n")
+	require.Contains(t, gaps, `mcp.servers[1]: "tickets" has no stored login`)
+	require.NotContains(t, gaps, `"docs" has no stored login`)
+	require.Contains(t, gaps, `mcp.servers[2]: "files" is a stdio server`)
+	require.Contains(t, gaps, "webfetch: the tool fetches any URL the model names, so it reaches any host")
+	for _, h := range report.Hosts {
+		require.NotContains(t, h.Key, "webfetch")
+	}
+}
+
+// What the configuration turns on and List was given no URL for is an
+// error, not a missing line.
+func TestAnEndpointThatWasNotGivenIsAnError(t *testing.T) {
+	claude := load(t, "[[accounts]]\nid = \"a\"\nprovider = \"claude\"\nkind = \"proxied_api_key\"\n")
+	_, err := hosts.List(claude, hosts.Inputs{})
+	require.Error(t, err)
+
+	jev := load(t, "[[accounts]]\nid = \"k\"\nprovider = \"or\"\nkind = \"api_key\"\napi_key_env = \"K\"\n"+
+		"[[providers]]\nid = \"or\"\nkind = \"chat\"\nbase_url = \"https://or.example/v1\"\n"+
+		"[jev]\nroute = \"openrouter\"\naccount = \"k\"\n")
+	_, err = hosts.List(jev, hosts.Inputs{})
+	require.Error(t, err)
+	report, err := hosts.List(jev, hosts.Inputs{JevEndpoint: "https://decisions.example/x"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"decisions.example:443"}, addresses(report)["jev.route"])
 }
 
 func hostLines(r hosts.Report) []string {

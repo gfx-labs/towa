@@ -95,6 +95,9 @@ type Options struct {
 	// Tokens holds OAuth logins of remote servers. It may be nil, and then
 	// no server is sent a token.
 	Tokens TokenStore
+	// Pool holds the connections of the servers marked shared. It is
+	// required when Servers has one.
+	Pool *Pool
 	// Logger gets connection events and, at debug level, what a stdio
 	// server writes to its stderr. It may be nil.
 	Logger *slog.Logger
@@ -137,6 +140,12 @@ type Manager struct {
 // NewManager checks the servers and returns a manager for them. It starts
 // nothing.
 func NewManager(opts Options) (*Manager, error) {
+	return newManager(opts, false)
+}
+
+// newManager builds a session's manager, or the manager inside a Pool,
+// which owns the connections of shared servers.
+func newManager(opts Options, pool bool) (*Manager, error) {
 	if opts.ClientName == "" || opts.ClientVersion == "" {
 		return nil, errors.New("mcp: ClientName and ClientVersion are required")
 	}
@@ -176,6 +185,14 @@ func NewManager(opts Options) (*Manager, error) {
 		default:
 			return nil, fmt.Errorf("mcp: server %q has unknown transport %q", s.Name, s.Transport)
 		}
+		if s.Shared && !pool {
+			c, err := opts.Pool.connection(s)
+			if err != nil {
+				return nil, err
+			}
+			m.conns[s.Name] = c
+			continue
+		}
 		m.conns[s.Name] = &connection{m: m, server: s, gate: make(chan struct{}, 1)}
 	}
 	return m, nil
@@ -199,13 +216,14 @@ func (m *Manager) Connected(server string) bool {
 // list is kept for as long as the connection lives and the server does not
 // announce a change. The caller must not change the returned tools.
 func (m *Manager) ListTools(ctx context.Context, server string) ([]*sdk.Tool, error) {
+	ctx, state := withHTTPState(ctx)
 	c, l, err := m.acquire(ctx, server)
 	if err != nil {
 		return nil, err
 	}
 	defer c.release()
 	list, err := l.listTools(ctx)
-	return list, l.http.loginRequired(server, err)
+	return list, l.http.loginRequired(server, state, err)
 }
 
 // CallTool calls one tool, connecting to its server if needed. arguments is
@@ -213,6 +231,7 @@ func (m *Manager) ListTools(ctx context.Context, server string) ([]*sdk.Tool, er
 // call was sent is a connect error. One after it is a *CallError, and the
 // call is never sent again.
 func (m *Manager) CallTool(ctx context.Context, server, tool string, arguments jsontext.Value) (res *sdk.CallToolResult, err error) {
+	ctx, state := withHTTPState(ctx)
 	attrs := []attribute.KeyValue{attribute.String(attrServer, server), attribute.String(attrTool, tool)}
 	if c, ok := m.conns[server]; ok {
 		attrs = append(attrs, attribute.String(attrTransport, c.server.Transport))
@@ -236,19 +255,23 @@ func (m *Manager) CallTool(ctx context.Context, server, tool string, arguments j
 	}
 	res, err = l.session.CallTool(ctx, params)
 	if err != nil {
-		return nil, &CallError{Server: server, Tool: tool, Err: l.http.loginRequired(server, err)}
+		return nil, &CallError{Server: server, Tool: tool, Err: l.http.loginRequired(server, state, err)}
 	}
 	return res, nil
 }
 
-// Close closes every connection and ends every stdio server. Calls in
-// flight fail. It is safe to call more than once.
+// Close closes the manager's own connections and ends its stdio servers.
+// Calls in flight on them fail. A shared server's connection belongs to the
+// Pool and stays open. It is safe to call more than once.
 func (m *Manager) Close() error {
 	m.mu.Lock()
 	m.closed = true
 	m.mu.Unlock()
 	var wg sync.WaitGroup
 	for _, c := range m.conns {
+		if c.m != m {
+			continue
+		}
 		wg.Go(func() {
 			c.gate <- struct{}{}
 			defer func() { <-c.gate }()
@@ -272,8 +295,10 @@ func (m *Manager) isClosed() bool {
 	return m.closed
 }
 
-// connection is the manager's slot for one server.
+// connection is the slot for one server, in the manager that owns it.
 type connection struct {
+	// m is the owner: the session's manager, or the Pool's for a shared
+	// server. Its settings open the connection and decide when it closes.
 	m      *Manager
 	server Server
 	// gate is held while the connection is being opened or closed. It is a
@@ -301,7 +326,7 @@ func (m *Manager) acquire(ctx context.Context, server string) (*connection, *liv
 		return nil, nil, ctx.Err()
 	}
 	defer func() { <-c.gate }()
-	if m.isClosed() {
+	if m.isClosed() || c.m.isClosed() {
 		return nil, nil, ErrClosed
 	}
 	c.mu.Lock()
@@ -318,7 +343,7 @@ func (m *Manager) acquire(ctx context.Context, server string) (*connection, *liv
 		// The server went away on its own. Release what is left of it.
 		l.close()
 	}
-	l, err := m.connect(ctx, c.server)
+	l, err := c.m.connect(ctx, c.server)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -435,6 +460,7 @@ func (l *live) listTools(ctx context.Context) ([]*sdk.Tool, error) {
 
 // connect starts the server or connects to it, and runs initialize.
 func (m *Manager) connect(ctx context.Context, s Server) (_ *live, err error) {
+	ctx, state := withHTTPState(ctx)
 	ctx, span := m.tracer.Start(ctx, spanConnect, trace.WithAttributes(
 		attribute.String(attrServer, s.Name), attribute.String(attrTransport, s.Transport)))
 	defer func() { endSpan(span, err) }()
@@ -485,7 +511,7 @@ func (m *Manager) connect(ctx context.Context, s Server) (_ *live, err error) {
 			return nil, fmt.Errorf("mcp: server %q did not answer initialize within mcp.connect_timeout_seconds (%s): %w",
 				s.Name, m.connectTimeout, err)
 		}
-		return nil, l.http.loginRequired(s.Name, fmt.Errorf("mcp: server %q: connect: %w", s.Name, err))
+		return nil, l.http.loginRequired(s.Name, state, fmt.Errorf("mcp: server %q: connect: %w", s.Name, err))
 	}
 	l.session = session
 	if stdio != nil {

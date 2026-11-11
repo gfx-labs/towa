@@ -43,6 +43,50 @@ type Inputs struct {
 	// OTLP holds the values of the OTEL_EXPORTER_OTLP_* endpoint
 	// variables, empty when unset.
 	OTLP OTLP
+	// BuiltIn holds the base URLs of the providers that need no
+	// [[providers]] entry, from the packages that own them.
+	BuiltIn BuiltIn
+	// JevEndpoint is where decisions are sent, from src/jev. It is empty
+	// when jev.route is.
+	JevEndpoint string
+	// MCPTokenEndpoints holds, by server name, the token endpoint in the
+	// stored login of a remote MCP server. A server has no entry when it
+	// has no stored login for its current URL, or one whose refresh token
+	// was refused, which is not sent again.
+	MCPTokenEndpoints map[string]string
+}
+
+// BuiltIn holds the base URLs of the built-in providers.
+type BuiltIn struct {
+	// Claude is where every account of the claude provider sends.
+	Claude string
+	// CodexAPIKey and CodexOAuth are where an account of the codex
+	// provider sends: the first with an API key, the second with a login.
+	CodexAPIKey, CodexOAuth string
+}
+
+// url returns the base URL an account of a built-in provider sends to.
+func (b BuiltIn) url(a config.Account) (string, error) {
+	var u string
+	switch a.Provider {
+	case config.ProviderClaude:
+		u = b.Claude
+	case config.ProviderCodex:
+		switch a.Kind {
+		case config.AccountAPIKey, config.AccountProxiedAPIKey:
+			u = b.CodexAPIKey
+		case config.AccountOAuth, config.AccountProxiedOAuth:
+			u = b.CodexOAuth
+		default:
+			return "", fmt.Errorf("account kind %q is not known", a.Kind)
+		}
+	default:
+		return "", fmt.Errorf("provider %q is not built in and not configured", a.Provider)
+	}
+	if u == "" {
+		return "", fmt.Errorf("no base URL was given for the built-in provider %q", a.Provider)
+	}
+	return u, nil
 }
 
 // OTLP holds the endpoint variables of the OTLP exporters.
@@ -83,8 +127,13 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 		// A proxied account contacts its provider like any other. Only
 		// its credential is held elsewhere.
 		if !configured[a.Provider] {
-			r.NotCovered = append(r.NotCovered, fmt.Sprintf(
-				"%s.provider: the base URL of the built-in provider %q is not listed yet", at, a.Provider))
+			base, err := in.BuiltIn.url(a)
+			if err != nil {
+				return Report{}, fmt.Errorf("hosts: %s.provider: %w", at, err)
+			}
+			if err := add(at+".provider", base); err != nil {
+				return Report{}, err
+			}
 		}
 		// The harness logs in and refreshes only an oauth account. A
 		// proxied one has its token refreshed by the proxy.
@@ -117,10 +166,36 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 		if err := add(at+".url", s.URL); err != nil {
 			return Report{}, err
 		}
+		token, ok := in.MCPTokenEndpoints[s.Name]
+		if !ok {
+			r.NotCovered = append(r.NotCovered, fmt.Sprintf(
+				"%s: %q has no stored login that a refresh would use, so its authorization server, if it asks for OAuth, is not listed", at, s.Name))
+			continue
+		}
+		if err := add(at+".oauth", token); err != nil {
+			return Report{}, err
+		}
 	}
 	if remote {
 		r.NotCovered = append(r.NotCovered,
-			"mcp.servers: a remote server that asks for OAuth names its authorization server when it is contacted, so that host is not listed")
+			"mcp.servers: a stored login holds only its token endpoint, which a refresh contacts. A new mcp login asks the server for its authorization server again, and the metadata and authorize page may be on other hosts")
+	}
+	if cfg.Embeddings.BaseURL != "" {
+		if err := add("embeddings.base_url", cfg.Embeddings.BaseURL); err != nil {
+			return Report{}, err
+		}
+	}
+	if cfg.Jev.Route != "" {
+		if in.JevEndpoint == "" {
+			return Report{}, fmt.Errorf("hosts: jev.route is %q and no endpoint was given for it", cfg.Jev.Route)
+		}
+		key := "jev.route"
+		if cfg.Jev.Route == config.JevCustom {
+			key = "jev.base_url"
+		}
+		if err := add(key, in.JevEndpoint); err != nil {
+			return Report{}, err
+		}
 	}
 
 	if cfg.Telemetry.OTel {
@@ -151,9 +226,7 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 	}
 
 	r.NotCovered = append(r.NotCovered,
-		"embeddings: not listed yet",
-		"jev: not listed yet",
-		"webfetch: the model chooses the hosts, so they cannot be listed",
+		"webfetch: the tool fetches any URL the model names, so it reaches any host. An allowlist built from this list alone makes those fetches fail",
 		"session/new: MCP servers a client names for a session are not in the configuration",
 		"hooks and the shell tool: what a command contacts cannot be known",
 	)
