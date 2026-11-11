@@ -62,6 +62,8 @@ A worker that finishes early takes work that needs nothing from the lanes still 
 | `provider-openai` (third task) | `src/tools/convsearch/**` | The conversation search capability over the store's history, with jcode's input shape |
 | `provider-chat` (second task) | `src/tools/codex/**`, `src/tools/patch/**` | The Codex dialect: `tools.Tool` values with the names, schemas and output text of openai/codex at the pinned commit, over the shared capabilities, and the `apply_patch` format |
 | `mcp` (second task) | `src/mcp/**`, `src/cli/mcp.go` | The `mcp login` and `mcp logout` commands, a test of the unknown outcome, and a span per MCP call |
+| `session` (fourth task) | `src/session/**` | The stored-session methods over the store: `session/load` with replay through the loop's mapping, `resume`, `list`, `delete` and the `saved` status |
+| `tools` (third task) | `src/tools/**`, `src/config/tools.go` | A per-call TERM-then-KILL grace period and output limit in the shell capability, for the Codex dialect. The `skill` capability over the context package |
 
 ## Recording without a key
 

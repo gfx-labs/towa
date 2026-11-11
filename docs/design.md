@@ -98,6 +98,11 @@ default_model = "opus"
 
 [models.opus]
 chain = ["claude:work/claude-opus-4-7", "claude:personal/claude-opus-4-7", "openrouter:main/anthropic/claude-opus-4.7"]
+# The last entry is a gateway's own id, which the built-in table does not
+# know, so the model states its figures.
+context_window = 1000000
+max_output_tokens = 128000
+family = "claude"
 
 [models.gpt]
 chain = ["codex:work/gpt-5.5"]
