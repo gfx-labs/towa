@@ -1,0 +1,60 @@
+<html>
+<head>
+<base href="https://docs.example.net/guide/v2/">
+<title>Untidy&nbsp;page &amp; friends</title>
+<body>
+<p>First paragraph with no closing tag
+<p>Second   paragraph,
+   spread over
+   lines, with an entity: 5&nbsp;&lt;&nbsp;7 &mdash; and a stray <b>bold that is never closed
+<p>Third paragraph.</b>
+
+<span class="wrapper"><div>A block inside an inline element.</div> Trailing text of the wrapper.</span>
+
+<a href="install.html"><div><h3>Installing</h3><p>How to install it.</p></div></a>
+
+<p>A link <a href="../v1/old.html"> with spaces inside </a>and text right after it. A bare link:
+<a href="https://example.net/x">https://example.net/x</a>. An empty one: <a href="/nothing"></a>.
+An image link: <a href="/big.png"><img src="thumb.png" alt="thumbnail"></a>.
+A data image: <img src="data:image/png;base64,AAAA" alt="inline pixels">.</p>
+
+<dl>
+  <dt>rotate</dt>
+  <dd>How many old files to keep.</dd>
+  <dt>compress</dt>
+  <dd>Whether to gzip them.
+      <p>Off by default.</p></dd>
+</dl>
+
+<ul>
+  <li>Outer one</li>
+  <ul>
+    <li>A list placed directly in a list</li>
+  </ul>
+  <li><p>Outer two, as a paragraph.</p><p>With a second paragraph.</p></li>
+  <li></li>
+</ul>
+
+<ol start="4">
+  <li>Fourth</li>
+  <li>Fifth</li>
+</ol>
+
+<pre>
+plain preformatted
+  with ``` three backticks
+and <b>markup</b> inside
+</pre>
+
+<p>Inline code with a backtick: <code>a `b` c</code>, and <q>a short quotation</q>.</p>
+
+<h4>   </h4>
+<p>   </p>
+<svg width="10" height="10"><text>SVG TEXT</text></svg>
+<iframe src="https://ads.example.net/frame">FRAME FALLBACK</iframe>
+<form action="/search"><label>Search <input type="text" name="q" value="INPUT VALUE"></label>
+<select><option>OPTION TEXT</option></select><textarea>TEXTAREA TEXT</textarea></form>
+<template><p>TEMPLATE TEXT</p></template>
+<!-- COMMENT TEXT -->
+<div aria-hidden="true">ARIA HIDDEN TEXT</div>
+Text at the end with no element around it.

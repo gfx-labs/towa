@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head><title>Signal reference</title></head>
+<body>
+<h1>Signal reference</h1>
+
+<table>
+  <caption>Signals a daemon is expected to handle</caption>
+  <thead>
+    <tr><th>Signal</th><th>Number</th><th>Usual meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SIGHUP</code></td><td>1</td><td>Reload, or <a href="/glossary#reopen">reopen</a> logs</td></tr>
+    <tr><td><code>SIGUSR1</code></td><td>10</td><td>Reopen logs | dump state</td></tr>
+    <tr><td><code>SIGTERM</code></td><td>15</td><td><p>Stop.</p><p>Flush first.</p></td></tr>
+  </tbody>
+  <tfoot>
+    <tr><td colspan="2">Numbers are for Linux on x86</td><td>See signal(7)</td></tr>
+  </tfoot>
+</table>
+
+<h2>Without a header row</h2>
+<table>
+  <tr><td>app.log</td><td>4.1 MB</td></tr>
+  <tr><td>app.log.1</td><td>38 MB</td><td>compressed</td></tr>
+</table>
+
+<h2>Header cells in the first row</h2>
+<table>
+  <tr><th>Tool</th><th>Reopens</th></tr>
+  <tr><td>logrotate</td><td>with <em>postrotate</em></td></tr>
+</table>
+
+<h2>A table used for layout</h2>
+<table>
+  <tr>
+    <td>
+      <h3>Left column</h3>
+      <p>Text in the left column.</p>
+    </td>
+    <td>
+      <table>
+        <tr><th>Key</th><th>Value</th></tr>
+        <tr><td>rotate</td><td>7</td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>  Rotating log files
+    by hand </title>
+  <style>body { font-family: serif; } .note { color: red; }</style>
+  <script>window.analytics = { track: function () { return "TRACKED"; } };</script>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <nav>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/archive">Archive</a></li>
+    </ul>
+  </nav>
+  <header>
+    <h1>Rotating log files <em>by hand</em></h1>
+    <p>Posted on <time datetime="2026-03-02">2 March 2026</time> by <a href="/authors/mira">Mira</a>.</p>
+  </header>
+  <main>
+    <article>
+      <p>A daemon that keeps its log open will keep writing to the old file after
+        you rename it. This note covers the <strong>three</strong> ways to deal with that,
+        and when <code>copytruncate</code> is <b>not</b> the answer.</p>
+
+      <h2 id="signals">Asking the daemon to reopen</h2>
+      <p>Most daemons reopen their log on <kbd>SIGHUP</kbd> or <code>SIGUSR1</code>.<br>
+        Check the manual first: for some, <code>SIGHUP</code> means <i>reload the configuration</i>
+        and nothing else. See <a href="reference.html#signals">the signal table</a>,
+        the <a href="https://example.org/man/logrotate.8">logrotate manual</a>, or jump
+        <a href="#truncate">further down</a>.</p>
+
+      <pre><code class="language-sh">mv /var/log/app.log /var/log/app.log.1
+kill -HUP "$(cat /run/app.pid)"
+gzip /var/log/app.log.1   # only after the reopen
+</code></pre>
+
+      <h2 id="truncate">Truncating in place</h2>
+      <p>When the daemon cannot reopen, copy the file and cut the original to zero:</p>
+      <ol>
+        <li>Copy the log.</li>
+        <li>Truncate the original with <code>: &gt; app.log</code>.
+          <ul>
+            <li>Lines written between the two steps are <del>kept</del> lost.</li>
+            <li>The daemon must have opened the file with <code>O_APPEND</code>.</li>
+          </ul>
+        </li>
+        <li>Compress the copy.</li>
+      </ol>
+      <blockquote>
+        <p>If the file was not opened for appending, the daemon keeps its old offset
+          and the file becomes sparse.</p>
+        <p>— the <code>logrotate</code> manual, paraphrased</p>
+      </blockquote>
+
+      <h3>What to check afterwards</h3>
+      <ul>
+        <li>The new file is growing.</li>
+        <li>Disk usage went down: <code>du -sh /var/log</code>.</li>
+        <li><a href="javascript:void(0)">Open the live viewer</a></li>
+      </ul>
+
+      <hr>
+
+      <figure>
+        <img src="img/offsets.png" alt="File offsets before and after truncation">
+        <figcaption>Figure 1. Offsets before and after.</figcaption>
+      </figure>
+
+      <p hidden>Draft paragraph that is not shown.</p>
+      <div style="display: none">Tracking pixel placeholder.</div>
+      <button type="button">Copy command</button>
+    </article>
+    <aside>
+      <h2>Related</h2>
+      <p>Ten other posts you might like.</p>
+    </aside>
+  </main>
+  <footer>
+    <p>Written for a test. Contact: <a href="mailto:mira@example.org">mira@example.org</a></p>
+  </footer>
+  <script src="/bundle.js"></script>
+  <noscript>Enable scripts for comments.</noscript>
+</body>
+</html>
