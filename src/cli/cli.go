@@ -82,7 +82,7 @@ func Run(ctx context.Context, args []string, h Host) error {
 					return printConfig(cmd, h)
 				},
 			},
-		}, append(accountCommands(h), hostsCommand(h))...),
+		}, slices.Concat(accountCommands(h), mcpCommands(h), []*cli.Command{hostsCommand(h)})...),
 	}
 	return app.Run(ctx, args)
 }
