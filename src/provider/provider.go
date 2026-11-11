@@ -37,7 +37,9 @@ type Request struct {
 	// an error of class Fail.
 	Items []transcript.Item
 	Tools []Tool
-	// MaxOutputTokens is not sent when zero.
+	// MaxOutputTokens is not sent when zero. A provider whose API requires
+	// it reports zero as an error of class Fail, so the caller always sets
+	// it from the model's metadata.
 	MaxOutputTokens int64
 	// Effort is the reasoning effort in the provider's own words. It is not
 	// sent when empty.
@@ -101,6 +103,10 @@ const (
 	StopToolUse   StopReason = "tool_use"
 	StopMaxTokens StopReason = "max_tokens"
 	StopRefusal   StopReason = "refusal"
+	// StopPaused: the provider paused a long server-side tool run and the
+	// response is not finished. The caller sends the conversation back as
+	// it is, with no new user message, and the provider carries on.
+	StopPaused StopReason = "paused"
 )
 
 // Class says what the caller does about an error.

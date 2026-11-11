@@ -36,6 +36,9 @@ const (
 	StopNetwork StopKind = "network"
 	// StopRequest: the provider rejected the request as invalid.
 	StopRequest StopKind = "request"
+	// StopDenied: a configured prompt hook refused the prompt, so the turn
+	// did not start. Message is the hook's reason.
+	StopDenied StopKind = "denied"
 )
 
 // Stop is why a turn stopped short of the model ending it.
@@ -53,7 +56,7 @@ type Stop struct {
 	// Account and Model say which chain entry reported it.
 	Account string `json:"account,omitzero"`
 	Model   string `json:"model,omitzero"`
-	// Message is the provider's own text, for people.
+	// Message is the provider's own text, or a hook's reason, for people.
 	Message string `json:"message,omitzero"`
 }
 

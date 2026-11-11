@@ -132,7 +132,9 @@ skills_dirs = ["~/.agents/skills"]
 [limits]
 max_tool_calls = 0       # 0 = unlimited
 max_wall = "0s"
-max_tokens = 0
+max_input_tokens = 0
+max_output_tokens = 0
+max_stop_denials = 3     # how often a stop hook may keep a turn going
 subagent_depth = 2
 subagent_concurrency = 4
 
@@ -228,9 +230,9 @@ Same model as jcode: the tool runs a child agent loop in the same process. The c
 ### MCP
 
 - Transports: stdio, streamable HTTP, legacy HTTP+SSE. OAuth for remote servers with tokens in the auth store.
-- Servers come from config and from `session/new` `mcpServers`, merged by name with the session winning.
+- Servers come from config and from `session/new` `mcpServers`, merged by name with the session winning. A session's server replaces a configured server of the same name whole; no field is merged.
 - One `mcp` meta-tool with `list`, `search` (names and descriptions) and `call`. Schemas are returned on search, not loaded into the prompt.
-- Direct tools: a server marked `direct` has its tools put in the prompt under their own names, not behind the meta-tool. A server named in `session/new` `mcpServers` is direct by default, since the client added it for this session and its tools (`submit_result`, `ask_human`) are used every turn. A config server is behind the meta-tool by default. A direct tool whose name collides with another tool is an error at session start.
+- Direct tools: a server marked `direct` has its tools put in the prompt under their own names, not behind the meta-tool. A server named in `session/new` `mcpServers` is direct by default, since the client added it for this session and its tools (`submit_result`, `ask_human`) are used every turn. A config server is behind the meta-tool by default. A direct tool whose name collides with another tool is an error at session start. The direct tools are fixed when the session starts: a server that changes its tool list later does not change the prompt.
 - Connections start lazily on first use and close after an idle period from config.
 
 ### Permissions and modes
@@ -349,7 +351,7 @@ type Store interface {
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 
-ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `acpharness` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral.
+ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `acpharness` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
 
 A chain with one entry does not wait out a rate limit: it reports it. In a pod, the workflow that owns account choice decides whether to wait or move.
 

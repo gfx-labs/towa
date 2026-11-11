@@ -53,6 +53,14 @@ A worker that finishes early takes work that needs nothing from the lanes still 
 | `agentctx` (third task) | `src/tools/webfetch/**`, `src/config/webfetch.go`, `src/jev/**`, `src/config/jev.go` | The webfetch capability: fetch a URL with the shared HTTP client and turn HTML into Markdown. The Jev decision client: a bounded choice among supplied options, with jcode's request shape and limits |
 | `auth` (second task) | `src/auth/**`, `src/embed/**`, `src/config/embeddings.go` | Token storage for MCP OAuth in the auth store, agreed with the `mcp` lane. A record that a refresh token is dead. The client for the OpenAI `/v1/embeddings` shape |
 | `session` (second task) | `src/hosts/**`, `src/cli/hosts.go`, `src/tools/todo/**` | The `hosts` command: every host the resolved config will contact, one per line with the config key that names it. The todo capability: one validated list in, an ACP plan out, with no dialect adapter |
+| `session` (third task) | `src/models/**`, `src/config/models.go`, `src/session/**` | Named models: the `[models.<name>]` chains and `default_model` in config, parsing of `provider:account/model` entries into router entries, model metadata with a source for every figure, and the `model` config option and `/model` command on the session registry |
+| `provider-openai` (second task) | `src/provider/openai/**`, `src/config/openai.go` | Recordings of the Responses stream from the local Ollama server, the config section for the client's settings |
+| `tools` (second task) | `src/httpclient/**`, `src/tools/**`, `src/config/tools.go` | Tests that the shared HTTP client goes through `HTTPS_PROXY` and trusts the system CA pool, for plain requests and for a WebSocket. The Codex figures behind the tool defaults checked against the pinned commit |
+| `auth` (third task) | `tools/conformance/**` | A module of its own that starts the built binary and drives it over stdio with `coder/acp-go-sdk` as the client, so a second implementation checks our wire format |
+
+## Recording without a key
+
+An Ollama server (0.24.0) runs on the build machine at `127.0.0.1:11434` with `llama3.2:3b` loaded. It needs no key and nothing leaves the machine. It streams the Chat Completions, Responses and Messages shapes (checked with one request each on 2026-11-11), so a provider lane may record a few small exchanges from it. Such a recording shows that our parser reads a real server's stream. It shows nothing about the real provider's errors, headers, reasoning items or limits, and every note that uses one says so. Pull no model, change no setting, and keep to a handful of requests.
 
 ## After wave 1
 
