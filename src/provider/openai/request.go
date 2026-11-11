@@ -226,6 +226,10 @@ func buildInput(own string, items []transcript.Item) ([]any, *provider.Error) {
 		}
 		switch {
 		case item.User != nil:
+			role := item.User.Role
+			if role == "" {
+				role = "user"
+			}
 			content, perr := buildContent(item.User.Parts)
 			if perr != nil {
 				return nil, at(perr, i)
@@ -233,7 +237,7 @@ func buildInput(own string, items []transcript.Item) ([]any, *provider.Error) {
 			if len(content) == 0 {
 				return nil, invalidRequest(fmt.Sprintf("item %d: the user message has nothing to send", i))
 			}
-			out = append(out, messageItem{Type: typeMessage, Role: "user", Content: content})
+			out = append(out, messageItem{Type: typeMessage, Role: role, Content: content})
 		case item.Text != nil:
 			// The API rejects an empty text part, and an empty message says
 			// nothing.
@@ -312,6 +316,9 @@ func buildCall(call *transcript.ToolCall, op opaque) (any, bool, *provider.Error
 			Type: typeFunctionCall, ID: op.ID, CallID: call.ID, Name: call.Name,
 			Arguments: strings.TrimSuffix(compact.String(), "\n"),
 		}, false, nil
+	}
+	if op.Type != typeCustomCall && op.Type != typeFunctionCall {
+		return nil, false, invalidRequest(fmt.Sprintf("tool call %q has string input without this endpoint's call-type provenance", call.ID))
 	}
 	var text string
 	if err := json.Unmarshal(call.Input, &text); err != nil {

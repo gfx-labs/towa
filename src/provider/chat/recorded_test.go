@@ -260,6 +260,8 @@ func TestReplay(t *testing.T) {
 				c, err := New(Config{HTTPClient: httpclient.New(), Provider: src.provider(server.URL + src.path), UserAgent: "acpharness/test"})
 				require.NoError(t, err)
 				got := run(t, c, ex.req, "replayed")
+				contextName, err := c.ContextName(auth.Credential{Scheme: auth.SchemeAPIKey})
+				require.NoError(t, err)
 
 				if ex.failed {
 					require.NotNil(t, got.err)
@@ -272,6 +274,7 @@ func TestReplay(t *testing.T) {
 				var text, thinking strings.Builder
 				for _, item := range got.items {
 					require.Equal(t, src.name, item.Provider)
+					require.Equal(t, contextName, item.Provider)
 					switch {
 					case item.Text != nil:
 						text.WriteString(item.Text.Text)

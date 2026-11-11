@@ -263,13 +263,17 @@ func (c *Client) messages(items []transcript.Item) ([]wireMessage, *provider.Err
 		mine := item.Provider == c.cfg.ID
 		switch {
 		case item.User != nil:
+			role := item.User.Role
+			if role == "" {
+				role = "user"
+			}
 			flush()
 			content, perr := userContent(i, item.User.Parts)
 			if perr != nil {
 				return nil, perr
 			}
 			if content != nil {
-				out = append(out, wireMessage{Role: "user", Content: content})
+				out = append(out, wireMessage{Role: role, Content: content})
 			}
 		case item.Text != nil:
 			text.WriteString(item.Text.Text)

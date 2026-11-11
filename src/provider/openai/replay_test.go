@@ -230,6 +230,8 @@ func TestExchange(t *testing.T) {
 			require.NoError(t, err)
 
 			req := s.request(model, cred)
+			contextName, err := client.ContextName(cred)
+			require.NoError(t, err)
 			var events []provider.Event
 			var streamErr error
 			for ev, err := range client.Stream(t.Context(), req) {
@@ -247,7 +249,7 @@ func TestExchange(t *testing.T) {
 			for _, ev := range events {
 				if ev.Item != nil {
 					require.NoError(t, ev.Item.Validate())
-					require.NotEmpty(t, ev.Item.Provider)
+					require.Equal(t, contextName, ev.Item.Provider)
 					req.Items = append(req.Items, *ev.Item)
 				}
 			}

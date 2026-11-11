@@ -263,6 +263,9 @@ func (c *Client) buildMessages(items []transcript.Item) ([]*message, *provider.E
 		own := item.Provider == c.cfg.Provider && len(item.Opaque) > 0
 		switch {
 		case item.User != nil:
+			if item.User.Role != "" && item.User.Role != "user" {
+				return nil, invalidRequest(fmt.Sprintf("item %d: Messages does not support role %q", i, item.User.Role))
+			}
 			blocks, perr := buildContent(item.User.Parts)
 			if perr != nil {
 				return nil, perr

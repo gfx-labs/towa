@@ -157,22 +157,42 @@ type endpoint struct {
 	codex    bool
 }
 
+// ContextName returns the provenance of this credential's Responses items.
+func (c *Client) ContextName(cred auth.Credential) (string, error) {
+	name, perr := c.contextName(cred)
+	if perr != nil {
+		return "", perr
+	}
+	return name, nil
+}
+
+func (c *Client) contextName(cred auth.Credential) (string, *provider.Error) {
+	switch cred.Scheme {
+	case auth.SchemeAPIKey:
+		return c.cfg.Provider, nil
+	case auth.SchemeOAuth:
+		return ProviderCodex, nil
+	default:
+		return "", invalidRequest(fmt.Sprintf("account %q has credential scheme %q, which is not %q or %q",
+			cred.Account, cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth))
+	}
+}
+
 func (c *Client) endpoint(cred auth.Credential) (endpoint, *provider.Error) {
+	name, perr := c.contextName(cred)
+	if perr != nil {
+		return endpoint{}, perr
+	}
 	if cred.Token == "" {
 		return endpoint{}, &provider.Error{
 			Class: provider.Fallback, Reason: provider.ReasonAuth,
 			Message: fmt.Sprintf("account %q has no token", cred.Account),
 		}
 	}
-	switch cred.Scheme {
-	case auth.SchemeAPIKey:
-		return endpoint{base: c.cfg.BaseURL, provider: c.cfg.Provider}, nil
-	case auth.SchemeOAuth:
-		return endpoint{base: c.cfg.CodexBaseURL, provider: ProviderCodex, codex: true}, nil
-	default:
-		return endpoint{}, invalidRequest(fmt.Sprintf("account %q has credential scheme %q, which is not %q or %q",
-			cred.Account, cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth))
+	if cred.Scheme == auth.SchemeOAuth {
+		return endpoint{base: c.cfg.CodexBaseURL, provider: name, codex: true}, nil
 	}
+	return endpoint{base: c.cfg.BaseURL, provider: name}, nil
 }
 
 // header returns the headers of a request. A proxied credential gets the

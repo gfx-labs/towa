@@ -140,6 +140,16 @@ type Client struct {
 
 var _ provider.Provider = (*Client)(nil)
 
+// ContextName returns the provenance used by this Messages endpoint.
+func (c *Client) ContextName(cred auth.Credential) (string, error) {
+	switch cred.Scheme {
+	case auth.SchemeAPIKey, auth.SchemeOAuth:
+		return c.cfg.Provider, nil
+	default:
+		return "", invalidRequest(fmt.Sprintf("credential scheme %q is not %q or %q", cred.Scheme, auth.SchemeOAuth, auth.SchemeAPIKey))
+	}
+}
+
 // New returns a client. It fails when the configuration cannot work.
 func New(cfg Config) (*Client, error) {
 	if cfg.HTTPClient == nil {

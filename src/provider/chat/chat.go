@@ -17,6 +17,7 @@ import (
 
 	"github.com/gfx-labs/sse"
 
+	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/provider"
 )
@@ -41,6 +42,22 @@ type Client struct {
 }
 
 var _ provider.Provider = (*Client)(nil)
+
+// ContextName returns the provenance used by this Chat endpoint.
+func (c *Client) ContextName(cred auth.Credential) (string, error) {
+	name, perr := c.contextName(cred)
+	if perr != nil {
+		return "", perr
+	}
+	return name, nil
+}
+
+func (c *Client) contextName(cred auth.Credential) (string, *provider.Error) {
+	if cred.Scheme != auth.SchemeAPIKey && cred.Scheme != auth.SchemeOAuth {
+		return "", invalid("credential scheme %q is not %q or %q", cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth)
+	}
+	return c.cfg.ID, nil
+}
 
 // New returns a client for the endpoint in cfg.
 func New(cfg Config) (*Client, error) {
@@ -73,6 +90,9 @@ func (c *Client) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 }
 
 func (c *Client) stream(ctx context.Context, req provider.Request, yield func(provider.Event, error) bool) *provider.Error {
+	if _, perr := c.contextName(req.Credential); perr != nil {
+		return perr
+	}
 	body, perr := c.body(req)
 	if perr != nil {
 		return perr

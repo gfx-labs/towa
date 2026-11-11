@@ -23,6 +23,12 @@ type Provider interface {
 	Stream(ctx context.Context, req Request) iter.Seq2[Event, error]
 }
 
+// ContextNamer identifies the transcript provenance used by a credential.
+// It returns the same name the client's stream writes to Item.Provider.
+type ContextNamer interface {
+	ContextName(auth.Credential) (string, error)
+}
+
 // Request is one model request.
 type Request struct {
 	// Model is the provider's own name for the model.
