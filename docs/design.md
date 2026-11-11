@@ -87,7 +87,7 @@ koanf, layered in this order, each later layer overriding earlier:
 6. CLI flags, read from urfave/cli v3 by koanf's `cliflagv3` provider. A repeatable `--set key=value` reaches config keys without dedicated flags. Only explicitly supplied flags override earlier layers.
 7. Per-session overrides from `session/new` `_meta.acpharness` (allowlisted keys only: model, context files, skills dirs, limits, mode, mcp servers, compaction).
 
-koanf decodes the merged tree into one typed config struct. urfave/cli v3 defines commands and flags, and the application reads configuration only from the decoded struct. Flag names and environment names are mapped explicitly to the same canonical config keys.
+koanf decodes the merged tree into one typed config struct. urfave/cli v3 defines commands and flags, and the application reads configuration only from the decoded struct. Flag names and environment names are mapped explicitly to the same canonical config keys. `go-playground/validator/v10` checks field constraints through `validate` tags after decoding. Configuration-specific rules, such as account references, endpoint policies and listener safety, remain explicit checks. Direct section validators use the same field constraints as the loader.
 
 `acpharness config` prints the resolved config with secrets redacted and the source of each key.
 
