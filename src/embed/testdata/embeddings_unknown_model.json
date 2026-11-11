@@ -1,0 +1,36 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/embeddings",
+    "header": {
+      "Accept": [
+        "application/json"
+      ],
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"acpharness-no-such-model\",\"input\":[\"a red bicycle\"]}"
+    }
+  },
+  "response": {
+    "status": 404,
+    "header": {
+      "Content-Length": [
+        "141"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:46:12 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "{\"error\":{\"message\":\"model \\\"acpharness-no-such-model\\\" not found, try pulling it first\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
+      }
+    ]
+  }
+}
