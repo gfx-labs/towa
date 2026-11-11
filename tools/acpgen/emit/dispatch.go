@@ -98,6 +98,7 @@ func WriteDispatchJen(outDir string, schema *load.Schema, meta *load.Meta) error
 		if constName == "" {
 			continue
 		}
+		fAgent.Line()
 		if mi.Notif != "" {
 			name := strings.TrimSuffix(mi.Notif, "Notification")
 			switch mi.Method {
@@ -199,6 +200,7 @@ func WriteDispatchJen(outDir string, schema *load.Schema, meta *load.Meta) error
 		if constName == "" {
 			continue
 		}
+		fClient.Line()
 		if mi.Notif != "" {
 			name := strings.TrimSuffix(mi.Notif, "Notification")
 			switch mi.Method {
