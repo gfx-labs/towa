@@ -317,9 +317,9 @@ func (s *streamState) finish(yield func(provider.Event, error) bool) (bool, *pro
 			Class: provider.Fail, Reason: provider.ReasonContextFull,
 			Message: "the response stopped because the model's context window is full",
 		}
+	case "pause_turn":
+		stop = provider.StopPaused
 	default:
-		// This includes pause_turn, which asks for the same conversation to
-		// be sent again and has no StopReason yet: see the lane note.
 		return false, &provider.Error{
 			Class: provider.Fail, Reason: provider.ReasonRequest,
 			Message: fmt.Sprintf("the response stopped for the reason %q, which this client does not know", s.stop),

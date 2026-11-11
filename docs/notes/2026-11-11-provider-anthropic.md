@@ -35,7 +35,7 @@ Not measured: no cache read has been observed, because nothing was sent.
 - Usage is yielded at `message_start` and again at `message_delta`. Counts the later event leaves out keep their value. `input_tokens` already excludes cache reads and writes, as `transcript.Usage` wants. `ThoughtTokens` stays zero: the API does not report it.
 - A block type this client does not know (`server_tool_use`, `web_search_tool_result`, later additions) becomes a `Native` item whose `Opaque` is the block. The input of a server tool's use arrives as deltas and is put back into the block.
 - A tool call with no argument text has the input `{}`. Argument text that is not a JSON object, which a response cut at its token limit leaves, is kept as a JSON string.
-- Stop reasons: `end_turn` and `stop_sequence`, `tool_use`, `max_tokens`, `refusal`. `model_context_window_exceeded` is an error with `ReasonContextFull`. Any other, including `pause_turn`, is an error of class Fail.
+- Stop reasons: `end_turn` and `stop_sequence`, `tool_use`, `max_tokens`, `refusal`, and `pause_turn` as `provider.StopPaused`. `model_context_window_exceeded` is an error with `ReasonContextFull`. Any other is an error of class Fail.
 
 ## OAuth shape
 
@@ -116,7 +116,7 @@ Seen in them: Ollama's `message_delta` repeats `input_tokens` with a larger valu
 
 - **Recordings from Anthropic.** None exist. `ANTHROPIC_API_KEY` and `ACPHARNESS_CLAUDE_OAUTH_TOKEN` were not set, and no token store was read. Missing files, all under `src/provider/anthropic/testdata/`: `api_text`, `api_tool_call`, `api_thinking`, `api_max_tokens`, `api_rejected_credential`, and the same five with the `oauth_` prefix. The commands are at the top of `replay_test.go`. Not covered by any scenario, because they cannot be provoked on demand: a real 429 with its reset headers, a 529, a context-length rejection, a mid-stream `error` event, a cut-off stream, redacted thinking, a server tool.
 - **The `cc_entrypoint` probe**, above.
-- `pause_turn` has no `provider.StopReason`. It ends the turn with an error until the contract has one (a server tool that runs long needs it).
+- `pause_turn` is mapped to `provider.StopPaused` but has never been seen in a response: it needs a server tool that runs long.
 - Citations (`citations_delta`) are dropped. Text with citations is sent back as plain text.
 - No repair of a broken history (a tool call with no result, a duplicated result). jcode does a lot of this. Here the loop's guarantee that every call gets a result is relied on, and the API's 400 is reported as `request`.
 - Server-side context management (`context_management`) and the `speed` and `service_tier` parameters are not sent.
