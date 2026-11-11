@@ -9,6 +9,7 @@ package store
 import (
 	"context"
 	"errors"
+	"io"
 	"iter"
 	"time"
 	"uuid"
@@ -67,4 +68,11 @@ type Store interface {
 	SetMeta(ctx context.Context, meta Meta) error
 	List(ctx context.Context, filter Filter) ([]Meta, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	// PutBlob stores content for a session under its hash and returns once
+	// it is durable. Storing the same content twice keeps one copy. The
+	// content lives in the session's directory, so it moves with it.
+	PutBlob(ctx context.Context, id uuid.UUID, mimeType string, content io.Reader) (transcript.Stored, error)
+	// OpenBlob reads content stored by PutBlob. It returns ErrNotFound for
+	// a hash the session does not hold.
+	OpenBlob(ctx context.Context, id uuid.UUID, hash string) (io.ReadCloser, error)
 }

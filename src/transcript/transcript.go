@@ -187,6 +187,19 @@ type Part struct {
 	Resource *Resource `json:"resource,omitzero"`
 	// Link names a resource without its content.
 	Link *Link `json:"link,omitzero"`
+	// Stored stands for content the store keeps outside the log, such as
+	// the full output of a tool whose result was gated. It is never sent to
+	// a model: a provider client leaves it out, and the part beside it
+	// holds the text the model gets.
+	Stored *Stored `json:"stored,omitzero"`
+}
+
+// Stored references content kept by the session's store, by content hash.
+type Stored struct {
+	// Hash is "sha256:" followed by the lowercase hex digest of the content.
+	Hash     string `json:"hash"`
+	Size     int64  `json:"size"`
+	MimeType string `json:"mime_type,omitzero"`
 }
 
 // Blob is binary content with its media type.
