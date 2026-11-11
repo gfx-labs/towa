@@ -155,8 +155,8 @@ One streaming interface returning a normalized event stream: text deltas, thinki
 
 Wire clients:
 
-- `anthropic`: Messages API, streaming, OAuth or API key. OAuth requests carry the pinned Claude Code identity: system prompt prefix, beta headers, user agent.
-- `openai`: Responses API, streaming. Codex OAuth through the ChatGPT backend with the pinned Codex instructions and headers. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
+- `anthropic`: Messages API, streaming, OAuth or API key. OAuth identity follows jcode (`docs/ANTHROPIC_OAUTH_IDENTITY_PROBE_2026_11_05.md` in jcode): Claude CLI user agent, jcode's OAuth beta header set, `x-app: cli`, session id, and the `x-anthropic-billing-header` system block, which Anthropic strips server-side. Without the billing block or an SDK identity sentence, Opus and Sonnet OAuth requests get HTTP 429. The prompt names the agent as acpharness, not Claude Code or the Agent SDK. Constants track jcode's and are re-probed on change.
+- `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with the Codex instructions. jcode's 2026-11-05 probe found the backend accepts any `originator`, so acpharness sends `acpharness`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
 - `chat`: Chat Completions, streaming, for OpenRouter, z.ai, DeepSeek, OpenCode Go and others. OpenRouter extras: provider routing preferences, reasoning parameters, `HTTP-Referer` and `X-Title`.
 
 Model metadata (context window, max output, reasoning support, family, tool dialect) comes from a pinned table plus provider model listings (`/models` on OpenRouter), with config overrides. An unknown model with no metadata is an error at selection time, not a silent default.
@@ -195,7 +195,7 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
 - Search: an agentgrep-style tool with grep, find, outline and trace modes, built on ripgrep's Go-native equivalents or the `rg` binary when present.
 - Todo: maps to ACP `plan` updates. Uses TodoWrite or update_plan shapes in their dialects.
-- Web: webfetch with HTML to Markdown, and web search through a configured backend.
+- Web: webfetch with HTML to Markdown. Web search uses the provider's built-in server tool (Anthropic web search, OpenAI Responses web search, OpenRouter web plugin). Users who want an external backend add a tool or an MCP server.
 - Subagent: see below.
 
 Not in v1: background shell tasks.
@@ -230,11 +230,32 @@ Ported from jcode:
 
 - `reactive`: compact in the background when context reaches a fraction or a token count, with emergency hard compaction when a request would not fit.
 - `proactive`: project growth with EWMA over a lookahead window, with floor, sample, stall and cooldown settings.
-- `semantic`: topic-shift detection and relevance keeping with embeddings from a configured embedding provider.
+- `semantic`: topic-shift detection and relevance keeping with embeddings from a configured embedding provider (see Embeddings).
 - `off`: stop the turn with a context-full reason.
 - OpenAI native: `auto` (server-side compaction at a token threshold), `explicit` (call the compact endpoint at the threshold), `off`.
 - `max_context_tokens` caps the budget below the model window.
 - `/compact` triggers manually. Compaction events go to the client in `_meta`.
+
+## Embeddings
+
+One client for the OpenAI `/v1/embeddings` shape, configured by base URL, model, account and dimensions. No in-process model. Local embeddings run as a sidecar that serves the same API: Ollama, llama.cpp `llama-server --embedding`, Hugging Face TEI, or Infinity. Hosted options use the same client: OpenAI, OpenRouter, Voyage, Jina, Mistral, Gemini through its OpenAI-compatible endpoint. Providers with a different wire shape get an adapter only when needed.
+
+```toml
+[embeddings]
+base_url = "http://127.0.0.1:11434/v1"
+model = "nomic-embed-text"
+```
+
+## Jev decisions
+
+A configured Jev endpoint backs a native `jev_decision` tool and skill: bounded choice among supplied options, with state treated as untrusted data, matching jcode's tool shape and limits. Routes follow jcode: OpenRouter decisions, TypeSafe direct, AIMLAPI, or a custom base URL. Jev serves decisions only, not embeddings, so embeddings stay a separate config. Harness features may use Jev later (skill suggestion, subagent model routing) behind config.
+
+```toml
+[jev]
+route = "openrouter"     # openrouter | typesafe | aimlapi | custom
+model = "typesafe/jev-1.13"
+account = "main"
+```
 
 ## Context loading
 
@@ -307,13 +328,11 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 6. Session store interface with a first backend, `session/load`, store benchmark.
 7. Extras: batch, output gating, search, todo and plan, web, subagents.
 8. MCP meta-tool with all three transports and OAuth.
-9. Compaction modes, hooks, modes, slash commands, context loading options.
+9. Compaction modes, embeddings client, Jev decisions, hooks, modes, slash commands, context loading options.
 10. Unix and TCP listeners with mTLS, multi-session process mode.
 11. Conformance suite, task quality comparison, footprint benchmark, then jobcity trial.
 
 ## Open questions
 
-- Embedding provider for semantic compaction: which API and account.
-- Web search backend: provider-native search tools where available, or one external backend.
 - Store default, decided by the benchmark in step 6.
-- Exact upstream versions to pin for Claude Code and Codex prompts.
+- Web search for chat providers without a built-in tool: none by default, user-supplied tool or MCP.
