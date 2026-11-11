@@ -69,7 +69,9 @@ func result(id, name string, parts ...transcript.Part) transcript.Item {
 	}}
 }
 
-func limits() convsearch.Limits { return convsearch.Limits{Hits: 10, HitBytes: 80, BlobBytes: 1 << 10} }
+func limits() convsearch.Limits {
+	return convsearch.Limits{Hits: 10, SnippetContextBytes: 40, MessageBytes: 80, ToolResultBytes: 80, BlobBytes: 1 << 10}
+}
 
 func requireKind(t *testing.T, err error, kind convsearch.Kind) *convsearch.Error {
 	t.Helper()
@@ -147,21 +149,16 @@ func TestSearchBoundsHitsAndSnippetsAndCountsWhatItLeftOut(t *testing.T) {
 
 	for _, hitBytes := range []int{3, 6, 7, 40, 41, 42, 43} {
 		got, err := convsearch.Search(t.Context(), st, access,
-			convsearch.Limits{Hits: 2, HitBytes: hitBytes}, convsearch.SearchInput{Query: "needle"})
+			convsearch.Limits{Hits: 2, SnippetContextBytes: hitBytes, MessageBytes: 80, ToolResultBytes: 80}, convsearch.SearchInput{Query: "needle"})
 		require.NoError(t, err)
 		require.Len(t, got.Hits, 2)
 		require.Equal(t, 1, got.Omitted)
 		hit := got.Hits[0]
-		require.LessOrEqual(t, len(hit.Snippet), hitBytes)
+		require.LessOrEqual(t, len(hit.Snippet), 2*hitBytes+len("Needle"))
 		require.True(t, utf8.ValidString(hit.Snippet), "snippet of %d bytes: %q", hitBytes, hit.Snippet)
 		require.True(t, hit.CutBefore)
 		require.True(t, hit.CutAfter)
-		if hitBytes >= len("Needle") {
-			require.Contains(t, hit.Snippet, "Needle")
-		} else {
-			// A snippet shorter than the match starts where the match does.
-			require.Equal(t, "Needle"[:len(hit.Snippet)], hit.Snippet)
-		}
+		require.Contains(t, hit.Snippet, "Needle")
 	}
 }
 
@@ -255,7 +252,7 @@ func TestTurnsReturnsARangeWithItsBounds(t *testing.T) {
 	s.add(user("zero"), text("one"), call("c1", "read", `{"path":"a.go"}`), user(strings.Repeat("é", 100)), text("four"))
 	access := convsearch.Access{Session: s.id, Widest: convsearch.ScopeSelf}
 
-	got, err := convsearch.Turns(t.Context(), st, access, convsearch.Limits{Hits: 3, HitBytes: 21},
+	got, err := convsearch.Turns(t.Context(), st, access, convsearch.Limits{Hits: 3, SnippetContextBytes: 40, MessageBytes: 21, ToolResultBytes: 10},
 		convsearch.TurnsInput{Start: 1, End: 5})
 	require.NoError(t, err)
 	require.Equal(t, s.id, got.Session)
@@ -268,6 +265,12 @@ func TestTurnsReturnsARangeWithItsBounds(t *testing.T) {
 	require.Equal(t, strings.Repeat("é", 10), got.Turns[2].Text)
 	require.True(t, got.Turns[2].Cut)
 	require.Equal(t, 200, got.Turns[2].Bytes)
+	s.add(result("c1", "read", transcript.Part{Text: strings.Repeat("é", 20)}))
+	preview, err := convsearch.Turns(t.Context(), st, access, convsearch.Limits{Hits: 3, SnippetContextBytes: 40, MessageBytes: 21, ToolResultBytes: 9}, convsearch.TurnsInput{Start: 5, End: 6})
+	require.NoError(t, err)
+	require.Len(t, preview.Turns, 1)
+	require.Equal(t, strings.Repeat("é", 4), preview.Turns[0].Text)
+	require.True(t, preview.Turns[0].Cut)
 
 	past, err := convsearch.Turns(t.Context(), st, access, limits(), convsearch.TurnsInput{Start: 50, End: 60})
 	require.NoError(t, err)

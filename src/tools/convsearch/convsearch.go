@@ -69,9 +69,11 @@ type Limits struct {
 	// Hits is the most hits a search returns and the most entries a range
 	// returns. It must be positive.
 	Hits int
-	// HitBytes is the most bytes of text returned for one hit or one entry.
-	// It must be positive.
-	HitBytes int
+	// SnippetContextBytes is the bytes of context on each side of a match.
+	SnippetContextBytes int
+	// MessageBytes and ToolResultBytes bound text in a range read.
+	MessageBytes    int
+	ToolResultBytes int
 	// BlobBytes is the largest stored blob a search reads. A larger one is
 	// not searched and is counted in the result. Zero reads no blob.
 	BlobBytes int64
@@ -81,8 +83,10 @@ func (l Limits) check() error {
 	switch {
 	case l.Hits <= 0:
 		return fmt.Errorf("convsearch: Limits.Hits %d is not positive", l.Hits)
-	case l.HitBytes <= 0:
-		return fmt.Errorf("convsearch: Limits.HitBytes %d is not positive", l.HitBytes)
+	case l.SnippetContextBytes <= 0:
+		return fmt.Errorf("convsearch: Limits.SnippetContextBytes %d is not positive", l.SnippetContextBytes)
+	case l.MessageBytes <= 0 || l.ToolResultBytes <= 0:
+		return fmt.Errorf("convsearch: message and tool result byte limits must be positive")
 	case l.BlobBytes < 0:
 		return fmt.Errorf("convsearch: Limits.BlobBytes %d is negative", l.BlobBytes)
 	}

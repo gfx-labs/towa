@@ -54,8 +54,8 @@ type Hit struct {
 	Field    Field
 	// Tool is the tool's name, for a tool call or a tool result.
 	Tool string
-	// Snippet is the text around the first match in the entry, at most
-	// Limits.HitBytes long. CutBefore and CutAfter say the entry's text
+	// Snippet holds the first match and Limits.SnippetContextBytes on
+	// each side. CutBefore and CutAfter say the entry's text
 	// goes on past that end of it.
 	Snippet   string
 	CutBefore bool
@@ -166,7 +166,7 @@ func (s *searcher) entry(ctx context.Context, session uuid.UUID, position int, e
 			return nil
 		}
 		start, end := originalRange(p.text, at, at+len(s.query))
-		from, to := window(p.text, start, end, s.limits.HitBytes)
+		from, to := window(p.text, start, end, s.limits.SnippetContextBytes)
 		s.result.Hits = append(s.result.Hits, Hit{
 			Session: session, Position: position, ID: entry.ID, Time: entry.Time,
 			Field: field, Tool: tool,
@@ -285,19 +285,11 @@ func originalRange(text string, lo, hi int) (int, int) {
 	return start, len(text)
 }
 
-// window picks at most limit bytes of text that hold the start of the match
-// from start to end, with the same room on each side when the match leaves
-// any. It never cuts a character in two.
+// window keeps the whole match, with context bytes on each side rounded
+// inward to whole characters.
 func window(text string, start, end, limit int) (int, int) {
-	if len(text) <= limit {
-		return 0, len(text)
-	}
-	from := start
-	if room := limit - (end - start); room > 0 {
-		from = max(start-room/2, 0)
-	}
-	to := min(from+limit, len(text))
-	from = max(min(from, to-limit), 0)
+	from := start - min(start, limit)
+	to := end + min(len(text)-end, limit)
 	for from < start && !utf8.RuneStart(text[from]) {
 		from++
 	}

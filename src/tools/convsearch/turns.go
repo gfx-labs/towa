@@ -29,7 +29,7 @@ type Turn struct {
 	// Tool is the tool's name, for a tool call or a tool result.
 	Tool string
 	// Text is the entry's text, its pieces joined by a line break, at most
-	// Limits.HitBytes long. Cut says the text goes on, and Bytes is its
+	// Limits.MessageBytes long (ToolResultBytes for results). Cut says the text goes on, and Bytes is its
 	// whole length.
 	Text  string
 	Cut   bool
@@ -87,8 +87,12 @@ func Turns(ctx context.Context, st store.Store, access Access, limits Limits, in
 			Position: position, ID: entry.ID, Time: entry.Time, Field: field, Tool: tool,
 			Text: text, Bytes: len(text), Stored: len(stored),
 		}
-		if len(text) > limits.HitBytes {
-			to := limits.HitBytes
+		limit := limits.MessageBytes
+		if field == FieldToolResult {
+			limit = limits.ToolResultBytes
+		}
+		if len(text) > limit {
+			to := limit
 			for to > 0 && !utf8.RuneStart(text[to]) {
 				to--
 			}
