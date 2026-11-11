@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push cancels the running CI for the same PR. Master runs are not
+# cancelled, so every master commit gets a result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  go:
+    runs-on: talos-metal-gfx
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      # The release binaries are static. A cgo dependency fails here.
+      - name: static build
+        run: CGO_ENABLED=0 go build ./...
+      - run: go vet ./...
+      # src/acp/*_gen.go must be what tools/acpgen writes for the schema
+      # files in the repo.
+      - name: generated code is current
+        run: |
+          go generate ./...
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+      # go test -json goes to a file and is printed from it unfiltered. rc
+      # keeps the test exit code.
+      - name: tests
+        run: |
+          go test -json -race ./... > test.json || rc=$?
+          jq -j 'select(.Action == "output") | .Output' test.json
+          exit "${rc:-0}"
+      # tools/acpgen is its own module, so ./... above does not reach it.
+      - name: generator tests
+        working-directory: tools/acpgen
+        run: |
+          go vet ./...
+          go test ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
