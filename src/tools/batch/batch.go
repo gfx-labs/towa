@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/gfx-labs/acpharness/src/config"
@@ -28,6 +29,9 @@ type Plan struct {
 	// write, from the tool's Describe. A writing call with none is taken to
 	// write anywhere.
 	WritePaths []string
+	// ReadPaths are the absolute paths the call is known to read. A call
+	// does not run at the same time as one that writes a path it reads.
+	ReadPaths []string
 }
 
 // Dispatcher runs the calls of a batch. The loop supplies it, so a call in
@@ -74,13 +78,17 @@ type Error struct {
 func (e *Error) Error() string { return "batch: " + string(e.Kind) }
 
 // Run runs the calls and returns one Item for each, in the order given. A
-// call starts once every earlier call it conflicts with has ended:
+// call starts once every earlier call it conflicts with has ended. The rule
+// is the loop's own for parallel calls (loop.Conflicts):
 //
-//   - read-only calls run at the same time as each other and as writes;
-//   - two writes that share a path, or of which one does not say its
-//     paths, run in the order given;
 //   - a call that executes runs alone: after every call before it and
-//     before every call after it, because what it touches is not known.
+//     before every call after it, because what it touches is not known;
+//   - a call that writes without saying where is treated the same way;
+//   - two writes that share a path run in the order given;
+//   - a call that reads a path does not overlap one that writes it;
+//   - calls that only read run at the same time as each other.
+//
+// Paths are compared as text, so the dispatcher gives them in one form.
 //
 // When ctx is cancelled, calls that have not started are not started.
 func Run(ctx context.Context, cfg config.ToolsBatch, d Dispatcher, calls []Call) ([]Item, error) {
@@ -142,20 +150,20 @@ func Run(ctx context.Context, cfg config.ToolsBatch, d Dispatcher, calls []Call)
 
 // conflicts says whether two calls must not run at the same time.
 func conflicts(a, b Plan) bool {
-	if a.Effect == tools.Executes || b.Effect == tools.Executes {
+	if exclusive(a) || exclusive(b) {
 		return true
 	}
-	if a.Effect != tools.Writes || b.Effect != tools.Writes {
-		return false
-	}
-	if len(a.WritePaths) == 0 || len(b.WritePaths) == 0 {
-		return true
-	}
-	for _, p := range a.WritePaths {
-		for _, q := range b.WritePaths {
-			if p == q {
-				return true
-			}
+	return overlap(a.WritePaths, b.WritePaths) || overlap(a.WritePaths, b.ReadPaths) || overlap(a.ReadPaths, b.WritePaths)
+}
+
+func exclusive(p Plan) bool {
+	return p.Effect == tools.Executes || (p.Effect == tools.Writes && len(p.WritePaths) == 0)
+}
+
+func overlap(a, b []string) bool {
+	for _, p := range a {
+		if slices.Contains(b, p) {
+			return true
 		}
 	}
 	return false

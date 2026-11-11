@@ -29,6 +29,8 @@ type session struct {
 	// them returns.
 	meet    int
 	arrived chan struct{}
+	// planReads makes the plan of a read name the path it reads.
+	planReads bool
 }
 
 type arg struct {
@@ -57,7 +59,11 @@ func (s *session) dispatcher() batch.Dispatcher {
 			}
 			switch call.Name {
 			case "read":
-				return batch.Plan{Effect: tools.ReadOnly}, nil
+				if !s.planReads {
+					return batch.Plan{Effect: tools.ReadOnly}, nil
+				}
+				path, err := roots.Resolve(a.Path)
+				return batch.Plan{Effect: tools.ReadOnly, ReadPaths: []string{path}}, err
 			case "edit":
 				path, err := roots.Resolve(a.Path)
 				return batch.Plan{Effect: tools.Writes, WritePaths: []string{path}}, err
@@ -74,7 +80,11 @@ func (s *session) dispatcher() batch.Dispatcher {
 			}
 			switch call.Name {
 			case "read":
-				s.arrived <- struct{}{}
+				// Only the test that sets meet counts arrivals: the channel
+				// is never emptied.
+				if s.meet > 0 {
+					s.arrived <- struct{}{}
+				}
 				for len(s.arrived) < s.meet {
 					select {
 					case <-ctx.Done():
@@ -162,6 +172,28 @@ func TestWritesToOnePathRunInOrder(t *testing.T) {
 		}
 		require.Equal(t, "v3\n", s.get(t, "chain.txt"))
 		require.Equal(t, "y\n", s.get(t, "other.txt"))
+	}
+}
+
+// A read between two edits of its file must see the first edit whole and
+// none of the second. Without its path in the plan the read would start at
+// once, beside the first edit.
+func TestAReadWaitsForTheWriteBeforeIt(t *testing.T) {
+	s := newSession(t)
+	s.planReads = true
+	for range 20 {
+		s.put(t, "f.txt", "v0\n")
+		items, err := batch.Run(context.Background(), s.cfg.Batch, s.dispatcher(), []batch.Call{
+			call("edit", arg{Path: "f.txt", Old: "v0", New: "v1"}),
+			call("read", arg{Path: "f.txt"}),
+			call("edit", arg{Path: "f.txt", Old: "v1", New: "v2"}),
+		})
+		require.NoError(t, err)
+		for i, item := range items {
+			require.NoError(t, item.Err, i)
+		}
+		require.Equal(t, "v1\n", items[1].Result.Parts[0].Text)
+		require.Equal(t, "v2\n", s.get(t, "f.txt"))
 	}
 }
 
