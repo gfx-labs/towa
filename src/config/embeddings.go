@@ -49,10 +49,10 @@ func (e Embeddings) validate() error {
 	}
 	u, err := url.Parse(e.BaseURL)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return fmt.Errorf("embeddings.base_url: %q is not an http or https URL", e.BaseURL)
+		return fmt.Errorf("embeddings.base_url: must be an http or https URL with a host")
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("embeddings.base_url: %q has a query or a fragment, and a path is added to it", e.BaseURL)
+		return fmt.Errorf("embeddings.base_url: must not have a query or fragment because a path is added to it")
 	}
 	return nil
 }

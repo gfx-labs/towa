@@ -173,10 +173,10 @@ func (s MCPServer) validate(at string) error {
 		}
 		u, err := url.Parse(s.URL)
 		if err != nil {
-			return fmt.Errorf("%s.url: %w", at, err)
+			return fmt.Errorf("%s.url: cannot parse URL", at)
 		}
 		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("%s.url: %q is not an http or https URL", at, s.URL)
+			return fmt.Errorf("%s.url: must be an http or https URL with a host", at)
 		}
 		for name := range s.HeadersEnv {
 			if _, both := s.Headers[name]; both {

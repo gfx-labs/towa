@@ -115,7 +115,7 @@ func (p Provider) Validate(at string) error {
 	}
 	u, err := url.Parse(p.BaseURL)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return fmt.Errorf("%s.base_url: %q is not an http or https URL", at, p.BaseURL)
+		return fmt.Errorf("%s.base_url: must be an http or https URL with a host", at)
 	}
 	return p.OpenRouter.validate(at+".openrouter", p.Kind)
 }

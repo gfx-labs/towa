@@ -119,19 +119,19 @@ func validateJevBaseURL(base string) error {
 	}
 	u, err := url.Parse(base)
 	if err != nil || u.Hostname() == "" {
-		return fmt.Errorf("jev.base_url: %q is not a URL with a host", base)
+		return fmt.Errorf("jev.base_url: must be a URL with a host")
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("jev.base_url: %q holds credentials, a query or a fragment", base)
+		return fmt.Errorf("jev.base_url: must not hold credentials, a query or a fragment")
 	}
 	switch u.Scheme {
 	case "https":
 	case "http":
 		if !jevLocalHost(u.Hostname()) {
-			return fmt.Errorf("jev.base_url: %q is http to a host that is not loopback, private or on a tailnet", base)
+			return fmt.Errorf("jev.base_url: http requires a loopback, private or tailnet host")
 		}
 	default:
-		return fmt.Errorf("jev.base_url: %q is not an http or https URL", base)
+		return fmt.Errorf("jev.base_url: must be an http or https URL")
 	}
 	return nil
 }

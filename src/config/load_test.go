@@ -100,6 +100,14 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"history shorter than samples", config.Sources{Set: []string{"compaction.history_window=2"}}, "compaction.history_window"},
 		{"nested section requires one source", config.Sources{Files: []string{write(t, filepath.Join(dir, "section.toml"), "[[context.sections]]\nname='policy'\ntext='rule'\nfile='rule.md'\n")}}, "context.sections[0].text"},
 		{"nested hook tool name", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook.toml"), "[[hooks]]\nevent='pre_tool'\ncommand=['true']\ntimeout='1s'\ntools=['']\n")}}, "hooks[0].tools[0]"},
+		{"provider invalid scheme with credentials", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-url.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='ftp://url-user:url-password@example.com?token=url-query-secret'\n")}}, "providers[0].base_url"},
+		{"provider URL parse failure", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-parse.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='https://url-user:url-password@example.com/%zz?token=url-query-secret'\n")}}, "providers[0].base_url"},
+		{"embeddings URL query", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "embeddings.base_url"},
+		{"embeddings URL parse failure", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}}, "embeddings.base_url"},
+		{"jev URL credentials", config.Sources{Set: []string{"jev.route=custom", "jev.model=decision", "jev.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "jev.base_url"},
+		{"jev URL parse failure", config.Sources{Set: []string{"jev.route=custom", "jev.model=decision", "jev.base_url=https://url-user:url-password@example.com/%zz?token=url-query-secret"}}, "jev.base_url"},
+		{"mcp invalid scheme with credentials", config.Sources{Files: []string{write(t, filepath.Join(dir, "mcp-url.toml"), "[[mcp.servers]]\nname='remote'\ntransport='sse'\nurl='ftp://url-user:url-password@example.com?token=url-query-secret'\n")}}, "mcp.servers[0].url"},
+		{"mcp URL parse failure", config.Sources{Files: []string{write(t, filepath.Join(dir, "mcp-parse.toml"), "[[mcp.servers]]\nname='remote'\ntransport='sse'\nurl='https://url-user:url-password@example.com/%zz?token=url-query-secret'\n")}}, "mcp.servers[0].url"},
 		{"--set without a value", config.Sources{Set: []string{"telemetry.otel"}}, "key=value"},
 		{"listed file is missing", config.Sources{Files: []string{filepath.Join(dir, "absent.toml")}}, "absent.toml"},
 		{"listed file of an unknown format", config.Sources{Files: []string{write(t, filepath.Join(dir, "c.ini"), "")}}, ".ini"},
@@ -109,6 +117,9 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.Load(tt.src)
 			require.ErrorContains(t, err, tt.want)
+			for _, secret := range []string{"url-user", "url-password", "url-query-secret"} {
+				require.NotContains(t, err.Error(), secret)
+			}
 		})
 	}
 }
