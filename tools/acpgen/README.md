@@ -25,6 +25,10 @@ Each changed file says so in its first lines.
 - `emit/types.go`, union `MarshalJSON`: nothing is emitted after the `return` of a non-object variant. Upstream emitted the object path after it, which `go vet` reports as unreachable code (20 places with schema 1.31.0).
 - `emit/dispatch.go`: the `session/prompt` and `session/cancel` cases have no cancellation code. Upstream called `registerPrompt` and `cancelPrompt` on the connection. Here the agent orders a cancel against a session's prompts with `acp.Arrival`.
 - `emit/dispatch.go`: outbound request wrappers call `SendRequest[T](ctx, c.conn, method, params)`, context first.
+- The generator and generated codecs use Go 1.27's `encoding/json/v2` and `encoding/json/jsontext`. Raw request parameters are `jsontext.Value`.
+- Optional scalar, pointer and interface fields use `omitzero`. Optional collections use `omitempty`, and optional value structs remain present, matching the old encoder.
+- Union and default codecs implement `MarshalJSONTo` and `UnmarshalJSONFrom`. Object unions retain upstream's sorted map shaping, numeric conversion and HTML escaping for wire compatibility. Collection defaults are filled explicitly rather than relying on the encoder's nil-collection options.
+- `emit/union_codec.go` holds union selection and codec emission.
 - `emit/constants.go`: the comment on `ProtocolVersionNumber` no longer calls this an SDK.
 
 ## Check

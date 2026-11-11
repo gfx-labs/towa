@@ -148,9 +148,8 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 	f.Line()
 }
 
-// emitUnionMarshal emits MarshalJSONTo. The variant that is set is written
-// as itself, with its const members set to their values. A const member is
-// a field of the variant's struct, so no map is needed to add it.
+// emitUnionMarshal emits MarshalJSONTo and sets the variant's const members.
+// Object variants retain the old map roundtrip to preserve their wire bytes.
 func emitUnionMarshal(f *File, name string, variants []variantInfo) {
 	f.Func().Params(Id("u").Id(name)).Id("MarshalJSONTo").Params(Id("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().BlockFunc(func(g *Group) {
 		for _, vi := range variants {
@@ -249,9 +248,8 @@ func zeroDefault(defaultJSON string) bool {
 // defaults: a member that is missing, or null where the schema does not
 // allow null, takes its default.
 //
-// No MarshalJSON is emitted. Upstream emitted one to write a nil slice as []
-// and a nil map as {}, which is what encoding/json/v2 writes anyway. A
-// default it could not write that way stops the generator.
+// MarshalJSONTo fills nil collection defaults and retains upstream HTML escaping.
+// UnmarshalJSONFrom is needed only for defaults that differ from the Go zero value.
 func emitDefaultsCodec(f *File, name string, defaults []defaultCodec) {
 	if len(defaults) > 0 {
 		// v1's generated default marshaler used json.Marshal, so strings
