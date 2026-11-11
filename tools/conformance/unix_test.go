@@ -1,64 +1,199 @@
 package conformance
 
 import (
+	"bufio"
 	"context"
+	"encoding/json/v2"
 	"io"
 	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/require"
 )
 
-// Until the CLI wires its socket listeners, bridge a real unix socket to
-// the binary's stdio. This checks the SDK over the socket, not src/listen or
-// the CLI's per-connection session ownership.
-func TestUnixSocketClient(t *testing.T) {
-	a := start(t)
-	path := filepath.Join(t.TempDir(), "acp.sock")
-	ln, err := net.Listen("unix", path)
+// socketProcess serves stdio, unix and TCP on one actual binary. Stdio is
+// /dev/null, so its EOF must not end the daemon. Addresses come from the
+// process's structured startup logs, including the kernel-assigned TCP port.
+type socketProcess struct {
+	cmd      *exec.Cmd
+	done     chan struct{}
+	logged   chan struct{}
+	err      error
+	stderr   *wire
+	stdout   *wire
+	unixPath string
+	tcpAddr  string
+}
+
+func startSockets(t *testing.T) *socketProcess {
+	t.Helper()
+	dir := t.TempDir()
+	p := &socketProcess{
+		done: make(chan struct{}), logged: make(chan struct{}),
+		stderr: &wire{}, stdout: &wire{}, unixPath: filepath.Join(dir, "acp.sock"),
+	}
+	configFile := filepath.Join(dir, "config.toml")
+	body := "[telemetry.logs.stderr]\nlevel = \"info\"\nformat = \"json\"\n" +
+		"[listen]\nstdio = true\n[listen.unix]\npath = \"" + p.unixPath + "\"\n" +
+		"[listen.tcp]\naddress = \"127.0.0.1:0\"\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(body), 0o600))
+	p.cmd = exec.Command(binary, "--config", configFile, "serve")
+	p.cmd.Env = []string{
+		"XDG_CONFIG_HOME=" + filepath.Join(dir, "config"),
+		"XDG_STATE_HOME=" + filepath.Join(dir, "state"), "HOME=" + dir,
+	}
+	p.cmd.Dir = dir
+	p.cmd.Stdout = p.stdout
+	stderr, err := p.cmd.StderrPipe()
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = ln.Close() })
+	require.NoError(t, p.cmd.Start())
 
-	done := make(chan struct{})
+	addresses := make(chan string, 2)
 	go func() {
-		defer close(done)
-		conn, err := ln.Accept()
-		if err != nil {
-			return
+		defer close(p.logged)
+		reader := bufio.NewReader(stderr)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if len(line) > 0 {
+				_, _ = p.stderr.Write(line)
+				var record struct {
+					Network string `json:"network"`
+					Address string `json:"address"`
+				}
+				if json.Unmarshal(line, &record) == nil && record.Network == "tcp" {
+					addresses <- record.Address
+				}
+			}
+			if err != nil {
+				return
+			}
 		}
-		defer func() { _ = conn.Close() }()
-		copied := make(chan struct{})
-		go func() {
-			_, _ = io.Copy(a.stdin, conn)
-			_ = a.stdin.Close()
-			close(copied)
-		}()
-		_, _ = io.Copy(conn, a.stdout)
-		_ = conn.Close()
-		<-copied
 	}()
+	go func() {
+		p.err = p.cmd.Wait()
+		close(p.done)
+	}()
+	t.Cleanup(func() {
+		p.stop(t)
+		require.Empty(t, p.stdout.lines(), "socket daemon wrote protocol data to stdout")
+		if t.Failed() || os.Getenv(envWire) != "" {
+			t.Logf("socket daemon stderr:\n%s", strings.Join(p.stderr.lines(), "\n"))
+		}
+	})
+	select {
+	case p.tcpAddr = <-addresses:
+	case <-p.done:
+		<-p.logged
+		t.Fatalf("socket daemon exited before startup: %v\n%s", p.err, strings.Join(p.stderr.lines(), "\n"))
+	case <-time.After(timeout):
+		t.Fatal("socket daemon did not announce its bound TCP address")
+	}
+	return p
+}
 
+func (p *socketProcess) stop(t *testing.T) {
+	t.Helper()
+	select {
+	case <-p.done:
+	default:
+		require.NoError(t, p.cmd.Process.Signal(syscall.SIGTERM))
+	}
+	select {
+	case <-p.done:
+		<-p.logged
+		require.NoError(t, p.err, "stderr:\n%s", strings.Join(p.stderr.lines(), "\n"))
+	case <-time.After(timeout):
+		_ = p.cmd.Process.Kill()
+		<-p.done
+		t.Fatal("socket daemon did not stop after SIGTERM")
+	}
+}
+
+func socketClient(t *testing.T, network, address string) (*agent, *acp.ClientSideConnection, *client, net.Conn) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
+	conn, err := (&net.Dialer{}).DialContext(ctx, network, address)
 	require.NoError(t, err)
+	a := &agent{t: t, sent: &wire{}, received: &wire{}, stdin: conn}
+	a.stdout = io.TeeReader(conn, a.received)
 	t.Cleanup(func() {
 		_ = conn.Close()
-		<-done
+		if t.Failed() || os.Getenv(envWire) != "" {
+			t.Logf("%s client sent:\n%s", network, strings.Join(a.sent.lines(), "\n"))
+			t.Logf("%s agent sent:\n%s", network, strings.Join(a.received.lines(), "\n"))
+		}
 	})
-	socket := &agent{t: t, sent: &wire{}, received: &wire{}, stdin: conn}
-	socket.stdout = io.TeeReader(conn, socket.received)
-	client, updates := socket.connect()
-	initialize(ctx, t, client)
-	session := newSession(ctx, t, client)
-	resp, err := client.Prompt(ctx, acp.PromptRequest{
-		SessionId: session.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("unix socket conformance")},
+	connection, updates := a.connect()
+	initialize(ctx, t, connection)
+	return a, connection, updates, conn
+}
+
+func TestSocketClients(t *testing.T) {
+	p := startSockets(t)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	oneWire, one, oneUpdates, oneSocket := socketClient(t, "unix", p.unixPath)
+	twoWire, two, twoUpdates, _ := socketClient(t, "unix", p.unixPath)
+	tcpWire, tcp, tcpUpdates, _ := socketClient(t, "tcp", p.tcpAddr)
+	oneSession := newSession(ctx, t, one)
+	twoSession := newSession(ctx, t, two)
+	tcpSession := newSession(ctx, t, tcp)
+	require.NotEqual(t, oneSession.SessionId, twoSession.SessionId)
+	require.NotEqual(t, twoSession.SessionId, tcpSession.SessionId)
+
+	// All three connections remain open. A session belongs to its owning
+	// connection, even though all connections share the process host.
+	_, err := two.Prompt(ctx, acp.PromptRequest{
+		SessionId: oneSession.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("not yours")},
+	})
+	require.Equal(t, -32002, requestError(t, err).Code)
+
+	for _, c := range []struct {
+		wire    *agent
+		conn    *acp.ClientSideConnection
+		updates *client
+		session acp.SessionId
+	}{
+		{oneWire, one, oneUpdates, oneSession.SessionId},
+		{twoWire, two, twoUpdates, twoSession.SessionId},
+		{tcpWire, tcp, tcpUpdates, tcpSession.SessionId},
+	} {
+		response, err := c.conn.Prompt(ctx, acp.PromptRequest{
+			SessionId: c.session, Prompt: []acp.ContentBlock{acp.TextBlock("socket conformance")},
+		})
+		require.NoError(t, err)
+		require.Equal(t, acp.StopReasonEndTurn, response.StopReason)
+		require.Equal(t, []string{"available_commands_update", "agent_message_chunk"}, kinds(c.updates.take()))
+		require.Empty(t, notDecoded(t, c.wire.lastResult(), response), "raw result: %s", c.wire.lastResult())
+	}
+
+	require.NoError(t, oneSocket.Close())
+	// One client's EOF does not retire the other connection or its session.
+	response, err := tcp.Prompt(ctx, acp.PromptRequest{
+		SessionId: tcpSession.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("still connected")},
 	})
 	require.NoError(t, err)
-	require.Equal(t, acp.StopReasonEndTurn, resp.StopReason)
-	require.Equal(t, []string{"available_commands_update", "agent_message_chunk"}, kinds(updates.take()))
-	require.Empty(t, notDecoded(t, socket.lastResult(), resp), "raw result: %s", socket.lastResult())
+	require.Equal(t, acp.StopReasonEndTurn, response.StopReason)
+	require.Equal(t, []string{"agent_message_chunk"}, kinds(tcpUpdates.take()))
+
+	// Shutdown is exercised with the other two clients still connected.
+	p.stop(t)
+	for _, conn := range []*acp.ClientSideConnection{two, tcp} {
+		select {
+		case <-conn.Done():
+		case <-ctx.Done():
+			t.Fatal("socket client did not observe process shutdown")
+		}
+	}
+	_, err = os.Lstat(p.unixPath)
+	require.ErrorIs(t, err, os.ErrNotExist, "unix socket file survived shutdown")
 }
