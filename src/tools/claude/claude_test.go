@@ -11,7 +11,6 @@ import (
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/tools"
 	"github.com/gfx-labs/acpharness/src/tools/claude"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
 	"github.com/gfx-labs/acpharness/src/tools/generic"
 	"github.com/gfx-labs/acpharness/src/toolset"
 	"github.com/gfx-labs/acpharness/src/transcript"
@@ -75,8 +74,9 @@ func TestCapturedCoreAdaptersShareSessionStateAcrossDialects(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("first line\nEXTERN line\n"), 0o600))
 	result = runAdapter(t, neutral, env, "Edit", edit)
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
-	_, err = claude.ReadFile(t.Context(), fsops.RootsOf(env, cfg.Files), cfg.Files, &tracker, fsops.ReadInput{Path: path, Limit: 1})
-	require.NoError(t, err)
+	result = runAdapter(t, captured, env, "Read", map[string]any{"file_path": path, "limit": 1})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "1\tfirst line")
 	edit["old_string"], edit["new_string"] = "EXTERN", "reread"
 	result = runAdapter(t, captured, env, "Edit", edit)
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
@@ -86,6 +86,50 @@ func TestCapturedCoreAdaptersShareSessionStateAcrossDialects(t *testing.T) {
 	require.Len(t, shown, 1)
 	require.Equal(t, "Checking files", shown[0].Content)
 	require.Equal(t, acp.PlanEntryStatusInProgress, shown[0].Status)
+
+	imagePath := filepath.Join(env.Cwd, "picture.png")
+	imageData := fixture(t, "blue-purple-pink-large.png")
+	require.NoError(t, os.WriteFile(imagePath, imageData, 0o600))
+	result = runAdapter(t, captured, env, "Read", map[string]any{"file_path": imagePath})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.NotNil(t, result.Parts[0].Image)
+	require.Equal(t, imageData, result.Parts[0].Image.Data)
+	result = runAdapter(t, captured, env, "Read", map[string]any{"file_path": path, "pages": "1"})
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+}
+
+func TestCapturedBashRunsAndRefusesUnsupportedModes(t *testing.T) {
+	loaded, err := config.Load(config.Sources{})
+	require.NoError(t, err)
+	env := tools.Env{Cwd: t.TempDir()}
+	set, err := toolset.Assemble(t.Context(), toolset.Input{Dialect: generic.Dialect, Tools: func() ([]tools.Tool, error) {
+		return generic.Tools(env, loaded.Config.Tools, generic.Deps{Reads: new(claude.ReadTracker)})
+	}})
+	require.NoError(t, err)
+	result := runAdapter(t, set, env, "Bash", map[string]any{"command": "printf 'real command output'; printf saved > created.txt", "timeout": 2000.5})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "real command output")
+	data, err := os.ReadFile(filepath.Join(env.Cwd, "created.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "saved", string(data))
+	result = runAdapter(t, set, env, "Bash", map[string]any{"command": "printf failed; exit 7"})
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "Exit code 7")
+	for _, option := range []map[string]any{
+		{"run_in_background": true},
+		{"dangerouslyDisableSandbox": true},
+		{"timeout": -1},
+		{"timeout": 0.0000001},
+	} {
+		option["command"] = "printf forbidden > refused.txt"
+		result = runAdapter(t, set, env, "Bash", option)
+		require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+		_, err = os.Stat(filepath.Join(env.Cwd, "refused.txt"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+	result = runAdapter(t, set, env, "Bash", map[string]any{"command": "sleep 30", "timeout": 20})
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "timed out")
 }
 
 func TestCapturedSearchAdaptersRunRealRipgrep(t *testing.T) {

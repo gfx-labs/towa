@@ -55,5 +55,31 @@ func generate() error {
 			return err
 		}
 	}
+	profile := filepath.Join(root, "profiles", "print-sdk.default.claude-opus-5-5")
+	manifest, err = os.ReadFile(filepath.Join(profile, "manifest.json"))
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(manifest, &index); err != nil {
+		return err
+	}
+	hashes = make(map[string]string)
+	for _, entry := range index.Files {
+		hashes[entry.Path] = entry.SHA256
+	}
+	for _, name := range []string{"Read", "Bash"} {
+		path := "tools/" + name + ".json"
+		data, err := os.ReadFile(filepath.Join(profile, path))
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(data)
+		if hashes[path] != hex.EncodeToString(digest[:]) {
+			return fmt.Errorf("profile capture checksum mismatch: %s", path)
+		}
+		if err := os.WriteFile(filepath.Join("specs", name+".json"), data, 0o644); err != nil {
+			return err
+		}
+	}
 	return nil
 }

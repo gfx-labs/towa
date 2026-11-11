@@ -24,6 +24,10 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 	}
 	for i := range result {
 		switch result[i].Spec.Name {
+		case "Read":
+			result[i].Spec.Description = "Read text lines or a PNG, JPEG, GIF or WebP image from a file. Text lines are numbered. Successful reads authorize edits in this session until the file changes. Large images are normalized to the configured byte limit and 2000-pixel dimensions. PDF pages and notebook reads are unsupported."
+		case "Bash":
+			result[i].Spec.Description = "Run a shell command in the session working directory and wait for it to finish. timeout is in milliseconds and must be positive and within the configured maximum. Output is limited. Timeouts stop the process group. Background commands and sandbox selection are unsupported. Commands run without an operating-system sandbox."
 		case "Edit":
 			result[i].Spec.Description = "Replace exact text in a file. Read the file in this session first. The old text must occur once unless replace_all is true. An empty old_string creates a missing or empty file."
 		case "Write":

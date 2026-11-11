@@ -31,8 +31,7 @@ type Deps struct {
 //go:embed specs/*.json
 var specs embed.FS
 
-// Tools returns the supported captured core tools. Bash and Read are absent
-// until their schemas are captured, not reconstructed from remembered shapes.
+// Tools returns the supported captured core tools.
 func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 	if !filepath.IsAbs(env.Cwd) {
 		return nil, fmt.Errorf("claude: cwd %q is not absolute", env.Cwd)
@@ -41,7 +40,7 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		return nil, fmt.Errorf("claude: session read tracker is required")
 	}
 	var result []tools.Tool
-	for _, name := range []string{"Edit", "Write", "Glob", "Grep", "TodoWrite"} {
+	for _, name := range []string{"Edit", "Write", "Glob", "Grep", "TodoWrite", "Read", "Bash"} {
 		if name == "TodoWrite" && deps.ShowPlan == nil {
 			continue
 		}
@@ -50,6 +49,10 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 			return nil, err
 		}
 		switch name {
+		case "Read":
+			result = append(result, readTool(spec, env, cfg, deps.Reads))
+		case "Bash":
+			result = append(result, bashTool(spec, cfg))
 		case "Edit":
 			result = append(result, editTool(spec, env, cfg, deps.Reads))
 		case "Write":
