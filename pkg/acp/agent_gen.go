@@ -4,10 +4,11 @@ package acp
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 )
 
-func (a *AgentSideConnection) handle(ctx context.Context, method string, params json.RawMessage) (any, *RequestError) {
+func (a *AgentSideConnection) handle(ctx context.Context, method string, params jsontext.Value) (any, *RequestError) {
 	switch method {
 	case AgentMethodAuthStatus:
 		var p UnstableAuthStatusRequest

@@ -19,7 +19,7 @@ func jRetToReqErr() Code { return Return(Nil(), Id("toReqErr").Call(Id("err"))) 
 func jUnmarshalValidate(typeName string) []Code {
 	return []Code{
 		Var().Id("p").Id(typeName),
-		If(List(Id("err")).Op(":=").Qual("encoding/json", "Unmarshal").Call(Id("params"), Op("&").Id("p")), Id("err").Op("!=").Nil()).
+		If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Id("params"), Op("&").Id("p")), Id("err").Op("!=").Nil()).
 			Block(jInvInvalid()),
 		If(List(Id("err")).Op(":=").Id("p").Dot("Validate").Call(), Id("err").Op("!=").Nil()).
 			Block(jInvInvalid()),

@@ -245,6 +245,24 @@ func TestErrorResponses(t *testing.T) {
 			wantCode: acp.NewInvalidRequest(nil).Code,
 		},
 		{
+			name:     "duplicate member in params",
+			line:     `{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"s","prompt":[],"prompt":[]}}`,
+			wantID:   `null`,
+			wantCode: acp.NewParseError(nil).Code,
+		},
+		{
+			name:     "invalid UTF-8",
+			line:     "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"\xff\",\"prompt\":[]}}",
+			wantID:   `null`,
+			wantCode: acp.NewParseError(nil).Code,
+		},
+		{
+			name:     "required field in another case",
+			line:     `{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"s","Prompt":[]}}`,
+			wantID:   `1`,
+			wantCode: acp.NewInvalidParams(nil).Code,
+		},
+		{
 			name:     "unknown method",
 			line:     `{"jsonrpc":"2.0","id":7,"method":"session/unknown","params":{}}`,
 			wantID:   `7`,

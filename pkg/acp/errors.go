@@ -23,7 +23,7 @@ const (
 type RequestError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
+	Data    any    `json:"data,omitzero"`
 }
 
 // Error implements error.
