@@ -35,6 +35,7 @@ type BeforeInput struct {
 	Entries       []transcript.Entry
 	Request       provider.Request
 	ProviderName  string
+	Origin        transcript.Origin
 	ContextWindow int64
 }
 
@@ -45,6 +46,7 @@ type Controller struct {
 	opts                  ControllerOptions
 	pending               *Task
 	pendingNativeProvider string
+	pendingNativeOrigin   transcript.Origin
 	embeddings            [][]float32
 	lastEmbedded          uuid.UUID
 	lastCompaction        uuid.UUID
@@ -82,6 +84,7 @@ func (c *Controller) Close() {
 		c.pending = nil
 	}
 	c.pendingNativeProvider = ""
+	c.pendingNativeOrigin = transcript.Origin{}
 }
 
 // Before returns effects to append durably, in order, before the loop calls
@@ -107,7 +110,7 @@ func (c *Controller) Before(ctx context.Context, in BeforeInput) ([]transcript.I
 		c.Close()
 		c.embeddings, c.lastEmbedded, c.lastCompaction = nil, uuid.Nil(), current
 	}
-	if c.pendingNativeProvider != "" && c.pendingNativeProvider != in.ProviderName {
+	if c.pendingNativeProvider != "" && (c.pendingNativeProvider != in.ProviderName || c.pendingNativeOrigin != in.Origin) {
 		c.Close()
 	}
 	if c.pending != nil {
@@ -127,7 +130,7 @@ func (c *Controller) Before(ctx context.Context, in BeforeInput) ([]transcript.I
 		window = in.ContextWindow
 	}
 	work := Work{Model: c.opts.Summary, Input: c.opts.SummaryInput, ContextWindow: window, Mode: c.opts.Config.Mode}
-	portable, err := EnsurePortable(ctx, in.Entries, in.ProviderName, work)
+	portable, err := EnsurePortable(ctx, in.Entries, in.ProviderName, work, in.Origin)
 	if err != nil {
 		return nil, err
 	}
@@ -224,6 +227,7 @@ func (c *Controller) Before(ctx context.Context, in BeforeInput) ([]transcript.I
 			}
 			work.Native, work.NativeRequest, work.ProviderName = native, in.Request, in.ProviderName
 			c.pendingNativeProvider = in.ProviderName
+			c.pendingNativeOrigin = in.Origin
 		}
 		c.pending = Start(ctx, work)
 		return nil, nil

@@ -120,8 +120,8 @@ func Run(ctx context.Context, work Work) (*Result, error) {
 // cannot read the latest native compaction. A nil result means the context
 // already has a readable representation. The caller appends the result and
 // renders Items again before sending anything to that next provider.
-func EnsurePortable(ctx context.Context, history []transcript.Entry, providerName string, work Work) (*Result, error) {
-	_, err := Items(history, providerName)
+func EnsurePortable(ctx context.Context, history []transcript.Entry, providerName string, work Work, target ...transcript.Origin) (*Result, error) {
+	_, err := Items(history, providerName, target...)
 	if err == nil {
 		return nil, nil
 	}

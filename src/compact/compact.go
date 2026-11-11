@@ -110,14 +110,14 @@ func Read(entries []transcript.Entry) (View, error) {
 //
 // The result still holds Usage, ModelSwitch and Interrupted items. The
 // loop's Conversation deals with those, as it does without a compaction.
-func Items(entries []transcript.Entry, providerName string) ([]transcript.Item, error) {
+func Items(entries []transcript.Entry, providerName string, target ...transcript.Origin) ([]transcript.Item, error) {
 	view, err := Read(entries)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]transcript.Item, 0, len(view.Active)+1)
 	if view.Compaction != nil {
-		head, err := standIn(*view.Compaction, providerName)
+		head, err := standIn(*view.Compaction, providerName, target...)
 		if err != nil {
 			return nil, err
 		}
@@ -130,15 +130,23 @@ func Items(entries []transcript.Entry, providerName string) ([]transcript.Item, 
 }
 
 // standIn returns the items that stand for what a compaction replaced.
-func standIn(entry transcript.Entry, providerName string) ([]transcript.Item, error) {
+func standIn(entry transcript.Entry, providerName string, target ...transcript.Origin) ([]transcript.Item, error) {
 	item := entry.Item
-	if len(item.Opaque) > 0 && item.Provider == providerName {
+	if len(target) > 1 {
+		return nil, errors.New("compact: more than one target origin")
+	}
+	if len(target) == 1 && item.OpaqueCompatible(providerName, target[0]) {
 		var native []transcript.Item
 		if err := json.Unmarshal(item.Opaque, &native); err != nil {
 			return nil, fmt.Errorf("compact: read the native items of compaction %s: %w", entry.ID, err)
 		}
 		if err := validateNativeWindow(native, providerName); err != nil {
 			return nil, fmt.Errorf("compact: stored native window %s: %w", entry.ID, err)
+		}
+		for _, child := range native {
+			if len(child.Opaque) > 0 && !child.OpaqueCompatible(providerName, target[0]) {
+				return nil, &UnreadableError{Entry: entry.ID, Provider: item.Provider, Wanted: providerName}
+			}
 		}
 		return native, nil
 	}
@@ -221,10 +229,19 @@ func NativeItem(result NativeResult, providerName string, firstKept uuid.UUID) (
 	if err != nil {
 		return transcript.Item{}, fmt.Errorf("compact: encode the native items: %w", err)
 	}
+	var origin *transcript.Origin
+	for _, item := range result.Items {
+		if item.Native != nil && item.Native.Kind == "compaction" && item.Origin != nil {
+			value := *item.Origin
+			origin = &value
+			break
+		}
+	}
 	return transcript.Item{
 		Compaction: &transcript.Compaction{FirstKept: firstKept, Mode: ModeNative},
 		Provider:   providerName,
 		Opaque:     opaque,
+		Origin:     origin,
 	}, nil
 }
 

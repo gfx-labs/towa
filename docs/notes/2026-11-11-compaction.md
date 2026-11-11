@@ -137,6 +137,8 @@ ACPHARNESS_JCODE_REPO=/home/a/repo/github.com/1jehuang/jcode \
 
 ## Still untested or owned elsewhere
 
+Native windows preserve each item's origin and copy the native compaction's origin onto the enclosing appended item. Replay requires exact canonical provider, model and account through `Item.OpaqueCompatible`. `Items` and `EnsurePortable` accept an optional target origin. An absent target or legacy nil origin cannot replay opaque context. The controller receives the selected request origin in `BeforeInput.Origin`, regenerates a portable summary from retained source on mismatch, and cancels pending native work when that origin changes. It never infers or backfills a legacy origin.
+
 - Summary quality for continuing real coding work, repeated checkpoint merges, omitted input and long-history native portability. A short local summary is not a quality benchmark.
 - OpenAI native automatic/explicit responses and cross-provider fallback on real encrypted history. A real account is needed.
 - Anthropic thinking/cache/OAuth behavior. Ollama proves none of it.

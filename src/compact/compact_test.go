@@ -286,12 +286,14 @@ func TestItemsAfterCompactions(t *testing.T) {
 
 func TestNativeCompactionGoesOnlyToItsProvider(t *testing.T) {
 	entries := session(user("first"), text("one"), user("second"))
-	native := transcript.Item{Native: &transcript.Native{Kind: "compaction"}, Provider: "openai", Opaque: jsontext.Value(`{"encrypted_content":"x"}`)}
+	origin := transcript.Origin{Model: "model", Account: "account"}
+	native := transcript.Item{Native: &transcript.Native{Kind: "compaction"}, Provider: "openai", Origin: &origin, Opaque: jsontext.Value(`{"encrypted_content":"x"}`)}
 	entry, err := NativeEntry(entries[2].ID, time.Unix(1, 0), NativeResult{Items: []transcript.Item{native}}, "openai", entries[2].ID)
 	require.NoError(t, err)
 	entries = append(entries, entry)
 
-	items, err := Items(entries, "openai")
+	require.Equal(t, &origin, entry.Item.Origin)
+	items, err := Items(entries, "openai", origin)
 	require.NoError(t, err)
 	require.Equal(t, []transcript.Item{native, user("second")}, items)
 
@@ -299,6 +301,12 @@ func TestNativeCompactionGoesOnlyToItsProvider(t *testing.T) {
 	var unreadable *UnreadableError
 	require.ErrorAs(t, err, &unreadable)
 	require.Equal(t, entry.ID, unreadable.Entry)
+	for _, target := range []transcript.Origin{{}, {Model: "other", Account: origin.Account}, {Model: origin.Model, Account: "other"}} {
+		_, err := Items(entries, "openai", target)
+		require.ErrorAs(t, err, &unreadable)
+	}
+	_, err = Items(entries, "openai")
+	require.ErrorAs(t, err, &unreadable)
 }
 
 func TestSummaryRequest(t *testing.T) {
