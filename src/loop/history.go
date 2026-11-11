@@ -21,6 +21,7 @@ const (
 	textBadInput     = "The tool call's input was not accepted: %v"
 	textHarnessError = "The tool could not be run: %v"
 	textBadHookInput = "A hook changed the tool call's input to one that was not accepted: %v"
+	textNested       = "A %s call cannot hold another one."
 	textLimit        = "The tool call was not run: the turn reached %s."
 )
 

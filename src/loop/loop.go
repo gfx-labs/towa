@@ -8,6 +8,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
+	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/tools"
 )
 
@@ -21,6 +22,11 @@ type Result struct {
 	// ending it, and still has a stop reason to answer with: a configured
 	// limit, answered as max_turn_requests.
 	Stop *harness.Stop
+	// Final is the text the model wrote in the turn's last response, its
+	// text items joined. It is empty when the last response had no text, or
+	// no response arrived. A caller that wants only the answer, such as a
+	// subagent's parent, reads it here and not from the updates.
+	Final string
 }
 
 // StopError is a turn that failed for a reason the client can act on: a rate
@@ -66,6 +72,14 @@ type Turn struct {
 	// Model is the name of the configured model the session chose for this
 	// turn. Empty means none was chosen and the configured default applies.
 	Model string
+	// ParentID is the session that spawned this one as a subagent. It is
+	// written to the store when the turn creates the session, and must then
+	// be a UUID. It is not read for a session that exists.
+	ParentID acp.SessionId
+	// Limits replaces the configured limits for this turn when it is set:
+	// a session's own from session/new, or the ones a parent gives a
+	// subagent. The caller validates them.
+	Limits *config.Limits
 	// Client is what the client advertised in initialize.
 	Client acp.ClientCapabilities
 	// Sendable reports whether Update will send this update. Update returns

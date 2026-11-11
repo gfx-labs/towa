@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 	"uuid"
@@ -25,68 +26,77 @@ import (
 // Options is what a turn is built from. Every field is required unless it
 // says otherwise.
 type Options struct {
-	// Provider answers model requests. It is the router over the model's
-	// chain, which sets each request's model and credential.
-	Provider provider.Provider
-	Tools    tools.Set
-	Store    store.Store
+	// Resolve returns what a turn needs from the model the session chose.
+	// It is called once per turn, before the first request, with
+	// Turn.Model as it is: an empty name means the session chose none, and
+	// the resolver owns the default.
+	Resolve func(ctx context.Context, model string) (Resolved, error)
+	Store   store.Store
 	// System returns the system prompt's sections for a turn.
 	System func(ctx context.Context, t Turn) ([]provider.SystemBlock, error)
 	Limits config.Limits
 	// Now is the clock: entry times and the turn's wall time come from it.
 	Now func() time.Time
-	// Interruption is the dialect's text that tells the model the turn
-	// before was interrupted.
-	Interruption string
-	// ContextSize returns a model's context window in tokens, for usage
-	// updates. It is optional: without it no usage update is sent.
-	ContextSize func(model string) (int, bool)
-	// MaxOutputTokens and Effort are sent with every request. They are
-	// optional and not sent when zero.
-	MaxOutputTokens int64
-	Effort          string
 	// Repair is tools.repair.enabled: fix the known ways a model gets a
 	// tool's argument wrong before validating it.
 	Repair bool
+	// Gate is tools.gate: when a tool's result is withheld from the model.
+	Gate config.ToolsGate
 	// Hooks runs the configured hooks. It may have none.
 	Hooks  *hooks.Runner
 	Logger *slog.Logger
 }
 
+// Resolved is a model as one turn uses it.
+type Resolved struct {
+	// Provider answers the turn's model requests. It is the router over the
+	// model's chain, which sets each request's model and credential.
+	Provider provider.Provider
+	// Tools is the tool set of the model's dialect.
+	Tools tools.Set
+	// Model is the provider's own name for the model, of the chain's first
+	// entry. It is for logs: the router names the model of each request.
+	Model string
+	// ContextSize is the model's context window in tokens, for usage
+	// updates. Zero means it is not known, and no usage update is sent.
+	ContextSize int64
+	// MaxOutputTokens and Effort are sent with every request, and not sent
+	// when zero.
+	MaxOutputTokens int64
+	Effort          string
+	// Interruption is the dialect's text that tells the model the turn
+	// before was interrupted. It is required.
+	Interruption string
+}
+
 // Loop runs prompt turns. It keeps nothing between turns: a session's
 // conversation is read from the store when a turn starts.
 type Loop struct {
-	o       Options
-	mapper  Mapper
-	schemas map[string]*repair.Schema
+	o Options
 }
 
 // New returns a loop over its dependencies.
 func New(o Options) (*Loop, error) {
 	switch {
-	case o.Provider == nil:
-		return nil, errors.New("loop: Provider is required")
+	case o.Resolve == nil:
+		return nil, errors.New("loop: Resolve is required")
 	case o.Store == nil:
 		return nil, errors.New("loop: Store is required")
 	case o.System == nil:
 		return nil, errors.New("loop: System is required")
 	case o.Now == nil:
 		return nil, errors.New("loop: Now is required")
-	case o.Interruption == "":
-		return nil, errors.New("loop: Interruption is required")
 	case o.Hooks == nil:
 		return nil, errors.New("loop: Hooks is required")
 	case o.Logger == nil:
 		return nil, errors.New("loop: Logger is required")
 	}
-	schemas, err := Schemas(o.Tools)
-	if err != nil {
-		return nil, err
-	}
-	return &Loop{o: o, mapper: Mapper{Tools: o.Tools, ContextSize: o.ContextSize}, schemas: schemas}, nil
+	return &Loop{o: o}, nil
 }
 
-// DeniedError is a prompt a hook denied. The turn did not start.
+// DeniedError is a prompt a hook denied. The turn did not start. It is the
+// Err of a *StopError of kind harness.StopDenied, so a caller may match
+// either.
 type DeniedError struct {
 	// Reason is the hook's reason, for the client.
 	Reason string
@@ -165,6 +175,17 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 	return nil
 }
 
+// Text returns the response's text items joined.
+func (r *Response) Text() string {
+	var text strings.Builder
+	for _, item := range r.Items {
+		if item.Text != nil {
+			text.WriteString(item.Text.Text)
+		}
+	}
+	return text.String()
+}
+
 // Calls returns the response's tool calls in order.
 func (r *Response) Calls() []transcript.ToolCall {
 	var calls []transcript.ToolCall
@@ -182,13 +203,22 @@ type turn struct {
 	t       Turn
 	id      uuid.UUID
 	started time.Time
+	limits  config.Limits
+	// spentMu guards spent: a tool may add to it while others run.
+	spentMu sync.Mutex
 	spent   Spent
+	// final is the text of the last response.
+	final string
 	// items is the conversation as the next request sends it.
 	items []transcript.Item
 	// parent is the id of the last entry stored.
 	parent uuid.UUID
 	// stopDenials is how often a stop hook kept the turn going.
 	stopDenials int64
+	// model, mapper and schemas are the turn's resolved model.
+	model   Resolved
+	mapper  Mapper
+	schemas map[string]*repair.Schema
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -204,10 +234,23 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 	if t.Update == nil {
 		return Result{}, errors.New("loop: the turn has no Update")
 	}
-	tn := &turn{l: l, t: t, id: id, started: l.o.Now()}
-	if l.o.Limits.MaxWall > 0 {
+	tn := &turn{l: l, t: t, id: id, started: l.o.Now(), limits: l.o.Limits}
+	if t.Limits != nil {
+		tn.limits = *t.Limits
+	}
+	result, err := tn.run(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	result.Final = tn.final
+	return result, nil
+}
+
+func (tn *turn) run(ctx context.Context) (Result, error) {
+	l, t, id := tn.l, tn.t, tn.id
+	if tn.limits.MaxWall > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeoutCause(ctx, l.o.Limits.MaxWall, errWall)
+		ctx, cancel = context.WithTimeoutCause(ctx, tn.limits.MaxWall, errWall)
 		defer cancel()
 	}
 	user, err := UserItem(t.Prompt)
@@ -219,7 +262,13 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 	logHook(ctx, l.o.Logger, t.SessionID, hookErr)
 	if decision.Action != hooks.Allow {
 		// Nothing is stored: the model never saw the prompt.
-		return Result{}, &DeniedError{Reason: decision.Reason}
+		return Result{}, &StopError{
+			Stop: harness.Stop{Kind: harness.StopDenied, Message: decision.Reason},
+			Err:  &DeniedError{Reason: decision.Reason},
+		}
+	}
+	if err := tn.resolve(ctx); err != nil {
+		return Result{}, err
 	}
 	if err := tn.load(ctx); err != nil {
 		return Result{}, err
@@ -237,11 +286,12 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			return result, err
 		}
 		tn.spent.Wall = l.o.Now().Sub(tn.started)
-		if key, over := Exceeded(l.o.Limits, tn.spent); over {
-			return LimitResult(key, tn.spent), nil
+		if key, over := Exceeded(tn.limits, tn.snapshot()); over {
+			return LimitResult(key, tn.snapshot()), nil
 		}
 
 		resp, streamErr := tn.stream(ctx, system)
+		tn.final = resp.Text()
 		calls := resp.Calls()
 		runs := streamErr == nil && resp.Stop == provider.StopToolUse
 		stored := resp.Items
@@ -255,9 +305,9 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			}
 		}
 		if resp.Usage != nil {
-			tn.spent.Add(*resp.Usage)
+			tn.add(*resp.Usage)
 			stored = append(stored, transcript.Item{Usage: resp.Usage})
-			if update, ok := l.mapper.Usage(*resp.Usage); ok {
+			if update, ok := tn.mapper.Usage(*resp.Usage); ok {
 				tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
 			}
 		}
@@ -274,6 +324,12 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			return result, err
 		}
 
+		if resp.Stop == provider.StopPaused {
+			// The provider carries on from what it is sent back, so the
+			// conversation goes as it is. The next request is counted
+			// against the limits at the top like any other.
+			continue
+		}
 		if resp.Stop != provider.StopToolUse {
 			reason, ok := StopReason(resp.Stop)
 			if !ok {
@@ -288,8 +344,8 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 				return tn.result(reason), nil
 			}
 			// A hook that always denies must not run the turn forever.
-			if tn.stopDenials >= l.o.Limits.MaxStopDenials {
-				return LimitResult(config.KeyMaxStopDenials, tn.spent), nil
+			if tn.stopDenials >= tn.limits.MaxStopDenials {
+				return LimitResult(config.KeyMaxStopDenials, tn.snapshot()), nil
 			}
 			tn.stopDenials++
 			denied := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: decision.Reason}}}}
@@ -302,9 +358,12 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			return Result{}, errors.New("loop: the model stopped for tool use without a tool call")
 		}
 
-		left, limited := ToolCallsLeft(l.o.Limits, tn.spent)
+		left, limited := ToolCallsLeft(tn.limits, tn.snapshot())
+		// A tool that runs a model of its own, a subagent, reports what it
+		// used here, so the turn's limits count it.
+		toolCtx := context.WithValue(ctx, spendKey{}, tn.add)
 		done := Dispatcher{
-			Tools: l.o.Tools,
+			Tools: tn.model.Tools,
 			Env:   tools.Env{SessionID: t.SessionID, Cwd: t.Cwd, Dirs: t.Dirs},
 			Left:  left, Limited: limited, LimitKey: config.KeyMaxToolCalls,
 			Permit: t.Permit,
@@ -314,9 +373,11 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 			PutBlob: func(ctx context.Context, mimeType string, content io.Reader) (transcript.Stored, error) {
 				return l.o.Store.PutBlob(ctx, id, mimeType, content)
 			},
-			Schemas: l.schemas, Repair: l.o.Repair, Hooks: l.o.Hooks, Logger: l.o.Logger,
-		}.Run(ctx, calls)
+			Schemas: tn.schemas, Repair: l.o.Repair, Gate: l.o.Gate, Hooks: l.o.Hooks, Logger: l.o.Logger,
+		}.Run(toolCtx, calls)
+		tn.spentMu.Lock()
 		tn.spent.ToolCalls += done.Ran
+		tn.spentMu.Unlock()
 		results := make([]transcript.Item, len(done.Results))
 		for i := range done.Results {
 			results[i] = transcript.Item{ToolResult: &done.Results[i]}
@@ -330,7 +391,7 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 		case done.Err != nil:
 			return Result{}, done.Err
 		case done.OverLimit:
-			return LimitResult(config.KeyMaxToolCalls, tn.spent), nil
+			return LimitResult(config.KeyMaxToolCalls, tn.snapshot()), nil
 		}
 	}
 }
@@ -340,7 +401,7 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error) {
 	switch {
 	case ctx.Err() != nil && errors.Is(context.Cause(ctx), errWall):
-		return LimitResult(config.KeyMaxWall, tn.spent), true, nil
+		return LimitResult(config.KeyMaxWall, tn.snapshot()), true, nil
 	case ctx.Err() != nil:
 		// The model is told about the interruption when the next turn's
 		// request is built.
@@ -355,7 +416,63 @@ func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error
 }
 
 func (tn *turn) result(reason acp.StopReason) Result {
-	return Result{StopReason: reason, Usage: tn.spent.Usage()}
+	return Result{StopReason: reason, Usage: tn.snapshot().Usage()}
+}
+
+type spendKey struct{}
+
+// Spend adds usage to the turn that dispatched the tool whose context ctx
+// is. A tool that makes model requests of its own, such as one that runs a
+// subagent, calls it with each request's usage, and the turn's token limits
+// then count it before the next request. It may be called from tools that
+// run at the same time. It reports false outside a call the loop
+// dispatched, where there is no turn to charge.
+func Spend(ctx context.Context, u transcript.Usage) bool {
+	add, ok := ctx.Value(spendKey{}).(func(transcript.Usage))
+	if ok {
+		add(u)
+	}
+	return ok
+}
+
+func (tn *turn) add(u transcript.Usage) {
+	tn.spentMu.Lock()
+	defer tn.spentMu.Unlock()
+	tn.spent.Add(u)
+}
+
+func (tn *turn) snapshot() Spent {
+	tn.spentMu.Lock()
+	defer tn.spentMu.Unlock()
+	return tn.spent
+}
+
+// resolve asks for the turn's model and checks what came back.
+func (tn *turn) resolve(ctx context.Context) error {
+	model, err := tn.l.o.Resolve(ctx, tn.t.Model)
+	if err != nil {
+		return fmt.Errorf("loop: resolving model %q: %w", tn.t.Model, err)
+	}
+	switch {
+	case model.Provider == nil:
+		return fmt.Errorf("loop: model %q resolved without a provider", tn.t.Model)
+	case model.Interruption == "":
+		return fmt.Errorf("loop: model %q resolved without an interruption text", tn.t.Model)
+	case model.ContextSize < 0 || model.MaxOutputTokens < 0:
+		return fmt.Errorf("loop: model %q resolved with a negative context size or output limit", tn.t.Model)
+	}
+	schemas, err := Schemas(model.Tools)
+	if err != nil {
+		return err
+	}
+	tn.model, tn.schemas = model, schemas
+	tn.mapper = Mapper{Tools: model.Tools}
+	if model.ContextSize > 0 {
+		// One figure for the whole chain: a fallback entry with a smaller
+		// window is reported against the first entry's.
+		tn.mapper.ContextSize = func(string) (int, bool) { return int(model.ContextSize), true }
+	}
+	return nil
 }
 
 // load reads the session's conversation, creating the session when the
@@ -365,8 +482,17 @@ func (tn *turn) load(ctx context.Context) error {
 	st := tn.l.o.Store
 	_, entries, err := st.Load(ctx, tn.id)
 	if errors.Is(err, store.ErrNotFound) {
-		now := tn.l.o.Now()
-		return st.Create(ctx, store.Meta{ID: tn.id, Cwd: tn.t.Cwd, Dirs: tn.t.Dirs, Created: now, Updated: now})
+		meta := store.Meta{ID: tn.id, Cwd: tn.t.Cwd, Dirs: tn.t.Dirs, Model: tn.t.Model}
+		if tn.t.ParentID != "" {
+			parent, err := uuid.Parse(string(tn.t.ParentID))
+			if err != nil {
+				return fmt.Errorf("loop: parent session id %q is not a UUID: %w", tn.t.ParentID, err)
+			}
+			meta.ParentID = parent
+		}
+		meta.Created = tn.l.o.Now()
+		meta.Updated = meta.Created
+		return st.Create(ctx, meta)
 	}
 	if err != nil {
 		return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
@@ -379,7 +505,7 @@ func (tn *turn) load(ctx context.Context) error {
 		history = append(history, entry.Item)
 		tn.parent = entry.ID
 	}
-	items, repairs, err := Conversation(history, tn.l.o.Interruption)
+	items, repairs, err := Conversation(history, tn.model.Interruption)
 	if err != nil {
 		return err
 	}
@@ -419,22 +545,22 @@ func (tn *turn) store(ctx context.Context, items []transcript.Item) error {
 // stream sends one model request and collects the response, showing it to
 // the client as it arrives. The response holds what arrived before an error.
 func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Response, error) {
-	o := tn.l.o
 	ctx = router.WithReport(ctx, func(m router.Move) { tn.moved(ctx, m) })
 	req := provider.Request{
 		System:          system,
 		Items:           tn.items,
-		Tools:           o.Tools.Specs(),
-		MaxOutputTokens: o.MaxOutputTokens,
-		Effort:          o.Effort,
+		Model:           tn.model.Model,
+		Tools:           tn.model.Tools.Specs(),
+		MaxOutputTokens: tn.model.MaxOutputTokens,
+		Effort:          tn.model.Effort,
 		CacheKey:        string(tn.t.SessionID),
 	}
 	resp := &Response{}
-	for event, err := range o.Provider.Stream(ctx, req) {
+	for event, err := range tn.model.Provider.Stream(ctx, req) {
 		if err != nil {
 			return resp, err
 		}
-		for _, update := range resp.Add(tn.l.mapper, event) {
+		for _, update := range resp.Add(tn.mapper, event) {
 			tn.send(ctx, update)
 		}
 		if tn.sendErr != nil {
@@ -442,6 +568,11 @@ func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Res
 		}
 		if resp.Stop != "" {
 			return resp, nil
+		}
+		// A cancelled turn stops reading at once. Leaving the range closes
+		// the connection, and what was not finished is not stored.
+		if ctx.Err() != nil {
+			return resp, context.Cause(ctx)
 		}
 	}
 	// The stream ended without a stop and without an error. If the turn

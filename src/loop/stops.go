@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
+	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/router"
 )
@@ -31,7 +32,9 @@ func StopKind(reason provider.Reason) (harness.StopKind, bool) {
 // StopFor turns a failed model request into the error a turn returns. An
 // error with a *provider.Error in its chain becomes a *StopError with the
 // provider's reset time, retry-after and message, and the account and model
-// of the chain entry that failed when the router named it. Any other error,
+// of the chain entry that failed when the router named it. A credential the
+// auth source could not give, such as a login that has to be redone, comes
+// from the router as an auth failure and so becomes an auth stop. Any other error,
 // and a provider error with a reason outside the list, is returned as it is.
 func StopFor(err error) error {
 	var perr *provider.Error
@@ -47,6 +50,12 @@ func StopFor(err error) error {
 		ResetAt:           perr.ResetAt,
 		RetryAfterSeconds: perr.RetryAfter.Seconds(),
 		Message:           perr.Message,
+	}
+	// A dead login never reached the provider, so the provider said
+	// nothing. The auth source's text tells the user which login to redo.
+	var login *auth.LoginRequiredError
+	if errors.As(err, &login) && stop.Message == "" {
+		stop.Message = login.Error()
 	}
 	var failed *router.Failed
 	if errors.As(err, &failed) {
