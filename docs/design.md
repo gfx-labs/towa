@@ -45,23 +45,23 @@ Packages:
 | package | role |
 |---|---|
 | `cmd/acpharness` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models` |
-| `internal/config` | koanf loading and the typed config |
-| `internal/acp` | ACP server on `coder/acp-go-sdk`, transports, update mapping |
-| `internal/session` | session lifecycle, modes, model switching, cancel |
-| `internal/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
-| `internal/provider` | provider interface, router, fallback, retry |
-| `internal/provider/{anthropic,openai,chat}` | wire clients |
-| `internal/auth` | account store, OAuth login and refresh, file locking |
-| `internal/tools` | registry, dialect selection, output gating |
-| `internal/tools/{claude,codex,generic,extras}` | tool sets |
-| `internal/mcp` | MCP client: stdio, streamable HTTP, legacy SSE, OAuth |
-| `internal/compact` | reactive, proactive, semantic, OpenAI native |
-| `internal/context` | AGENTS.md, skills, extra files and directories |
-| `internal/store` | store interface and backends |
-| `internal/telemetry` | OTel traces and metrics, slog handlers |
+| `src/config` | koanf loading and the typed config |
+| `src/acp` | ACP server on `coder/acp-go-sdk`, transports, update mapping |
+| `src/session` | session lifecycle, modes, model switching, cancel |
+| `src/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
+| `src/provider` | provider interface, router, fallback, retry |
+| `src/provider/{anthropic,openai,chat}` | wire clients |
+| `src/auth` | account store, OAuth login and refresh, file locking |
+| `src/tools` | registry, dialect selection, output gating |
+| `src/tools/{claude,codex,generic,extras}` | tool sets |
+| `src/mcp` | MCP client: stdio, streamable HTTP, legacy SSE, OAuth |
+| `src/compact` | reactive, proactive, semantic, OpenAI native |
+| `src/agentctx` | AGENTS.md, skills, extra files and directories |
+| `src/store` | store interface and backends |
+| `src/telemetry` | OTel traces and metrics, slog handlers |
 | `prompts/` | pinned upstream prompts and tool schemas, embedded |
 
-`internal/` while APIs settle. Anything jobshop should import moves to `pkg/` deliberately.
+`src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them.
 
 ## Process and transports
 
@@ -79,8 +79,10 @@ koanf, layered in this order, each later layer overriding earlier:
 3. `$XDG_CONFIG_HOME/acpharness/config.*`.
 4. Files listed in `ACPHARNESS_CONFIG` (path list, `:`-separated), and `--config` flags (repeatable).
 5. Environment `ACPHARNESS_*`, `__` as the nesting separator (`ACPHARNESS_LIMITS__MAX_TOOL_CALLS=200`).
-6. CLI flags.
+6. CLI flags, read from urfave/cli v3 by koanf's `cliflagv3` provider. A repeatable `--set key=value` reaches config keys without dedicated flags. Only explicitly supplied flags override earlier layers.
 7. Per-session overrides from `session/new` `_meta.acpharness` (allowlisted keys only: model, context files, skills dirs, limits, mode, mcp servers, compaction).
+
+koanf decodes the merged tree into one typed config struct. urfave/cli v3 defines commands and flags, and the application reads configuration only from the decoded struct. Flag names and environment names are mapped explicitly to the same canonical config keys.
 
 `acpharness config` prints the resolved config with secrets redacted and the source of each key.
 
@@ -193,7 +195,7 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 - Parallel execution of tool calls emitted in one message. Read-only tools run concurrently; writes to the same path serialize.
 - `batch`: run several independent tool calls in one call, for models that do not emit parallel calls.
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
-- Search: an agentgrep-style tool with grep, find, outline and trace modes, built on ripgrep's Go-native equivalents or the `rg` binary when present.
+- Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
 - Todo: maps to ACP `plan` updates. Uses TodoWrite or update_plan shapes in their dialects.
 - Web: webfetch with HTML to Markdown. Web search uses the provider's built-in server tool (Anthropic web search, OpenAI Responses web search, OpenRouter web plugin). Users who want an external backend add a tool or an MCP server.
 - Subagent: see below.
@@ -313,11 +315,21 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 - slog for logs. Stderr handler and OTel log handler are configured separately (level, format, enabled). Trace and span IDs are attached to records.
 - OTLP endpoint and headers through the standard `OTEL_*` environment variables plus config.
 
+## Code conventions
+
+- Go 1.27.3 with `CGO_ENABLED=0`. Packages start in `src/`, with deliberate promotion to `pkg/` for external callers.
+- urfave/cli v3 plus koanf `cliflagv3` is the selected CLI and configuration integration.
+- golangci-lint v2.15 with acphost's configuration and gofumpt.
+- Plain Go concurrency: contexts for cancellation, one owner for session state, channels for coordination, and small scoped mutexes for shared state where needed. No blanket lock-free rule.
+- Keep concrete types until a consumer needs an interface. Prefer small consumer-owned interfaces, explicit errors, and valid zero values where meaningful. Model lifecycle transitions explicitly without adding a sum-type framework.
+- Limits come from caller configuration, protocol requirements or measurements. Configured provider fallback is intentional policy, not silent error recovery.
+- Short dated notes in `docs/notes/` record decisions and dependency rationale. Comments explain non-obvious constraints.
+
 ## Release
 
 - Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`.
 - release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
-- Dependencies: `coder/acp-go-sdk` (same version line as jobshop), koanf, OTel Go SDK, the official MCP Go SDK, an embedded ripgrep alternative or `rg`. New dependencies need a reason in the PR.
+- Dependencies: `coder/acp-go-sdk` (jobshop's v0.13.5 line), koanf with `cliflagv3`, `urfave/cli/v3`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
 ## Validation
 
