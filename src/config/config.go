@@ -31,6 +31,7 @@ type Config struct {
 	Hooks      []Hook           `koanf:"hooks"`
 	Embeddings Embeddings       `koanf:"embeddings"`
 	OpenAI     OpenAI           `koanf:"openai"`
+	WebFetch   WebFetch         `koanf:"webfetch"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -85,7 +86,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults,
+		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -109,7 +110,7 @@ func (c *Config) validate() error {
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
-		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate,
+		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate,
 		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
