@@ -403,7 +403,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 ## Implementation order
 
-1. Repo scaffold, config, slog and OTel, ACP server on stdio with `initialize`, `session/new`, `session/prompt`, `session/cancel`, and a stub loop.
+1. Repo scaffold, config, slog and OTel, ACP server on stdio with `initialize`, `session/new`, `session/prompt`, `session/cancel`, and a stub loop. Done 2026-11-11: `docs/notes/2026-11-11-acp-layer.md` and `docs/notes/2026-11-11-config-telemetry-server.md`.
 2. Chat Completions provider (OpenRouter), generic dialect, agent loop with parallel tools, limits, cancellation. First real tasks run here.
 3. Anthropic provider with OAuth login, refresh and locking, Claude dialect with pinned prompts.
 4. Responses provider with Codex OAuth, Codex dialect, native compaction.
