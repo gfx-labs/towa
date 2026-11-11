@@ -158,14 +158,19 @@ func emitUnionMarshal(f *File, name string, variants []variantInfo) {
 				switch {
 				case vi.isNull:
 					gg.Return(Id("enc").Dot("WriteToken").Call(Qual(jsontextPkg, "Null")))
-				case !vi.isObject || len(vi.constPairs) == 0:
-					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Id("u").Dot(vi.fieldName)))
+				case !vi.isObject:
+					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Id("u").Dot(vi.fieldName), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
 				default:
 					gg.Id("v").Op(":=").Op("*").Id("u").Dot(vi.fieldName)
 					for _, kv := range vi.constPairs {
 						gg.Id("v").Dot(util.ToExportedField(kv[0])).Op("=").Lit(kv[1])
 					}
-					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("v")))
+					if name == "ContentBlock" {
+						// Preserve upstream's wire shaping during this migration.
+						gg.Id("v").Dot("Meta").Op("=").Nil()
+						gg.Id("v").Dot("Annotations").Op("=").Nil()
+					}
+					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("v"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
 				}
 			})
 		}
@@ -248,6 +253,16 @@ func zeroDefault(defaultJSON string) bool {
 // and a nil map as {}, which is what encoding/json/v2 writes anyway. A
 // default it could not write that way stops the generator.
 func emitDefaultsCodec(f *File, name string, defaults []defaultCodec) {
+	if len(defaults) > 0 {
+		// v1's generated default marshaler used json.Marshal, so strings
+		// inside these types were HTML-escaped even on a non-escaping wire.
+		f.Func().Params(Id("v").Id(name)).Id("MarshalJSONTo").Params(Id("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().Block(
+			Id("type").Id("Alias").Id(name),
+			Id("a").Op(":=").Id("Alias").Call(Id("v")),
+			Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("a"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true)))),
+		)
+		f.Line()
+	}
 	applied := []defaultCodec{}
 	for _, d := range defaults {
 		if d.nilable && d.defaultJSON != "[]" && d.defaultJSON != "{}" {
