@@ -4,7 +4,10 @@
 
 `src/subagent` runs a child through `Runner.Run(context.Context, loop.Turn)`.
 `*loop.Loop` implements it. One `Spawner` serves the process. Input is a
-prompt, optional named model and description. Result is the child's last
+prompt, optional named model and description. The session supplies its runner
+per call in `Parent.Loop`, so process-wide admission does not retain a
+session's MCP connections or tool set. `Options.Loop` remains an optional
+default for callers sharing one loop. Result is the child's last
 message, session id, stop reason and usage. There is no dialect adapter.
 
 The child inherits the parent's working directory, additional directories,
@@ -59,10 +62,16 @@ semantics.
 ## Checked
 
 `go build ./...`, `go vet ./src/subagent/...`, Linux `CGO_ENABLED=0`
-build and darwin/arm64 `CGO_ENABLED=0` build passed. The child integration
-tests compile, but skipped because the loop lane has not yet recorded
-`looptest.ReadTurn`. No child run has been checked yet. Lint is pending
-configuration wiring and the other lanes' edits.
+build, darwin/arm64 `CGO_ENABLED=0` build and capability lint passed.
+`go test -race -count=5 ./src/subagent/...` ran without skips against the
+real loop fixture in `98425d2`: the Chat Completions client, router and
+directory store replay the recorded Ollama turn. The tests check the final
+answer, stored parent id, descendant conversation search, permission and
+progress forwarding, refused model selection, depth and concurrency, and
+a configured limit returned as a typed error. Both per-call and default
+runner selection run through that loop. No fake loop or provider is used.
+The recordings say nothing about hosted providers' authentication, rate
+limits or reasoning items.
 
 ## Not done
 

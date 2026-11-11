@@ -26,8 +26,8 @@ type Runner interface {
 // Options is what a Spawner is built from.
 type Options struct {
 	Config config.Subagents
-	// Loop runs the child turns. It is the loop the parents run on, so a
-	// child has the same tools, context, store and providers.
+	// Loop is an optional default runner. A process-wide spawner serving
+	// different session loops leaves it nil and supplies Parent.Loop.
 	Loop Runner
 }
 
@@ -46,15 +46,15 @@ func New(o Options) (*Spawner, error) {
 	if err := o.Config.Validate(); err != nil {
 		return nil, err
 	}
-	if o.Loop == nil {
-		return nil, errors.New("subagent: Loop is required")
-	}
 	o.Config.Models = slices.Clone(o.Config.Models)
 	return &Spawner{cfg: o.Config, loop: o.Loop}, nil
 }
 
 // Parent is the call that asks for a subagent.
 type Parent struct {
+	// Loop runs this call's child with this session's tools, context,
+	// store and providers. When nil, Options.Loop must have been supplied.
+	Loop Runner
 	// Turn is the turn the call belongs to. The child's turn is a copy of
 	// it with its own session, prompt, model and updates, so the child has
 	// the parent's working directory, client and Permit: a child's tool
@@ -181,6 +181,13 @@ func depth(ctx context.Context) int {
 // context the tool's Run was given: cancelling it cancels the child, and the
 // child's usage is charged to the turn it belongs to.
 func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, error) {
+	runner := parent.Loop
+	if runner == nil {
+		runner = s.loop
+	}
+	if runner == nil {
+		return Result{}, &Error{Kind: KindFailed, Err: errors.New("Parent.Loop or Options.Loop is required")}
+	}
 	if _, err := uuid.Parse(string(parent.Turn.SessionID)); err != nil {
 		return Result{}, &Error{Kind: KindFailed, Err: fmt.Errorf("parent session id: %w", err)}
 	}
@@ -219,7 +226,7 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 	// The view takes every update and picks what it shows.
 	child.Sendable = func(acp.SessionUpdate) bool { return true }
 
-	res, err := s.loop.Run(context.WithValue(ctx, depthKey{}, at+1), child)
+	res, err := runner.Run(context.WithValue(ctx, depthKey{}, at+1), child)
 	if err != nil {
 		failed := &Error{Kind: KindFailed, SessionID: child.SessionID, Err: err}
 		var stop *loop.StopError
