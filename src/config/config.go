@@ -6,12 +6,20 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 )
 
-// Config is the resolved configuration. A section is added here when the
-// code that reads it exists.
+// Config is the resolved configuration. Each section has its own file, with
+// its type, its defaults and its validation. A field is added to a section
+// when the code that reads it exists.
 type Config struct {
-	Telemetry Telemetry `koanf:"telemetry"`
+	Telemetry Telemetry  `koanf:"telemetry"`
+	Accounts  []Account  `koanf:"accounts"`
+	Providers []Provider `koanf:"providers"`
+	Store     Store      `koanf:"store"`
+	Tools     Tools      `koanf:"tools"`
+	MCP       MCP        `koanf:"mcp"`
+	Session   Session    `koanf:"session"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -49,15 +57,25 @@ type OTelLog struct {
 	Level   slog.Level `koanf:"level"`
 }
 
-// defaults is the first layer. Every key the program reads has a value here,
-// so a decoded Config never holds a zero value by accident.
-var defaults = map[string]any{
+// telemetryDefaults holds the defaults of the telemetry section.
+var telemetryDefaults = map[string]any{
 	"telemetry.otel":                false,
 	"telemetry.logs.stderr.enabled": true,
 	"telemetry.logs.stderr.level":   "info",
 	"telemetry.logs.stderr.format":  FormatText,
 	"telemetry.logs.otel.enabled":   true,
 	"telemetry.logs.otel.level":     "info",
+}
+
+// defaults is the first layer: every section's defaults. Every key the
+// program reads has a value here, so a decoded Config never holds a zero
+// value by accident. A list, such as accounts, has no default.
+func defaults() map[string]any {
+	all := map[string]any{}
+	for _, section := range []map[string]any{telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults} {
+		maps.Copy(all, section)
+	}
+	return all
 }
 
 // FlagKeys maps a command-line flag name to the config key it sets.
@@ -72,6 +90,11 @@ func (c *Config) validate() error {
 	case FormatText, FormatJSON:
 	default:
 		return fmt.Errorf("telemetry.logs.stderr.format: %q is not %q or %q", f, FormatText, FormatJSON)
+	}
+	for _, section := range []func() error{c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate, c.Session.validate} {
+		if err := section(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

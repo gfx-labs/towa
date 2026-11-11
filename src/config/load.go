@@ -62,7 +62,7 @@ type Loaded struct {
 // have is an error, whichever layer it came from.
 func Load(src Sources) (*Loaded, error) {
 	l := &loader{k: koanf.New(delim), origin: map[string]string{}}
-	if err := l.add("default", confmap.Provider(defaults, delim), nil); err != nil {
+	if err := l.add("default", confmap.Provider(defaults(), delim), nil); err != nil {
 		return nil, err
 	}
 	for _, dir := range []string{src.SystemDir, src.UserDir} {
