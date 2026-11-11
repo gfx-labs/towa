@@ -19,10 +19,13 @@ type AgentSideConnection struct {
 // records.
 //
 // Requests are handled concurrently, so agent orders a session/cancel
-// against the session's prompts with Arrival.
+// against the session's prompts with Arrival. The one exception is
+// initialize: it is handled in order, so it has finished before the agent
+// sees any later message, including one the client sent without waiting.
 func NewAgentSideConnection(agent Agent, w io.Writer, r io.Reader, logger *slog.Logger) *AgentSideConnection {
 	a := &AgentSideConnection{agent: agent}
 	a.conn = NewConnection(a.handle, w, r, logger)
+	a.conn.inOrder = func(method string) bool { return method == AgentMethodInitialize }
 	return a
 }
 

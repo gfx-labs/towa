@@ -3,7 +3,6 @@ package acp_test
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/src/acp"
+	"github.com/gfx-labs/acpharness/src/acp/acptest"
 )
 
 // The tests run in synctest bubbles so that a message that never arrives
@@ -47,7 +47,8 @@ func TestPromptTurn(t *testing.T) {
 				}
 			}
 			// The client's answer arrives while this request is still being
-			// handled, so requests must not be handled on the reading goroutine.
+			// handled, so requests must not be handled on the goroutine that
+			// delivers responses.
 			file, err := agentConn.ReadTextFile(ctx, acp.ReadTextFileRequest{SessionId: p.SessionId, Path: "/a.txt"})
 			if err != nil {
 				return acp.PromptResponse{}, err
@@ -174,11 +175,11 @@ func TestCancelRequestNotification(t *testing.T) {
 			return acp.PromptResponse{}, ctx.Err()
 		}
 
-		w.send(`{"jsonrpc":"2.0","id":"p-1","method":"session/prompt","params":{"sessionId":"s","prompt":[]}}`)
+		w.Send(`{"jsonrpc":"2.0","id":"p-1","method":"session/prompt","params":{"sessionId":"s","prompt":[]}}`)
 		<-started
-		w.send(`{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":"p-1"}}`)
+		w.Send(`{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":"p-1"}}`)
 
-		got := w.recv()
+		got := w.Recv()
 		require.JSONEq(t, `"p-1"`, string(got.ID))
 		require.NotNil(t, got.Error)
 		require.Equal(t, acp.NewRequestCancelled(nil).Code, got.Error.Code)
@@ -209,7 +210,7 @@ func TestArrivalOrdersCancelAgainstPrompts(t *testing.T) {
 
 		// The two prompts run concurrently with each other and with the
 		// cancel, so only Arrival tells the agent which prompt the cancel is for.
-		w.send(
+		w.Send(
 			`{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"s","prompt":[{"type":"text","text":"first"}]}}`,
 			`{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"s"}}`,
 			`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"s","prompt":[{"type":"text","text":"second"}]}}`,
@@ -279,8 +280,8 @@ func TestErrorResponses(t *testing.T) {
 						return acp.PromptResponse{}, acp.NewAuthRequired(nil)
 					},
 				})
-				w.send(tt.line)
-				got := w.recv()
+				w.Send(tt.line)
+				got := w.Recv()
 				require.JSONEq(t, tt.wantID, string(got.ID))
 				require.NotNil(t, got.Error)
 				require.Equal(t, tt.wantCode, got.Error.Code)
@@ -293,14 +294,14 @@ func TestUnknownNotificationIsIgnored(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, w := serveAgent(t, &agent{})
 
-		w.send(
+		w.Send(
 			`{"jsonrpc":"2.0","method":"_example.com/file_opened","params":{"path":"/a"}}`,
 			`{"jsonrpc":"2.0","id":1,"method":"_example.com/buffers"}`,
 		)
 
 		// The first thing written answers the request: the notification got
 		// no reply, and the unknown request got "Method not found".
-		got := w.recv()
+		got := w.Recv()
 		require.JSONEq(t, `1`, string(got.ID))
 		require.NotNil(t, got.Error)
 		require.Equal(t, acp.NewMethodNotFound("").Code, got.Error.Code)
@@ -325,7 +326,7 @@ func TestNotificationHandlerCannotWaitForPeer(t *testing.T) {
 
 		_, err := clientConn.Prompt(t.Context(), acp.PromptRequest{SessionId: "s", Prompt: []acp.ContentBlock{}})
 		require.NoError(t, err)
-		require.ErrorIs(t, <-got, acp.ErrWaitInNotification)
+		require.ErrorIs(t, <-got, acp.ErrWaitInOrder)
 	})
 }
 
@@ -341,16 +342,46 @@ func TestClosedConnectionFailsCalls(t *testing.T) {
 			return acp.PromptResponse{}, err
 		}
 
-		w.send(`{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"s","prompt":[]}}`)
-		require.Equal(t, "fs/read_text_file", w.recv().Method)
+		w.Send(`{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"s","prompt":[]}}`)
+		require.Equal(t, "fs/read_text_file", w.Recv().Method)
 
 		// The client goes away without answering.
-		w.close()
+		w.Close()
 		require.ErrorIs(t, <-got, acp.ErrClosed)
 
 		<-agentConn.Done()
 		_, err := agentConn.ReadTextFile(t.Context(), acp.ReadTextFileRequest{SessionId: "s", Path: "/a"})
 		require.ErrorIs(t, err, acp.ErrClosed)
+	})
+}
+
+func TestServeStopsWhenContextIsCancelled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		started := make(chan struct{})
+		ag := &agent{prompt: func(ctx context.Context, _ acp.PromptRequest) (acp.PromptResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, nil
+		}}
+		// The reading goroutine ends only when its reader does, which the
+		// wire sees to when the test ends.
+		w, in, out := acptest.New(t)
+		agentConn := acp.NewAgentSideConnection(ag, out, in, nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		served := make(chan error, 1)
+		go func() { served <- agentConn.Serve(ctx) }()
+
+		w.Send(`{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"s","prompt":[]}}`)
+		<-started
+		// The client keeps its end open: only the context stops the agent.
+		cancel()
+
+		// The running handler was cancelled and its answer was written
+		// before Serve returned.
+		got := w.Recv()
+		require.JSONEq(t, `{"stopReason":"cancelled"}`, string(got.Result))
+		require.ErrorIs(t, <-served, context.Canceled)
 	})
 }
 
@@ -427,54 +458,17 @@ func connect(t *testing.T, a acp.Agent, c acp.Client) (*acp.AgentSideConnection,
 	return agentConn, clientConn
 }
 
-// wire is the client's end of a connection, driven one raw line at a time.
-type wire struct {
-	t   *testing.T
-	in  *io.PipeWriter
-	out *io.PipeReader
-	br  *bufio.Reader
-}
-
-type wireMessage struct {
-	ID     json.RawMessage   `json:"id"`
-	Method string            `json:"method"`
-	Error  *acp.RequestError `json:"error"`
-}
-
-// serveAgent serves an agent whose client is the returned wire.
-func serveAgent(t *testing.T, a acp.Agent) (*acp.AgentSideConnection, *wire) {
+// serveAgent serves an agent whose client is the returned raw wire.
+func serveAgent(t *testing.T, a acp.Agent) (*acp.AgentSideConnection, *acptest.Wire) {
 	t.Helper()
-	toAgentR, toAgentW := io.Pipe()
-	toClientR, toClientW := io.Pipe()
-	agentConn := acp.NewAgentSideConnection(a, toClientW, toAgentR, nil)
-	w := &wire{t: t, in: toAgentW, out: toClientR, br: bufio.NewReader(toClientR)}
+	w, in, out := acptest.New(t)
+	agentConn := acp.NewAgentSideConnection(a, out, in, nil)
 
 	var served sync.WaitGroup
 	served.Go(func() { _ = agentConn.Serve(context.Background()) })
 	t.Cleanup(func() {
-		w.close()
+		w.Close()
 		served.Wait()
 	})
 	return agentConn, w
-}
-
-func (w *wire) send(lines ...string) {
-	w.t.Helper()
-	_, err := io.WriteString(w.in, strings.Join(lines, "\n")+"\n")
-	require.NoError(w.t, err)
-}
-
-func (w *wire) recv() wireMessage {
-	w.t.Helper()
-	line, err := w.br.ReadBytes('\n')
-	require.NoError(w.t, err)
-	var m wireMessage
-	require.NoError(w.t, json.Unmarshal(line, &m), "line: %s", line)
-	return m
-}
-
-// close ends the client: the agent reads end of input, and its writes fail.
-func (w *wire) close() {
-	_ = w.in.Close()
-	_ = w.out.Close()
 }

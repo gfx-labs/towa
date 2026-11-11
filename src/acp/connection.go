@@ -21,12 +21,13 @@ const methodCancelRequest = "$/cancel_request"
 // ErrClosed is returned by calls on a connection whose reader has ended.
 var ErrClosed = errors.New("acp: connection closed")
 
-// ErrWaitInNotification is returned when a request is sent with the context
-// of a notification handler. Notifications are handled on the reading
-// goroutine, which is the one that would read the response, so the call
-// could never return. A handler that must call the peer starts a goroutine
-// with a context of its own.
-var ErrWaitInNotification = errors.New("acp: a notification handler cannot wait for a response from the peer")
+// ErrWaitInOrder is returned when a request is sent with the context of a
+// handler that runs in order: a notification handler, or the agent's
+// initialize handler. Those run on the goroutine that runs Serve, which is
+// the one that would deliver the response, so the call could never return. A
+// handler that must call the peer starts a goroutine with a context of its
+// own.
+var ErrWaitInOrder = errors.New("acp: a handler that runs in order cannot wait for a response from the peer")
 
 // errEmptyResponse is returned to the caller of a request whose response
 // carried neither a result nor an error.
@@ -56,8 +57,8 @@ type response struct {
 }
 
 type (
-	arrivalKey      struct{}
-	notificationKey struct{}
+	arrivalKey struct{}
+	inOrderKey struct{}
 )
 
 // Arrival returns the position of the inbound message that ctx's handler is
@@ -73,9 +74,14 @@ func Arrival(ctx context.Context) (uint64, bool) {
 //
 // Inbound notifications and responses are handled one at a time on the
 // goroutine that runs Serve, in the order they were read. Each inbound
-// request is handled on its own goroutine.
+// request is handled on its own goroutine. A second goroutine reads the
+// messages, so that Serve can stop while a read is blocked.
 type Connection struct {
 	handler MethodHandler
+	// inOrder names the requests that are handled like notifications: on
+	// the goroutine that runs Serve, finished before the next message is
+	// looked at. Nil means none.
+	inOrder func(method string) bool
 	logger  *slog.Logger
 	r       io.Reader
 
@@ -114,12 +120,16 @@ func NewConnection(handler MethodHandler, w io.Writer, r io.Reader, logger *slog
 // Done is closed when Serve has stopped reading.
 func (c *Connection) Done() <-chan struct{} { return c.done }
 
-// Serve reads and handles messages until the reader ends or fails. It
-// returns nil when the peer closed the stream between messages. ctx is the
-// parent of every handler's context. Cancelling ctx does not interrupt a
-// blocked read: close the reader to stop Serve. Before it returns, Serve
-// cancels the handlers still running and waits for them, which includes
-// writing their responses: close the writer if the peer has stopped reading.
+// Serve handles messages until the reader ends or fails, or ctx is
+// cancelled. It returns nil when the peer closed the stream between
+// messages, and ctx's error when ctx ended first. ctx is the parent of every
+// handler's context. Before it returns, Serve cancels the handlers still
+// running and waits for them, which includes writing their responses: close
+// the writer if the peer has stopped reading.
+//
+// A read that is blocked when ctx is cancelled stays blocked, with its
+// goroutine, until the reader returns. Standard input cannot be interrupted,
+// so a process that stops this way exits. Close any other reader.
 //
 // A message is read whole, whatever its length. Prompts carry files and
 // images inline, and the protocol sets no limit.
@@ -130,39 +140,63 @@ func (c *Connection) Serve(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	br := bufio.NewReader(c.r)
+	lines := make(chan []byte)
+	readDone := make(chan error, 1)
+	go func() { readDone <- c.read(lines) }()
+
 	var arrival uint64
-	var readErr error
-	for {
-		line, err := br.ReadBytes('\n')
-		if err != nil {
-			switch {
-			case !errors.Is(err, io.EOF):
-				readErr = err
-			case len(bytes.TrimSpace(line)) > 0:
-				readErr = io.ErrUnexpectedEOF
-			}
-			break
+	var err error
+	for serving := true; serving; {
+		select {
+		case line := <-lines:
+			arrival++
+			c.dispatch(context.WithValue(ctx, arrivalKey{}, arrival), line)
+		case err = <-readDone:
+			serving = false
+		case <-ctx.Done():
+			err = context.Cause(ctx)
+			serving = false
 		}
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		arrival++
-		c.dispatch(context.WithValue(ctx, arrivalKey{}, arrival), line)
 	}
 
 	c.mu.Lock()
 	c.closeErr = ErrClosed
-	if readErr != nil {
-		c.closeErr = fmt.Errorf("%w: %w", ErrClosed, readErr)
+	if err != nil {
+		c.closeErr = fmt.Errorf("%w: %w", ErrClosed, err)
 	}
 	c.mu.Unlock()
 	close(c.done)
 
 	cancel()
 	c.handlers.Wait()
-	return readErr
+	return err
+}
+
+// read passes each message to lines until the reader ends or the connection
+// is done. It returns nil when the reader ended between messages.
+func (c *Connection) read(lines chan<- []byte) error {
+	br := bufio.NewReader(c.r)
+	for {
+		line, err := br.ReadBytes('\n')
+		if err != nil {
+			switch {
+			case !errors.Is(err, io.EOF):
+				return err
+			case len(bytes.TrimSpace(line)) > 0:
+				return io.ErrUnexpectedEOF
+			}
+			return nil
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		select {
+		case lines <- line:
+		case <-c.done:
+			return nil
+		}
+	}
 }
 
 func (c *Connection) dispatch(ctx context.Context, line []byte) {
@@ -203,7 +237,7 @@ func (c *Connection) handleNotification(ctx context.Context, msg *message) {
 		}
 		return
 	}
-	_, rerr := c.handler(context.WithValue(ctx, notificationKey{}, true), msg.Method, msg.Params)
+	_, rerr := c.handler(context.WithValue(ctx, inOrderKey{}, true), msg.Method, msg.Params)
 	switch {
 	case rerr == nil:
 	case rerr.Code == codeMethodNotFound:
@@ -215,6 +249,11 @@ func (c *Connection) handleNotification(ctx context.Context, msg *message) {
 }
 
 func (c *Connection) handleRequest(ctx context.Context, msg *message) {
+	if c.inOrder != nil && c.inOrder(msg.Method) {
+		result, rerr := c.handler(context.WithValue(ctx, inOrderKey{}, true), msg.Method, msg.Params)
+		c.respond(msg.ID, result, rerr)
+		return
+	}
 	key := string(msg.ID)
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -313,8 +352,8 @@ func (c *Connection) SendNotification(_ context.Context, method string, params a
 }
 
 func (c *Connection) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	if ctx.Value(notificationKey{}) != nil {
-		return nil, ErrWaitInNotification
+	if ctx.Value(inOrderKey{}) != nil {
+		return nil, ErrWaitInOrder
 	}
 	raw, err := marshalParams(params)
 	if err != nil {
