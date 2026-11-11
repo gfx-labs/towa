@@ -3,6 +3,7 @@ package loop_test
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/store/dir"
+	"github.com/gfx-labs/acpharness/src/tools"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
@@ -117,12 +119,51 @@ func TestATurnTokenLimitStopsBeforeTheNextRequest(t *testing.T) {
 	limits := f.Config.Limits
 	limits.MaxInputTokens = 1
 	turn.Limits = &limits
-	result, err := f.Loop.Run(t.Context(), turn)
+	turn.Model = "chosen"
+	turn.Sendable = func(acp.SessionUpdate) bool { return false }
+	turn.Permit = func(context.Context, string, tools.Effect, acp.ToolCallUpdate) (bool, error) { return true, nil }
+	var observed loop.Invocation
+	opts := f.Options
+	resolve := opts.Resolve
+	opts.Resolve = func(ctx context.Context, model string) (loop.Resolved, error) {
+		if model != "chosen" {
+			return loop.Resolved{}, errors.New("resolver received a stale model selection")
+		}
+		resolved, err := resolve(ctx, "")
+		if err != nil {
+			return loop.Resolved{}, err
+		}
+		run := resolved.Tools.Tools[0].Run
+		resolved.Tools.Tools[0].Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
+			current, ok := loop.Current(ctx)
+			if !ok {
+				return tools.Result{}, errors.New("tool has no current invocation")
+			}
+			observed = current
+			// A child's private limit changes must not change its parent.
+			current.Turn.Limits.MaxInputTokens = 999
+			again, ok := loop.Current(ctx)
+			if !ok || again.Turn.Limits.MaxInputTokens != 1 {
+				return tools.Result{}, errors.New("current invocation shares mutable limits")
+			}
+			return run(ctx, call)
+		}
+		return resolved, nil
+	}
+	l, err := loop.New(opts)
+	require.NoError(t, err)
+	result, err := l.Run(t.Context(), turn)
 	require.NoError(t, err)
 	assert.Equal(t, acp.StopReasonMaxTurnRequests, result.StopReason)
 	require.NotNil(t, result.Stop)
 	assert.Equal(t, harness.StopLimit, result.Stop.Kind)
 	assert.Equal(t, config.KeyMaxInputTokens, result.Stop.Limit)
+	assert.Same(t, l, observed.Loop)
+	assert.Equal(t, turn.SessionID, observed.Turn.SessionID)
+	assert.Equal(t, "chosen", observed.Turn.Model)
+	require.NotNil(t, observed.Turn.Permit)
+	require.NotNil(t, observed.Turn.Sendable)
+	assert.False(t, observed.Turn.Sendable(acp.SessionUpdate{}))
 	require.NotNil(t, result.Usage)
 	assert.Positive(t, result.Usage.InputTokens)
 	assert.Equal(t, 1, f.Served())
