@@ -420,6 +420,10 @@ func (a *Agent) setOption(ctx context.Context, s *session, id acp.SessionConfigI
 	s.setMu.Lock()
 	defer s.setMu.Unlock()
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return unknownSession(s.id)
+	}
 	changed := s.values[id] != value
 	s.values[id] = value
 	if changed && id == ModeOption {
@@ -644,12 +648,13 @@ func (a *Agent) CloseSession(ctx context.Context, p acp.CloseSessionRequest) (ac
 	}
 	// A session that is live on another connection is not this one's to
 	// close, and is unknown to it like any session it has not loaded.
-	s := a.takeOwned(a, p.SessionId)
+	defer a.lock(p.SessionId)()
+	s, err := a.drain(ctx, p.SessionId, a)
+	if err != nil {
+		return acp.CloseSessionResponse{}, err
+	}
 	if s == nil {
 		return acp.CloseSessionResponse{}, nil
-	}
-	if err := s.close(ctx); err != nil {
-		return acp.CloseSessionResponse{}, err
 	}
 	a.logger.Info("session closed", "session", s.id)
 	return acp.CloseSessionResponse{}, nil
@@ -809,6 +814,10 @@ func (a *Agent) UnstableSetSessionTitle(ctx context.Context, p acp.UnstableSetSe
 	s.setMu.Lock()
 	defer s.setMu.Unlock()
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return acp.UnstableSetSessionTitleResponse{}, unknownSession(id)
+	}
 	s.title = title
 	s.mu.Unlock()
 	if err := a.persist(ctx, s); err != nil {
@@ -846,6 +855,12 @@ func (a *Agent) session(id acp.SessionId) (*session, error) {
 	// until it loads or resumes it.
 	s, owner := a.lookup(id)
 	if s == nil || owner != a {
+		return nil, unknownSession(id)
+	}
+	s.mu.Lock()
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
 		return nil, unknownSession(id)
 	}
 	return s, nil

@@ -126,9 +126,8 @@ func (h *Host) Close(ctx context.Context) error {
 	h.ending = true
 	h.stop()
 	var sessions []*session
-	for id, s := range h.live {
+	for _, s := range h.live {
 		sessions = append(sessions, s)
-		delete(h.live, id)
 	}
 	h.liveMu.Unlock()
 	var errs []error
@@ -136,7 +135,11 @@ func (h *Host) Close(ctx context.Context) error {
 		s.beginClose(ctx)
 	}
 	for _, s := range sessions {
-		errs = append(errs, s.close(ctx))
+		err := s.close(ctx)
+		errs = append(errs, err)
+		if err == nil {
+			h.forget(s)
+		}
 	}
 	h.opening.Wait()
 	return errors.Join(errs...)
@@ -168,10 +171,9 @@ func (a *Agent) Close(ctx context.Context) error {
 	a.liveMu.Lock()
 	a.ended = true
 	var owned []*session
-	for id, s := range a.live {
+	for _, s := range a.live {
 		if s.owner == a {
 			owned = append(owned, s)
-			delete(a.live, id)
 		}
 	}
 	a.liveMu.Unlock()
@@ -180,7 +182,11 @@ func (a *Agent) Close(ctx context.Context) error {
 		s.beginClose(ctx)
 	}
 	for _, s := range owned {
-		errs = append(errs, s.close(ctx))
+		err := s.close(ctx)
+		errs = append(errs, err)
+		if err == nil {
+			a.forget(s)
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -196,25 +202,29 @@ func (h *shared) lookup(id acp.SessionId) (*session, *Agent) {
 	return s, s.owner
 }
 
-// take removes a live session from the table, whichever agent has it.
-func (h *shared) take(id acp.SessionId) *session {
+// forget removes only this instance, never a replacement attached meanwhile.
+// The caller has already waited for its turn and runtime to stop.
+func (h *shared) forget(s *session) {
 	h.liveMu.Lock()
 	defer h.liveMu.Unlock()
-	s := h.live[id]
-	delete(h.live, id)
-	return s
+	if h.live[s.id] == s {
+		delete(h.live, s.id)
+	}
 }
 
-// takeOwned removes a session from the table if it is live on owner.
-func (h *shared) takeOwned(owner *Agent, id acp.SessionId) *session {
-	h.liveMu.Lock()
-	defer h.liveMu.Unlock()
-	s := h.live[id]
-	if s == nil || s.owner != owner {
-		return nil
+// drain leaves a closing session visible even when ctx stops waiting, so
+// a later attach must still wait for its turn and runtime to finish.
+// Callers hold the session's id lock.
+func (h *shared) drain(ctx context.Context, id acp.SessionId, owner *Agent) (*session, error) {
+	s, actual := h.lookup(id)
+	if s == nil || owner != nil && actual != owner {
+		return nil, nil
 	}
-	delete(h.live, id)
-	return s
+	if err := s.close(ctx); err != nil {
+		return s, err
+	}
+	h.forget(s)
+	return s, nil
 }
 
 // put makes a session live on owner. It fails for an agent whose
@@ -224,6 +234,9 @@ func (h *shared) put(s *session, owner *Agent) error {
 	defer h.liveMu.Unlock()
 	if owner.ended || h.ending {
 		return errors.New("session: the connection has ended")
+	}
+	if h.live[s.id] != nil {
+		return errors.New("session: a previous owner has not finished draining")
 	}
 	s.owner = owner
 	h.live[s.id] = s

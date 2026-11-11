@@ -121,11 +121,11 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	// the protocol has no message for it: the turn it was running answers
 	// as cancelled, and its next request for the session answers that the
 	// session is unknown.
-	live := a.take(r.id)
+	live, err := a.drain(ctx, r.id, nil)
+	if err != nil {
+		return nil, nil, err
+	}
 	if live != nil {
-		if err := live.close(ctx); err != nil {
-			return nil, nil, err
-		}
 		// The old turn may have updated metadata while it stopped.
 		meta, err = a.storedMeta(ctx, r.id)
 		if err != nil {
@@ -286,10 +286,8 @@ func (a *Agent) DeleteSession(ctx context.Context, p acp.DeleteSessionRequest) (
 	if err != nil {
 		return acp.DeleteSessionResponse{}, err
 	}
-	if live := a.take(p.SessionId); live != nil {
-		if err := live.close(ctx); err != nil {
-			return acp.DeleteSessionResponse{}, err
-		}
+	if _, err := a.drain(ctx, p.SessionId, nil); err != nil {
+		return acp.DeleteSessionResponse{}, err
 	}
 	if err := a.store.Delete(ctx, meta.ID); err != nil {
 		return acp.DeleteSessionResponse{}, storeError(p.SessionId, err)

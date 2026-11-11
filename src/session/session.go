@@ -187,8 +187,13 @@ func (s *session) beginClose(ctx context.Context) {
 		// Finish cleanup even if the caller stops waiting for it.
 		go func() {
 			s.slot <- struct{}{}
-			if s.runtime.Close != nil {
-				s.closeErr = s.runtime.Close(context.WithoutCancel(ctx))
+			// Setters that already passed lookup finish before a new owner
+			// reads metadata. Later setters see closed under this same lock.
+			s.setMu.Lock()
+			runtime := s.runtime
+			s.setMu.Unlock()
+			if runtime.Close != nil {
+				s.closeErr = runtime.Close(context.WithoutCancel(ctx))
 			}
 			close(s.closeDone)
 		}()

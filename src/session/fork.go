@@ -32,20 +32,21 @@ func (a *Agent) archive(ctx context.Context, id acp.SessionId, archived bool) er
 		return err
 	}
 	defer a.lock(id)()
+	if archived {
+		if _, err := a.drain(ctx, id, nil); err != nil {
+			return err
+		}
+	}
+	// A loaded archived session can change config concurrently. Hold the
+	// same lock from the metadata read through both durable and live writes.
+	live, _ := a.lookup(id)
+	if live != nil {
+		live.setMu.Lock()
+		defer live.setMu.Unlock()
+	}
 	meta, err := a.storedMeta(ctx, id)
 	if err != nil {
 		return err
-	}
-	if archived {
-		if live := a.take(id); live != nil {
-			if err := live.close(ctx); err != nil {
-				return err
-			}
-			meta, err = a.storedMeta(ctx, id)
-			if err != nil {
-				return err
-			}
-		}
 	}
 	meta.Archived = archived
 	if err := a.store.SetMeta(ctx, meta); err != nil {
@@ -53,7 +54,7 @@ func (a *Agent) archive(ctx context.Context, id acp.SessionId, archived bool) er
 	}
 	// Unarchiving does not close a session that was explicitly loaded while
 	// archived. Keep its next metadata write from restoring the old flag.
-	if live, _ := a.lookup(id); live != nil {
+	if live != nil {
 		live.mu.Lock()
 		live.meta.Archived = archived
 		live.mu.Unlock()
