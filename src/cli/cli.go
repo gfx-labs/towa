@@ -105,6 +105,7 @@ func serve(ctx context.Context, cmd *cli.Command, h Host) error {
 		Logger:  tel.Logger,
 		Tracer:  tel.Tracer,
 		Meter:   tel.Meter,
+		Session: loaded.Config.Session,
 	})
 	if err != nil {
 		return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
