@@ -361,7 +361,7 @@ func (tn *turn) run(ctx context.Context) (Result, error) {
 		left, limited := ToolCallsLeft(tn.limits, tn.snapshot())
 		// A tool that runs a model of its own, a subagent, reports what it
 		// used here, so the turn's limits count it.
-		toolCtx := context.WithValue(ctx, spendKey{}, tn.add)
+		toolCtx := tn.toolContext(ctx)
 		done := Dispatcher{
 			Tools: tn.model.Tools,
 			Env:   tools.Env{SessionID: t.SessionID, Cwd: t.Cwd, Dirs: t.Dirs},
@@ -614,13 +614,18 @@ func (tn *turn) toolUpdate(ctx context.Context, r transcript.ToolResult, content
 // send sends one update. The first failure is kept and ends the turn: a
 // client that cannot be reached is not worth spending tokens on.
 func (tn *turn) send(ctx context.Context, update acp.SessionUpdate) {
+	_ = tn.update(ctx, update)
+}
+
+func (tn *turn) update(ctx context.Context, update acp.SessionUpdate) error {
 	tn.sendMu.Lock()
 	defer tn.sendMu.Unlock()
 	if tn.sendErr != nil {
-		return
+		return tn.sendErr
 	}
 	// A cancelled turn still tells the client how its tool calls ended.
 	if err := tn.t.Update(context.WithoutCancel(ctx), update); err != nil {
 		tn.sendErr = fmt.Errorf("loop: sending an update: %w", err)
 	}
+	return tn.sendErr
 }
