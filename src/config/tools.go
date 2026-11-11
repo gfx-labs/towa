@@ -76,6 +76,8 @@ type ToolsGate struct {
 
 // ToolsBatch configures the batch tool.
 type ToolsBatch struct {
+	// Enabled exposes the batch extra to the model.
+	Enabled bool `koanf:"enabled"`
 	// MaxCalls is the most calls one batch may hold. They may all run at
 	// once.
 	MaxCalls int `koanf:"max_calls"`
@@ -141,6 +143,7 @@ var toolsDefaults = map[string]any{
 	// (codex-rs/utils/string/src/truncate.rs:6 and :96).
 	"tools.gate.bytes_per_token": 4,
 	// Unchecked: jcode's batch takes one to ten calls.
+	"tools.batch.enabled":   true,
 	"tools.batch.max_calls": 10,
 }
 

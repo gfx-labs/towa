@@ -55,7 +55,7 @@ type echoInput struct {
 
 // mcpTools starts a real MCP server with one tool of the given name and
 // returns the Tools method of a manager connected to it.
-func mcpTools(t *testing.T, toolName string) func(context.Context, []string) ([]tools.Tool, error) {
+func mcpTools(t *testing.T, toolName string) []tools.Tool {
 	t.Helper()
 	server := sdk.NewServer(&sdk.Implementation{Name: "toolset-test-server", Version: "1"}, nil)
 	sdk.AddTool(server, &sdk.Tool{Name: toolName, Description: "Return the text it is given."},
@@ -78,7 +78,9 @@ func mcpTools(t *testing.T, toolName string) func(context.Context, []string) ([]
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, manager.Close()) })
-	return manager.Tools
+	list, err := manager.Tools(t.Context(), nil)
+	require.NoError(t, err)
+	return list
 }
 
 func TestAssembleJoinsDialectExtrasAndMCPInOrder(t *testing.T) {
@@ -179,9 +181,8 @@ func TestAssembleRefusesASetThatCannotBeUsed(t *testing.T) {
 		Tools:   dialect(tool("echo", strict)),
 		MCP:     mcpTools(t, "echo"),
 	})
-	var mcpCollision *mcp.NameCollisionError
-	require.ErrorAs(t, err, &mcpCollision)
-	require.Equal(t, "remote", mcpCollision.Server)
+	require.ErrorAs(t, err, &collision)
+	require.Equal(t, "mcp", collision.Second)
 
 	// A misspelt name in the disabled list.
 	_, err = toolset.Assemble(ctx, toolset.Input{

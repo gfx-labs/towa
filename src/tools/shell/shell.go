@@ -29,6 +29,10 @@ const readChunk = 64 << 10
 type Input struct {
 	// Command is the text given to the configured shell.
 	Command string
+	// Program overrides the configured shell. Empty uses the configured one.
+	Program string
+	// Login runs the shell with -l. The dialect chooses its default.
+	Login bool
 	// Dir is where the command runs. An empty Dir is the working directory,
 	// and a relative one is taken from it.
 	Dir string
@@ -182,7 +186,15 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	if err != nil {
 		return Result{}, fmt.Errorf("shell: %w", err)
 	}
-	cmd := exec.Command(cfg.Shell.Program, "-c", in.Command)
+	program := in.Program
+	if program == "" {
+		program = cfg.Shell.Program
+	}
+	args := []string{"-c", in.Command}
+	if in.Login {
+		args = append([]string{"-l"}, args...)
+	}
+	cmd := exec.Command(program, args...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = write, write
 	cmd.SysProcAttr = groupAttr()

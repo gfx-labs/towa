@@ -20,6 +20,8 @@ type Context struct {
 	// ExtraDirs are read after ExtraFiles. Every .md file under each
 	// directory is read, in path order. Each directory must exist.
 	ExtraDirs []string `koanf:"extra_dirs"`
+	// SkillsEnabled exposes the skill-loading extra to the model.
+	SkillsEnabled bool `koanf:"skills_enabled"`
 	// SkillsDirs are searched for directories that hold a SKILL.md. When
 	// two skills have the same name, the one from the earlier directory is
 	// used.
@@ -51,6 +53,7 @@ type ContextSection struct {
 var contextDefaults = map[string]any{
 	"context.agents_files":    true,
 	"context.global_dir":      "~/.agents",
+	"context.skills_enabled":  true,
 	"context.skills_dirs":     []string{"~/.agents/skills"},
 	"context.max_file_bytes":  0,
 	"context.max_total_bytes": 0,

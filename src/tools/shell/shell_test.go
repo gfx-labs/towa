@@ -28,6 +28,25 @@ func toolsConfig(t *testing.T) config.Tools {
 	return loaded.Config.Tools
 }
 
+func TestPerCallProgramAndLogin(t *testing.T) {
+	cfg := toolsConfig(t)
+	cfg.Shell.Program = "/does-not-exist"
+	e := env(t, nil)
+	for _, login := range []bool{false, true} {
+		res, err := shell.Run(t.Context(), e, cfg, shell.Input{
+			Program: "/bin/bash", Login: login,
+			Command: "if shopt -q login_shell; then printf login; else printf ordinary; fi",
+		})
+		require.NoError(t, err)
+		require.Equal(t, 0, res.ExitCode)
+		if login {
+			require.Equal(t, "login", res.Output)
+		} else {
+			require.Equal(t, "ordinary", res.Output)
+		}
+	}
+}
+
 // stream collects what a command sends as progress.
 type stream struct {
 	mu   sync.Mutex

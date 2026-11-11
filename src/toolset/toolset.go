@@ -32,9 +32,8 @@ type Input struct {
 	Extras []Extra
 	// Disabled are the names of the extras to leave out.
 	Disabled []string
-	// MCP returns the tools of the session's MCP servers, given the names
-	// already taken: mcp.Manager.Tools. Nil adds none.
-	MCP func(ctx context.Context, taken []string) ([]tools.Tool, error)
+	// MCP is discovered once per session and reused across dialect changes.
+	MCP []tools.Tool
 	// Gate is tools.gate. When it is enabled every tool's schema gets the
 	// member that asks for a withheld result.
 	Gate config.ToolsGate
@@ -88,9 +87,8 @@ func (e *SchemaError) Unwrap() error { return e.Err }
 const fromDialect = "dialect"
 
 // Assemble returns the session's tools: the dialect's, then the extras that
-// are not disabled, then the MCP tools. It connects to the direct MCP
-// servers, so it is called once, when the session starts. A collision
-// with an MCP tool is the *mcp.NameCollisionError that Input.MCP returns.
+// are not disabled, then the frozen MCP tools. MCP discovery belongs to the
+// session owner, not to dialect assembly.
 func Assemble(ctx context.Context, in Input) (Result, error) {
 	if in.Tools == nil {
 		return Result{}, fmt.Errorf("toolset: dialect %q has no tools function", in.Dialect)
@@ -137,17 +135,11 @@ func Assemble(ctx context.Context, in Input) (Result, error) {
 			return Result{}, err
 		}
 	}
-	if in.MCP != nil {
-		taken := make([]string, len(set.Tools))
-		for i, t := range set.Tools {
-			taken[i] = t.Spec.Name
-		}
-		list, err := in.MCP(ctx, taken)
-		if err != nil {
-			return Result{}, fmt.Errorf("toolset: %w", err)
-		}
-		// MCP checked the names against taken and against each other.
-		set.Tools = append(set.Tools, list...)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if err := add("mcp", in.MCP); err != nil {
+		return Result{}, err
 	}
 
 	schemas := map[string]*repair.Schema{}
