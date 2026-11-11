@@ -2,97 +2,124 @@
 
 2026-11-11
 
-`tools/conformance` checks what `acpharness serve` puts on the wire with a client we did not write: `github.com/coder/acp-go-sdk` v0.13.5. It is its own module, so the root `go.mod` gains nothing. Its tests import nothing of acpharness.
+`tools/conformance` checks the actual `acpharness serve` binary with `github.com/coder/acp-go-sdk` v0.13.5. It is a separate module and imports no acpharness package. Root dependencies are unchanged.
 
-## The command for CI
-
-```
-go -C tools/conformance vet ./... && go -C tools/conformance test -race ./...
-```
-
-It builds `./cmd/acpharness` from the checkout itself, so it needs no earlier build step. It downloads the SDK, testify and `go.yaml.in/yaml/v3` (testify's) through the module proxy.
-
-Two variables, for use by hand:
-
-- `ACPHARNESS_CONFORMANCE_BINARY=<path>` tests that binary and builds none. This is how the binary of another branch is checked against the same tests and the same recorded file.
-- `ACPHARNESS_CONFORMANCE_WIRE=1` with `-v` prints both directions of every conversation.
-
-## How it works
-
-- `TestMain` runs `go build -o <temp>/acpharness ./cmd/acpharness` in the repository root, once. The task said `go build ... ../../cmd/acpharness` from the module directory. That fails, because the package is outside the module `go` is run in, so the build's working directory is the root.
-- Each test starts `acpharness --config <temp>/config.toml serve` with `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `HOME` inside its temp directory, and attaches `acp.NewClientSideConnection` to its pipes. The config file sets only the stderr log level.
-- Both directions are copied as they pass, so a failure prints the exact bytes.
-- The SDK reports a line it cannot parse and a notification it cannot decode only to its logger. The tests install a logger and fail on any error record.
-- `notDecoded` compares the agent's raw result with what the SDK's type holds after decoding and encoding again. It lists the members the SDK dropped.
-- The agent ends when its standard input closes. Every test checks that it exits without an error.
-
-## Findings
-
-Run against master at 7344c83 plus the working tree of 2026-11-11 14:00 UTC, which encodes with `encoding/json` v1.
-
-**Nothing failed to decode in either direction.** Every request the SDK sent was accepted or answered with the expected error, and every response and notification the agent sent was decoded by the SDK.
-
-One loss, which is expected. The SDK has no field for three members of the `initialize` result, so a client built on it does not see them:
-
-```
-{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"auth":{},"mcpCapabilities":{},"promptCapabilities":{},"sessionCapabilities":{"close":{},"options":{},"status":{},"title":{}}},"agentInfo":{"name":"acpharness","version":"v0.0.0-20261111135826-32713bfbfd05+dirty"},"authMethods":[],"protocolVersion":1}}
-```
-
-Dropped: `agentCapabilities.sessionCapabilities.options`, `.status` and `.title`. They are the capabilities of the unstable methods below. `TestInitialize` asserts exactly this list, so a new dropped member fails it.
-
-Three things the SDK sends that are worth knowing. The agent accepts all of them:
-
-- An empty `ClientCapabilities` goes out as `"clientCapabilities":{"auth":{},"fs":{}}`.
-- A `NewSessionRequest` without its required members goes out as `{"cwd":"","mcpServers":null}`. The SDK does not validate what it sends. The agent answers `-32602` with `"mcpServers is required"`.
-- An unset prompt content annotation is left out, not sent as null.
-
-## What is covered
-
-| test | what it checks |
-|---|---|
-| `TestInitialize` | protocol version 1, also when the client asks for 9999. `agentInfo`. No auth methods. No `loadSession`, prompt or MCP capability. `close` advertised, and `list`, `resume`, `fork`, `delete`, `additionalDirectories` not |
-| `TestNewSession` | modes `auto` and `ask` with `auto` current. The `mode` config option as a select with category `mode` and the same two values. No update is sent. Two sessions get two ids |
-| `TestPrompt` | `available_commands_update` (with `mode`) then one `agent_message_chunk` holding the prompt's text, then `end_turn`. A second prompt sends no commands again. An unknown session is `-32002` |
-| `TestCancel` | `session/cancel` for a session with no turn running, and for an unknown session: no answer, and the next prompt works |
-| `TestClose` | `session/close`, then a prompt on that session is `-32002` |
-| `TestSetMode` | `current_mode_update` and `config_option_update` carry `ask`. Setting the same mode again sends nothing. An unknown mode is `-32602`, an unknown session `-32002` |
-| `TestSetConfigOption` | the response carries the options with the new value, and only `current_mode_update` is sent. An unknown value or option is `-32602` |
-| `TestMethodNotFound` | `-32601` for `session/list`, `providers/list` and an unregistered `_` extension method. An unregistered extension notification gets no answer |
-| `TestInvalidParams` | `-32602` for a missing required member, a member of the wrong JSON type, params that are a list, and a prompt that is a string |
-| `TestWire` | every line the agent writes in one conversation of nine requests, compared with `testdata/wire.golden` |
-
-`TestWire` is the check for the move of `pkg/acp` to `encoding/json/v2`. The other tests pass as long as the SDK can decode, and the SDK decodes `null`, `[]` and a missing member alike. `TestWire` compares each line as JSON with the recorded one, so it fails when a member appears, disappears or changes between `null`, `[]` and `{}`. Member order and spacing do not count. Before comparing, session ids, `agentInfo.version` and the text in `error.data.error` are replaced with placeholders: the first two differ per run, and v2 changes the text of a decode error between runs on purpose.
-
-To accept a change of output that is meant: `ACPHARNESS_CONFORMANCE_UPDATE=1 go -C tools/conformance test -run '^TestWire$' ./...`, then review the diff of the golden file.
-
-The tests in the wrong-type cases send through the SDK's `acp.NewConnection` and `acp.SendRequest`, because its typed calls cannot build such a request.
-
-## Left out, and why
-
-- `session/status`, `session/options` and `session/set_title`: SDK 0.13.5 has no method or constant for them. They could be sent through `SendRequest` as untyped JSON, but then nothing of the SDK checks the answer, which is what this module is for.
-- Cancelling a running turn. The stub turn answers before a cancel can arrive, so the `cancelled` stop reason and `$/cancel_request` are not reached. This needs a turn that waits.
-- `session/request_permission`. The stub turn calls no tool, so the agent never asks.
-- The gated update types (`plan_update`, `notice`, compaction, subagents). The stub sends none, and the SDK has no capability field to turn the last three on.
-- `authenticate`, `logout`, `session/load` and the other store methods beyond `session/list`. They answer an error today. One method per error path is covered.
-- Image, audio and embedded resource prompt blocks. None is advertised.
-- A Unix socket or TCP listener. Only stdio is served on master.
-
-## Not checked
-
-- The `acp-layer` branch. Its worktree at 703cb74 has no file importing `encoding/json/v2` yet, so there is nothing to compare. When it has: build its binary and run the command above with `ACPHARNESS_CONFORMANCE_BINARY` set to it.
-- Any other client: the TypeScript SDK, Zed, or the Rust crate.
-- macOS. The module was not built for darwin.
-- CI itself. The command was run on this machine only.
-
-## Checks run
+## Run
 
 ```
 go -C tools/conformance vet ./...
-go -C tools/conformance test -race -count=3 ./...
-go -C tools/conformance test -race -count=40 -run '^(TestWire|TestSetMode|TestPrompt)$' ./...
-golangci-lint run ./...        # in tools/conformance, with the repository's config
+go -C tools/conformance test -race -count=1 ./...
 ```
 
-All pass, and lint reports no issues. The 40 runs are of the tests that depend on the order of notifications. The root `go.mod` and `go.sum` are unchanged.
+`TestMain` builds `./cmd/acpharness` once from the repository root. Building `../../cmd/acpharness` while inside the nested module is not supported by Go. `ACPHARNESS_CONFORMANCE_BINARY=<absolute path>` tests another built binary instead. `ACPHARNESS_CONFORMANCE_WIRE=1` with `-v` prints both directions of each conversation, including the raw bytes that failed a check.
 
-`encoding/json` v1 is imported in the two test files under the alias `sdkjson`, with a `nolint` for the lint rule that forbids it. The SDK's types have v1 `MarshalJSON` and `UnmarshalJSON` methods, so they are coded with the encoder the SDK itself uses. Everything else in the module uses v2.
+Every subprocess gets private `HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME`, an explicit config file and a temporary working directory. Session working directories exist and belong to the test. No real token store is read, no login occurs, and no provider request is made.
+
+## Runtime migration
+
+The first recording checked the Stub implementation. The real runtime now opens the store and creates a session without a configured model. A prompt must fail with a structured harness request stop, not echo the prompt or claim `end_turn`. The SDK tests check the JSON-RPC error code and `data.acpharness.stop.kind`, not error wording.
+
+The approved golden changes are the implemented runtime capabilities, removal of the Stub text/result, the typed prompt error, and a successful empty `session/list` result instead of Method not found. The list request filters to a fixed directory that no test session uses, so no new timestamp or path normalization is needed. `TestNewSession` separately lists the actual created sessions and checks their IDs and directories.
+
+The initial runtime probe observed this untyped prompt error:
+
+```
+{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"Internal error","data":{"error":"loop: resolving model \"\": models: no model is configured"}}}
+```
+
+That untyped error does not satisfy the migrated tests. Commit `089ad34` maps the model-selection error to a request stop. The actual binary now sends:
+
+```
+{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"Internal error","data":{"acpharness":{"stop":{"kind":"request","message":"models: no model is configured"}},"error":"turn stopped: request: loop: resolving model \"\": models: no model is configured"}}}
+```
+
+The golden was regenerated only after coordinator review of the capability/error/list delta and a passing typed-error transport check.
+
+## SDK decoding findings
+
+The runtime initializer sends these capability bytes:
+
+```
+{"auth":{},"loadSession":true,"mcpCapabilities":{"http":true,"sse":true},"promptCapabilities":{},"sessionCapabilities":{"additionalDirectories":{},"archive":{},"close":{},"delete":{},"fork":{},"list":{},"options":{},"resume":{},"status":{},"systemPrompt":{"mode":{"override":{}}},"title":{}}}
+```
+
+SDK 0.13.5 drops exactly these five members:
+
+- `agentCapabilities.sessionCapabilities.archive`
+- `agentCapabilities.sessionCapabilities.options`
+- `agentCapabilities.sessionCapabilities.status`
+- `agentCapabilities.sessionCapabilities.systemPrompt`
+- `agentCapabilities.sessionCapabilities.title`
+
+The store also sends list entries shaped as:
+
+```
+{"archived":false,"cwd":"<test directory>","sessionId":"<session ID>","updatedAt":"2026-11-11T15:16:14Z"}
+```
+
+The SDK drops `sessions[].archived`. These losses are explicit assertions and reported findings, not alternate decoders or suppressed fields. Raw results remain available in failure output. No request or notification decode failure was observed during the initial runtime probe.
+
+Other SDK details remain unchanged:
+
+- Empty client capabilities encode as `{"auth":{},"fs":{}}`.
+- A new-session request missing required members encodes as `{"cwd":"","mcpServers":null}`. The agent rejects it with `-32602`.
+- Unset prompt content annotations are omitted.
+- SDK error-level logs fail the tests, since the SDK can report notification decode errors only to its logger.
+
+## Coverage
+
+| test | contract |
+|---|---|
+| `TestInitialize` | protocol version negotiation, identity, runtime capabilities and the exact five dropped capability members |
+| `TestNewSession` | modes/config options, distinct session IDs, stored-session listing and the exact dropped archived field |
+| `TestPrompt` | typed no-model failure without text output, command announcement once, continued serving, unknown session `-32002` |
+| `TestCancel` | idle and unknown-session cancellation are unanswered notifications, connection still serves requests |
+| `TestClose` | close succeeds, subsequent prompt is `-32002` |
+| `TestSetMode` | matching mode/config updates, redundant update omitted, invalid mode `-32602` |
+| `TestSetConfigOption` | option result and current-mode update, invalid value/option `-32602` |
+| `TestMethodNotFound` | `providers/list` and unknown extension request `-32601`, unknown extension notification unanswered |
+| `TestInvalidParams` | required members, wrong types and non-object params rejected `-32602` |
+| `TestWire` | all agent-written frames in one conversation, compared as JSON with the reviewed recording |
+| `TestSocketClients` | actual binary, two concurrent Unix clients and one TCP client, separate sessions, cross-owner rejection, typed model-selection failures, continued serving after one client closes, daemon survives stdio EOF, SIGTERM closes remaining clients and removes Unix socket |
+
+Session creation sends `available_commands_update` after its response. Tests do not require the client to observe that notification before its `NewSession` call returns. Subsequent protocol requests provide the observation boundary before checking collected updates.
+
+The CLI's existing stdio acceptance test also uses private state and a real working directory. It checks the typed no-model stop through the public harness type and verifies that no agent text chunk was emitted.
+
+## Golden and encoder changes
+
+`TestWire` compares complete frames as JSON. Member order and whitespace do not count, but omitted members, null, empty lists and empty objects do. It normalizes only session IDs, the build version, and `error.data.error` text, which json v2 deliberately varies for decode errors. The typed stop kind remains literal.
+
+After approval of an intentional wire change:
+
+```
+ACPHARNESS_CONFORMANCE_UPDATE=1 go -C tools/conformance test -run '^TestWire$' ./...
+git diff -- tools/conformance/testdata/wire.golden
+```
+
+Wrong-type requests use the SDK's generic `SendRequest` because its typed methods cannot construct those invalid inputs. SDK types are encoded with the SDK's own v1 custom codecs under the `sdkjson` alias. Other JSON uses v2.
+
+## Limits
+
+- No successful real-runtime binary model turn is covered. Existing loop recordings have different system prompts/tool schemas and cannot truthfully stand in for the full CLI request. No external recording was authorized for this task.
+- No running turn cancellation, permission request, compaction, retry, subagent or model-generated update is exercised by the no-model conversations.
+- Archive/status/options/title and system-prompt extensions have no corresponding SDK 0.13.5 typed interface. Their advertised presence is recorded, not adapted around.
+- Store load/resume/fork/delete methods are advertised but not exercised by this module. Listing is exercised.
+- The SDK socket test uses loopback plaintext TCP. Real TLS/mTLS, certificate rotation and partial-line disconnects are covered by `src/listen` tests, not this SDK module.
+- No TypeScript SDK, Zed or Rust client was checked.
+- No macOS runtime check was performed. Darwin builds do not prove Unix socket path-length, permissions or flock behavior on macOS.
+
+## Verification status
+
+Checks after `089ad34` and the approved golden update:
+
+```
+go -C tools/conformance test -race -count=3 ./...
+go -C tools/conformance test -race -count=40 -run '^(TestWire|TestNewSession|TestPrompt|TestSocketClients)$' ./...
+go test -race -count=3 -run '^TestServeAnswersAClientOnStdio$' ./src/cli
+go -C tools/conformance vet ./...
+```
+
+All passed. The module lint reported zero issues. `TestSocketClients` also passed ten runs against a separately race-built real agent, with the SDK test process race-instrumented too. Listener/config race tests passed three runs. CLI/listener Darwin arm64 and Linux CGO-disabled builds passed. No new test file or scaffolding was added by this migration. Existing protocol, socket and CLI acceptance tests were retained and updated.
+
+A broader full-CLI race run found an unrelated in-progress `TestRuntimeRetainsSemanticEmbeddingAcrossTurns` failure at `src/cli/runtime_compact_test.go:105`: the Codex `apply_patch` native tool requires Responses but the test selected Chat Completions. This prevented its expected main HTTP requests and embedding replay. The compaction owner was notified. The scoped CLI no-model test passes.

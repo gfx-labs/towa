@@ -12,11 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
+	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/cli"
 )
 
 // The whole program: flags and a config file reach the logger, and a client
-// on standard input and output gets through a prompt turn.
+// on standard input and output can create a session without a model, then
+// receives a typed failure instead of an echoed prompt.
 func TestServeAnswersAClientOnStdio(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "acpharness"), 0o755))
@@ -31,13 +33,13 @@ func TestServeAnswersAClientOnStdio(t *testing.T) {
 			Stdin:   stdin,
 			Stdout:  stdout,
 			Stderr:  &stderr,
-			Environ: []string{"XDG_CONFIG_HOME=" + dir},
+			Environ: []string{"XDG_CONFIG_HOME=" + dir, "XDG_STATE_HOME=" + filepath.Join(dir, "state"), "HOME=" + dir},
 		})
 	}()
 
 	w.Send(
 		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1}}`,
-		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/work","mcpServers":[]}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"`+dir+`","mcpServers":[]}}`,
 	)
 	got, _ := w.Await(`0`, `1`)
 	require.Nil(t, got[`0`].Error)
@@ -49,16 +51,24 @@ func TestServeAnswersAClientOnStdio(t *testing.T) {
 
 	w.Send(`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"` + created.SessionID + `","prompt":[{"type":"text","text":"hello"}]}}`)
 	got, others := w.Await(`2`)
-	require.JSONEq(t, `{"stopReason":"end_turn"}`, string(got[`2`].Result))
-	// The turn's reply reaches the client once. The agent may send other
-	// notifications too, such as the session's commands.
+	require.Empty(t, got[`2`].Result)
+	require.NotNil(t, got[`2`].Error)
+	require.Equal(t, -32603, got[`2`].Error.Code)
+	data, ok := got[`2`].Error.Data.(map[string]any)
+	require.True(t, ok, "error data: %#v", got[`2`].Error.Data)
+	addition, present, err := harness.FromMeta(data)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.NotNil(t, addition.Stop)
+	require.Equal(t, harness.StopRequest, addition.Stop.Kind)
+	// A failed turn must not emit a successful-looking text response.
 	replies := 0
 	for _, m := range others {
 		if strings.Contains(string(m.Params), `"sessionUpdate":"agent_message_chunk"`) {
 			replies++
 		}
 	}
-	require.Equal(t, 1, replies, "notifications: %v", others)
+	require.Zero(t, replies, "notifications: %v", others)
 
 	// The client closing standard input ends the program without an error.
 	w.Close()

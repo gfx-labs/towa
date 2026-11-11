@@ -53,6 +53,20 @@ func requestError(t *testing.T, err error) *acp.RequestError {
 	return reqErr
 }
 
+// modelSelectionError checks the machine-readable stop, not error wording.
+func modelSelectionError(t *testing.T, err error) {
+	t.Helper()
+	rejected := requestError(t, err)
+	require.Equal(t, -32603, rejected.Code)
+	data, ok := rejected.Data.(map[string]any)
+	require.True(t, ok, "error data: %#v", rejected.Data)
+	addition, ok := data["acpharness"].(map[string]any)
+	require.True(t, ok, "error data: %#v", data)
+	stop, ok := addition["stop"].(map[string]any)
+	require.True(t, ok, "harness addition: %#v", addition)
+	require.Equal(t, "request", stop["kind"])
+}
+
 // kinds names the variant of each update, in the order received.
 func kinds(updates []acp.SessionNotification) []string {
 	out := []string{}
@@ -88,26 +102,28 @@ func TestInitialize(t *testing.T) {
 	require.NotEmpty(t, resp.AgentInfo.Version)
 	require.Empty(t, resp.AuthMethods)
 
-	// With the stub turn nothing optional is on: no stored sessions, no
-	// prompt content beyond text and resource links, no MCP transport.
+	// The real runtime has a store and MCP transports even without a model.
 	caps := resp.AgentCapabilities
-	require.False(t, caps.LoadSession)
+	require.True(t, caps.LoadSession)
 	require.Equal(t, acp.PromptCapabilities{}, caps.PromptCapabilities)
-	require.Equal(t, acp.McpCapabilities{}, caps.McpCapabilities)
+	require.True(t, caps.McpCapabilities.Http)
+	require.True(t, caps.McpCapabilities.Sse)
 	require.Nil(t, caps.Auth.Logout)
 	require.NotNil(t, caps.SessionCapabilities.Close)
-	require.Nil(t, caps.SessionCapabilities.List)
-	require.Nil(t, caps.SessionCapabilities.Resume)
-	require.Nil(t, caps.SessionCapabilities.Fork)
-	require.Nil(t, caps.SessionCapabilities.Delete)
-	require.Nil(t, caps.SessionCapabilities.AdditionalDirectories)
+	require.NotNil(t, caps.SessionCapabilities.List)
+	require.NotNil(t, caps.SessionCapabilities.Resume)
+	require.NotNil(t, caps.SessionCapabilities.Fork)
+	require.NotNil(t, caps.SessionCapabilities.Delete)
+	require.NotNil(t, caps.SessionCapabilities.AdditionalDirectories)
 
 	// What the agent sent that SDK 0.13.5 has no field for: the
 	// capabilities of the unstable methods it implements.
 	raw := a.lastResult()
 	require.Equal(t, []string{
+		"agentCapabilities.sessionCapabilities.archive",
 		"agentCapabilities.sessionCapabilities.options",
 		"agentCapabilities.sessionCapabilities.status",
+		"agentCapabilities.sessionCapabilities.systemPrompt",
 		"agentCapabilities.sessionCapabilities.title",
 	}, notDecoded(t, raw, resp), "raw result: %s", raw)
 
@@ -160,7 +176,16 @@ func TestNewSession(t *testing.T) {
 	// Two sessions on one connection are two sessions.
 	second := newSession(ctx, t, conn)
 	require.NotEqual(t, resp.SessionId, second.SessionId)
-	require.Empty(t, c.take(), "session/new sends no update")
+	listed, err := conn.ListSessions(ctx, acp.ListSessionsRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"sessions[].archived"}, notDecoded(t, a.lastResult(), listed), "raw result: %s", a.lastResult())
+	ids := []acp.SessionId{}
+	for _, saved := range listed.Sessions {
+		ids = append(ids, saved.SessionId)
+		require.DirExists(t, saved.Cwd)
+	}
+	require.ElementsMatch(t, []acp.SessionId{resp.SessionId, second.SessionId}, ids)
+	require.Equal(t, []string{"available_commands_update", "available_commands_update"}, kinds(c.take()))
 }
 
 func TestPrompt(t *testing.T) {
@@ -171,18 +196,15 @@ func TestPrompt(t *testing.T) {
 	initialize(ctx, t, conn)
 	session := newSession(ctx, t, conn)
 
-	resp, err := conn.Prompt(ctx, acp.PromptRequest{
+	_, err := conn.Prompt(ctx, acp.PromptRequest{
 		SessionId: session.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("conformance says hello")},
 	})
-	require.NoError(t, err)
-	require.Equal(t, acp.StopReasonEndTurn, resp.StopReason)
-	require.Empty(t, notDecoded(t, a.lastResult(), resp), "raw result: %s", a.lastResult())
+	modelSelectionError(t, err)
 
-	// The commands are announced before the first request that names the
-	// session is handled, and then the stub turn sends one message chunk.
+	// Session creation announces commands. A rejected prompt emits no text.
 	updates := c.take()
-	require.Equal(t, []string{"available_commands_update", "agent_message_chunk"}, kinds(updates))
+	require.Equal(t, []string{"available_commands_update"}, kinds(updates))
 	for _, n := range updates {
 		require.Equal(t, session.SessionId, n.SessionId)
 	}
@@ -193,9 +215,6 @@ func TestPrompt(t *testing.T) {
 		names = append(names, command.Name)
 	}
 	require.Contains(t, names, "mode")
-	chunk := updates[1].Update.AgentMessageChunk
-	require.NotNil(t, chunk.Content.Text)
-	require.Contains(t, chunk.Content.Text.Text, "conformance says hello")
 
 	// Every update the agent sent decodes without loss.
 	sent := 0
@@ -215,8 +234,8 @@ func TestPrompt(t *testing.T) {
 		SessionId: session.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("again")},
 	})
-	require.NoError(t, err)
-	require.Equal(t, []string{"agent_message_chunk"}, kinds(c.take()))
+	modelSelectionError(t, err)
+	require.Empty(t, c.take())
 
 	// A session the agent does not have.
 	_, err = conn.Prompt(ctx, acp.PromptRequest{
@@ -226,9 +245,8 @@ func TestPrompt(t *testing.T) {
 	require.Equal(t, -32002, requestError(t, err).Code)
 }
 
-// session/cancel is a notification. With the stub turn a prompt ends before
-// a cancel can reach it, so this covers only that the agent takes the SDK's
-// cancel for a session with no turn running and keeps serving.
+// session/cancel is a notification. Without a model there is no running
+// turn to interrupt, so this covers idle cancellation and continued serving.
 func TestCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -240,17 +258,20 @@ func TestCancel(t *testing.T) {
 	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: session.SessionId}))
 	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: unknownSession}))
 
-	resp, err := conn.Prompt(ctx, acp.PromptRequest{
+	_, err := conn.Prompt(ctx, acp.PromptRequest{
 		SessionId: session.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("after the cancel")},
 	})
-	require.NoError(t, err)
-	require.Equal(t, acp.StopReasonEndTurn, resp.StopReason)
-	require.Contains(t, kinds(c.take()), "agent_message_chunk")
+	modelSelectionError(t, err)
+	require.Equal(t, []string{"available_commands_update"}, kinds(c.take()))
 	// A notification has no answer, whatever its session.
+	answers := 0
 	for _, m := range a.messages() {
-		require.Empty(t, m.Error, "the agent answered with an error: %s", m.Error)
+		if m.Method == "" {
+			answers++
+		}
 	}
+	require.Equal(t, 3, answers, "initialize, new session and prompt only")
 }
 
 // session/close is advertised, so the SDK's call for it is answered, and
@@ -353,9 +374,8 @@ func TestSetConfigOption(t *testing.T) {
 	require.Equal(t, -32602, requestError(t, err).Code)
 }
 
-// Methods the agent does not implement answer Method not found: one of the
-// protocol's own that needs the store, one that is unstable, and an
-// extension method nobody registered.
+// Methods the agent does not implement answer Method not found: an
+// unstable provider method and an extension method nobody registered.
 func TestMethodNotFound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -363,10 +383,7 @@ func TestMethodNotFound(t *testing.T) {
 	conn, _ := a.connect()
 	initialize(ctx, t, conn)
 
-	_, err := conn.ListSessions(ctx, acp.ListSessionsRequest{})
-	require.Equal(t, -32601, requestError(t, err).Code)
-
-	_, err = conn.UnstableListProviders(ctx, acp.UnstableListProvidersRequest{})
+	_, err := conn.UnstableListProviders(ctx, acp.UnstableListProvidersRequest{})
 	require.Equal(t, -32601, requestError(t, err).Code)
 
 	_, err = conn.CallExtension(ctx, "_conformance/no_such_method", map[string]any{})
@@ -383,7 +400,7 @@ func TestMethodNotFound(t *testing.T) {
 			answers++
 		}
 	}
-	require.Equal(t, 5, answers, "initialize, three unknown methods and session/new")
+	require.Equal(t, 4, answers, "initialize, two unknown methods and session/new")
 }
 
 // Params that are not what the method takes answer Invalid params.
@@ -436,15 +453,16 @@ func TestWire(t *testing.T) {
 		SessionId: session.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},
 	})
-	require.NoError(t, err)
+	modelSelectionError(t, err)
 	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "ask"})
 	require.NoError(t, err)
 	_, err = conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
 		ValueId: &acp.SetSessionConfigOptionValueId{SessionId: session.SessionId, ConfigId: "mode", Value: "auto"},
 	})
 	require.NoError(t, err)
-	_, err = conn.ListSessions(ctx, acp.ListSessionsRequest{})
-	require.Error(t, err)
+	listed, err := conn.ListSessions(ctx, acp.ListSessionsRequest{Cwd: new("/acpharness-conformance-no-such-cwd")})
+	require.NoError(t, err)
+	require.Empty(t, listed.Sessions)
 	_, err = conn.NewSession(ctx, acp.NewSessionRequest{})
 	require.Error(t, err)
 	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: unknownSession, ModeId: "ask"})

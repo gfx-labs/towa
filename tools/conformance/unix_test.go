@@ -143,9 +143,9 @@ func TestSocketClients(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	oneWire, one, oneUpdates, oneSocket := socketClient(t, "unix", p.unixPath)
-	twoWire, two, twoUpdates, _ := socketClient(t, "unix", p.unixPath)
-	tcpWire, tcp, tcpUpdates, _ := socketClient(t, "tcp", p.tcpAddr)
+	_, one, oneUpdates, oneSocket := socketClient(t, "unix", p.unixPath)
+	_, two, twoUpdates, _ := socketClient(t, "unix", p.unixPath)
+	_, tcp, tcpUpdates, _ := socketClient(t, "tcp", p.tcpAddr)
 	oneSession := newSession(ctx, t, one)
 	twoSession := newSession(ctx, t, two)
 	tcpSession := newSession(ctx, t, tcp)
@@ -160,32 +160,30 @@ func TestSocketClients(t *testing.T) {
 	require.Equal(t, -32002, requestError(t, err).Code)
 
 	for _, c := range []struct {
-		wire    *agent
 		conn    *acp.ClientSideConnection
 		updates *client
 		session acp.SessionId
 	}{
-		{oneWire, one, oneUpdates, oneSession.SessionId},
-		{twoWire, two, twoUpdates, twoSession.SessionId},
-		{tcpWire, tcp, tcpUpdates, tcpSession.SessionId},
+		{one, oneUpdates, oneSession.SessionId},
+		{two, twoUpdates, twoSession.SessionId},
+		{tcp, tcpUpdates, tcpSession.SessionId},
 	} {
-		response, err := c.conn.Prompt(ctx, acp.PromptRequest{
+		_, err := c.conn.Prompt(ctx, acp.PromptRequest{
 			SessionId: c.session, Prompt: []acp.ContentBlock{acp.TextBlock("socket conformance")},
 		})
-		require.NoError(t, err)
-		require.Equal(t, acp.StopReasonEndTurn, response.StopReason)
-		require.Equal(t, []string{"available_commands_update", "agent_message_chunk"}, kinds(c.updates.take()))
-		require.Empty(t, notDecoded(t, c.wire.lastResult(), response), "raw result: %s", c.wire.lastResult())
+		modelSelectionError(t, err)
+		require.Equal(t, []string{"available_commands_update"}, kinds(c.updates.take()))
 	}
 
 	require.NoError(t, oneSocket.Close())
 	// One client's EOF does not retire the other connection or its session.
-	response, err := tcp.Prompt(ctx, acp.PromptRequest{
+	_, err = tcp.Prompt(ctx, acp.PromptRequest{
 		SessionId: tcpSession.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("still connected")},
 	})
-	require.NoError(t, err)
-	require.Equal(t, acp.StopReasonEndTurn, response.StopReason)
-	require.Equal(t, []string{"agent_message_chunk"}, kinds(tcpUpdates.take()))
+	modelSelectionError(t, err)
+	require.Empty(t, tcpUpdates.take())
+	_, err = two.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: twoSession.SessionId, ModeId: "ask"})
+	require.NoError(t, err, "model-selection failure must not retire a connection")
 
 	// Shutdown is exercised with the other two clients still connected.
 	p.stop(t)
