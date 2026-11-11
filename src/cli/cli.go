@@ -56,8 +56,20 @@ func OSHost() Host {
 // returns when the command has finished or ctx is cancelled.
 func Run(ctx context.Context, args []string, h Host) error {
 	app := &cli.Command{
-		Name:      "acpharness",
-		Usage:     "a coding agent that speaks the Agent Client Protocol",
+		Name:  "acpharness",
+		Usage: "a coding agent that speaks the Agent Client Protocol",
+		Description: "The flags below are not the whole configuration. Every setting is a config key, such as\n" +
+			"telemetry.logs.stderr.level, and \"acpharness config\" lists each key with its value and where\n" +
+			"the value comes from. A key is set by, later ones winning:\n\n" +
+			"  1. " + h.SystemDir + "/config.yaml\n" +
+			"  2. $XDG_CONFIG_HOME/acpharness/config.yaml, or ~/.config/acpharness/config.yaml\n" +
+			"  3. the files in " + config.EnvFiles + " (separated like PATH), then each --config file\n" +
+			"  4. the environment: ACPHARNESS_TELEMETRY__LOGS__STDERR__LEVEL=debug sets telemetry.logs.stderr.level\n" +
+			"  5. the flags below\n" +
+			"  6. --set key=value\n\n" +
+			"A config file may also be config.toml, config.yml or config.json. The sections that hold lists\n" +
+			"and tables (models, accounts, providers, hooks, mcp.servers, context.sections) are written in\n" +
+			"a file, and appear in \"acpharness config\" once they are set.",
 		Version:   version(),
 		Reader:    h.Stdin,
 		Writer:    h.Stdout,
@@ -82,6 +94,8 @@ func Run(ctx context.Context, args []string, h Host) error {
 			{
 				Name:  "config",
 				Usage: "print the resolved configuration and where each value comes from",
+				Description: "Prints one line per config key: the key, its value, and the file, environment variable,\n" +
+					"flag or default it comes from. See \"acpharness --help\" for how a key is set.",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					return printConfig(cmd, h)
 				},
