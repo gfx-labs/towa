@@ -36,7 +36,7 @@ SIGINT or SIGTERM cancels `Serve`, which cancels running turns, writes their ans
 Linux amd64, Go 1.27.3, `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/acpharness`, commit after `ac8ed24`:
 
 - Binary: 17,887,392 bytes.
-- One idle process (`acpharness --log-level error`, stdin open, no session, OTel off), from `/proc/<pid>/status` and `smaps_rollup` after 1 s: RSS 17,276 kB, of which 4,588 kB is anonymous memory and 12,688 kB is the binary's own pages. The binary's pages are shared between processes that run the same file, so each further process costs about the anonymous part. 7 threads.
+- One idle process (`acpharness --log-level error`, stdin open, no session, OTel off), from `/proc/<pid>/status` and `smaps_rollup` after 1 s: RSS 17,276 kB, of which 4,588 kB is anonymous memory and 12,688 kB is file-backed pages of the binary. 7 threads. Only one process was measured. File-backed pages are normally shared between processes running the same file, so further processes should cost about the anonymous part each, but that has not been measured.
 
 These are a first reading, not the footprint benchmark of step 11. The size of the OTel and koanf dependencies in those numbers has not been separated out yet.
 
