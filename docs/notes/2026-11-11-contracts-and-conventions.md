@@ -89,6 +89,8 @@ Versions looked up on 2026-11-11. They are all in `go.mod` now, marked indirect 
 | `github.com/klauspost/compress` | v1.20.4 | zstd for request bodies and stored sessions |
 | `golang.org/x/sys` | v0.50.0 | `flock` and process groups |
 
+The MCP SDK brings seven modules of its own: `google/jsonschema-go` v0.4.3, `segmentio/encoding` v0.5.4 with `segmentio/asm`, `yosida95/uritemplate/v3`, `golang.org/x/oauth2`, `x/sync` and `x/time`. A throwaway package importing all six pinned modules built for Linux, for a static Linux binary and for `darwin/arm64`. What the SDK adds to the binary is measured by the MCP work.
+
 ## Not done here
 
 - No buffer is pooled yet and `pkg/acp` is not on v2. Both come with a before and after benchmark.

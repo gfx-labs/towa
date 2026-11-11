@@ -20,6 +20,8 @@ type Config struct {
 	Tools     Tools      `koanf:"tools"`
 	MCP       MCP        `koanf:"mcp"`
 	Session   Session    `koanf:"session"`
+	Context   Context    `koanf:"context"`
+	Listen    Listen     `koanf:"listen"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -72,7 +74,9 @@ var telemetryDefaults = map[string]any{
 // value by accident. A list, such as accounts, has no default.
 func defaults() map[string]any {
 	all := map[string]any{}
-	for _, section := range []map[string]any{telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults} {
+	for _, section := range []map[string]any{
+		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
+	} {
 		maps.Copy(all, section)
 	}
 	return all
@@ -91,7 +95,10 @@ func (c *Config) validate() error {
 	default:
 		return fmt.Errorf("telemetry.logs.stderr.format: %q is not %q or %q", f, FormatText, FormatJSON)
 	}
-	for _, section := range []func() error{c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate, c.Session.validate} {
+	for _, section := range []func() error{
+		c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
+		c.Session.validate, c.Context.validate, c.Listen.validate,
+	} {
 		if err := section(); err != nil {
 			return err
 		}
