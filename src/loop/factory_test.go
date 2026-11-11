@@ -59,7 +59,12 @@ func TestFactoryWriteProcess(t *testing.T) {
 	require.True(t, ok)
 	repo := filepath.Clean(filepath.Join(filepath.Dir(source), "../.."))
 	fixtures := filepath.Join(filepath.Dir(source), "testdata")
-	recording := os.Getenv(recordFactoryWrite) != ""
+	recordRoot := os.Getenv(recordFactoryWrite)
+	recording := recordRoot != ""
+	if recording {
+		require.True(t, filepath.IsAbs(recordRoot), "recording output must be an absolute staging directory")
+		fixtures = recordRoot
+	}
 	paths := []string{filepath.Join(fixtures, "factory_write_1.json"), filepath.Join(fixtures, "factory_write_2.json")}
 	home := t.TempDir()
 	cwd := filepath.Join(home, "work")
