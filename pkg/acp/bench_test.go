@@ -3,7 +3,9 @@ package acp_test
 import (
 	"context"
 	"io"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -93,8 +95,10 @@ func BenchmarkEncodePromptRequest(b *testing.B) {
 func BenchmarkDecodeSessionUpdate(b *testing.B) {
 	line := encodeLine(b, acp.ClientMethodSessionUpdate, benchUpdate())
 	seen := 0
-	cl := &client{sessionUpdate: func(context.Context, acp.SessionNotification) error {
-		seen++
+	cl := &client{sessionUpdate: func(_ context.Context, n acp.SessionNotification) error {
+		if n.Update.AgentMessageChunk != nil && n.Update.AgentMessageChunk.Content.Text != nil && n.Update.AgentMessageChunk.Content.Text.Text == benchText {
+			seen++
+		}
 		return nil
 	}}
 	conn := acp.NewClientSideConnection(cl, io.Discard, &repeated{line: line, n: b.N}, nil)
@@ -113,7 +117,11 @@ func BenchmarkDecodeSessionUpdate(b *testing.B) {
 // handling each on its own goroutine and writing the response.
 func BenchmarkDecodePromptRequest(b *testing.B) {
 	line := encodeLine(b, acp.AgentMethodSessionPrompt, benchPrompt())
-	ag := &agent{prompt: func(context.Context, acp.PromptRequest) (acp.PromptResponse, error) {
+	var seen atomic.Int64
+	ag := &agent{prompt: func(_ context.Context, p acp.PromptRequest) (acp.PromptResponse, error) {
+		if len(p.Prompt) == 2 && p.Prompt[1].Resource != nil && p.Prompt[1].Resource.Resource.TextResourceContents != nil && len(p.Prompt[1].Resource.Resource.TextResourceContents.Text) == 64*len(benchText) {
+			seen.Add(1)
+		}
 		return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 	}}
 	conn := acp.NewAgentSideConnection(ag, io.Discard, newNumbered(b, line, b.N), nil)
@@ -122,6 +130,9 @@ func BenchmarkDecodePromptRequest(b *testing.B) {
 	b.ResetTimer()
 	if err := conn.Serve(context.Background()); err != nil {
 		b.Fatal(err)
+	}
+	if seen.Load() != int64(b.N) {
+		b.Fatalf("handled %d of %d", seen.Load(), b.N)
 	}
 }
 
@@ -135,13 +146,12 @@ type numbered struct {
 	rest []byte
 }
 
-const idWidth = 12
-
 func newNumbered(tb testing.TB, line string, n int) *numbered {
 	tb.Helper()
 	const mark = `{"jsonrpc":"2.0",`
 	require.True(tb, strings.HasPrefix(line, mark))
 	prefix := mark + `"id":"`
+	idWidth := len(strconv.Itoa(n))
 	b := []byte(prefix + strings.Repeat("0", idWidth) + `",` + line[len(mark):])
 	return &numbered{line: b, id: b[len(prefix) : len(prefix)+idWidth], n: n}
 }
@@ -151,7 +161,7 @@ func (r *numbered) Read(p []byte) (int, error) {
 		if r.n == 0 {
 			return 0, io.EOF
 		}
-		for i, v := idWidth-1, r.n; i >= 0; i, v = i-1, v/10 {
+		for i, v := len(r.id)-1, r.n; i >= 0; i, v = i-1, v/10 {
 			r.id[i] = byte('0' + v%10)
 		}
 		r.n--
