@@ -37,6 +37,10 @@ func StopKind(reason provider.Reason) (harness.StopKind, bool) {
 // from the router as an auth failure and so becomes an auth stop. Any other error,
 // and a provider error with a reason outside the list, is returned as it is.
 func StopFor(err error) error {
+	var stopped *StopError
+	if errors.As(err, &stopped) {
+		return stopped
+	}
 	var perr *provider.Error
 	if !errors.As(err, &perr) {
 		var login *auth.LoginRequiredError

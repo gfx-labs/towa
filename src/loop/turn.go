@@ -13,6 +13,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
+	"github.com/gfx-labs/acpharness/src/compact"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/hooks"
 	"github.com/gfx-labs/acpharness/src/provider"
@@ -31,7 +32,10 @@ type Options struct {
 	// Turn.Model as it is: an empty name means the session chose none, and
 	// the resolver owns the default.
 	Resolve func(ctx context.Context, model string) (Resolved, error)
-	Store   store.Store
+	// NewCompactor returns the controller for this turn's session. Nil
+	// disables automatic compaction. Close cancels pending work at turn end.
+	NewCompactor func(context.Context, Turn, Resolved) (*compact.Controller, error)
+	Store        store.Store
 	// System returns the system prompt's sections for a turn.
 	System func(ctx context.Context, t Turn) ([]provider.SystemBlock, error)
 	Limits config.Limits
@@ -57,6 +61,9 @@ type Resolved struct {
 	// Model is the provider's own name for the model, of the chain's first
 	// entry. It is for logs: the router names the model of each request.
 	Model string
+	// ProviderName identifies the first entry's provider for native context.
+	// A router supplies the actual entry's ProviderID before each request.
+	ProviderName string
 	// ContextSize is the model's context window in tokens, for usage
 	// updates. Zero means it is not known, and no usage update is sent.
 	ContextSize int64
@@ -67,6 +74,8 @@ type Resolved struct {
 	// Interruption is the dialect's text that tells the model the turn
 	// before was interrupted. It is required.
 	Interruption string
+	// InterruptionRole is empty or user for a user message, or developer.
+	InterruptionRole string
 }
 
 // Loop runs prompt turns. It keeps nothing between turns: a session's
@@ -209,16 +218,17 @@ type turn struct {
 	spent   Spent
 	// final is the text of the last response.
 	final string
-	// items is the conversation as the next request sends it.
-	items []transcript.Item
+	// entries is the append-only log, including history hidden by compaction.
+	entries []transcript.Entry
 	// parent is the id of the last entry stored.
 	parent uuid.UUID
 	// stopDenials is how often a stop hook kept the turn going.
 	stopDenials int64
 	// model, mapper and schemas are the turn's resolved model.
-	model   Resolved
-	mapper  Mapper
-	schemas map[string]*repair.Schema
+	model     Resolved
+	compactor *compact.Controller
+	mapper    Mapper
+	schemas   map[string]*repair.Schema
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -239,11 +249,11 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 		tn.limits = *t.Limits
 	}
 	result, err := tn.run(ctx)
-	if err != nil {
-		return Result{}, err
-	}
 	result.Final = tn.final
-	return result, nil
+	if result.Usage == nil {
+		result.Usage = tn.snapshot().Usage()
+	}
+	return result, err
 }
 
 func (tn *turn) run(ctx context.Context) (Result, error) {
@@ -269,6 +279,19 @@ func (tn *turn) run(ctx context.Context) (Result, error) {
 	}
 	if err := tn.resolve(ctx); err != nil {
 		return Result{}, err
+	}
+	if l.o.NewCompactor != nil {
+		current := copyTurn(t)
+		limits := tn.limits
+		current.Limits, current.Update = &limits, tn.update
+		tn.compactor, err = l.o.NewCompactor(ctx, current, tn.model)
+		if err != nil {
+			return Result{}, fmt.Errorf("loop: creating compaction controller: %w", err)
+		}
+		if tn.compactor == nil {
+			return Result{}, errors.New("loop: NewCompactor returned no controller")
+		}
+		defer tn.compactor.Close()
 	}
 	if err := tn.load(ctx); err != nil {
 		return Result{}, err
@@ -410,6 +433,10 @@ func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error
 		}
 		return tn.result(acp.StopReasonCancelled), true, nil
 	case streamErr != nil:
+		var limit *turnLimitError
+		if errors.As(streamErr, &limit) {
+			return LimitResult(limit.key, tn.snapshot()), true, nil
+		}
 		return Result{}, true, StopFor(streamErr)
 	}
 	return Result{}, false, nil
@@ -465,6 +492,9 @@ func (tn *turn) resolve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if _, _, err := ConversationWithRole(nil, model.Interruption, model.InterruptionRole); err != nil {
+		return fmt.Errorf("loop: model %q interruption role: %w", tn.t.Model, err)
+	}
 	tn.model, tn.schemas = model, schemas
 	tn.mapper = Mapper{Tools: model.Tools}
 	if model.ContextSize > 0 {
@@ -480,7 +510,7 @@ func (tn *turn) resolve(ctx context.Context) error {
 // one.
 func (tn *turn) load(ctx context.Context) error {
 	st := tn.l.o.Store
-	_, entries, err := st.Load(ctx, tn.id)
+	entries, err := st.History(ctx, tn.id, store.Range{})
 	if errors.Is(err, store.ErrNotFound) {
 		meta := store.Meta{ID: tn.id, Cwd: tn.t.Cwd, Dirs: tn.t.Dirs, Model: tn.t.Model}
 		if tn.t.ParentID != "" {
@@ -502,26 +532,21 @@ func (tn *turn) load(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
 		}
-		history = append(history, entry.Item)
+		tn.entries = append(tn.entries, entry)
+		if entry.Item.Compaction == nil {
+			history = append(history, entry.Item)
+		}
 		tn.parent = entry.ID
 	}
-	items, repairs, err := Conversation(history, tn.model.Interruption)
+	_, repairs, err := ConversationWithRole(history, tn.model.Interruption, tn.model.InterruptionRole)
 	if err != nil {
 		return err
 	}
-	tn.items = items
 	return tn.store(ctx, repairs)
 }
 
-// append stores items and adds them to the conversation.
+// append stores items in their original order.
 func (tn *turn) append(ctx context.Context, items ...transcript.Item) error {
-	for _, item := range items {
-		// Usage is recorded and is not part of what the model is sent.
-		// Interrupted is the last item of its turn.
-		if item.Usage == nil && item.Interrupted == nil {
-			tn.items = append(tn.items, item)
-		}
-	}
 	return tn.store(ctx, items)
 }
 
@@ -539,6 +564,7 @@ func (tn *turn) store(ctx context.Context, items []transcript.Item) error {
 	if err := tn.l.o.Store.Append(context.WithoutCancel(ctx), tn.id, entries); err != nil {
 		return fmt.Errorf("loop: storing %d entries of session %s: %w", len(entries), tn.id, err)
 	}
+	tn.entries = append(tn.entries, entries...)
 	return nil
 }
 
@@ -548,7 +574,6 @@ func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Res
 	ctx = router.WithReport(ctx, func(m router.Move) { tn.moved(ctx, m) })
 	req := provider.Request{
 		System:          system,
-		Items:           tn.items,
 		Model:           tn.model.Model,
 		Tools:           tn.model.Tools.Specs(),
 		MaxOutputTokens: tn.model.MaxOutputTokens,
@@ -556,9 +581,25 @@ func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Res
 		CacheKey:        string(tn.t.SessionID),
 	}
 	resp := &Response{}
+	if _, routed := tn.model.Provider.(*router.Router); routed {
+		ctx = router.WithPrepare(ctx, tn.prepareRequest)
+	} else {
+		var err error
+		req, err = tn.prepareRequest(ctx, router.Entry{}, req)
+		if err != nil {
+			return resp, err
+		}
+	}
 	for event, err := range tn.model.Provider.Stream(ctx, req) {
 		if err != nil {
 			return resp, err
+		}
+		if event.Item != nil {
+			item, _, err := compact.AutoItem(*event.Item)
+			if err != nil {
+				return resp, err
+			}
+			event.Item = &item
 		}
 		for _, update := range resp.Add(tn.mapper, event) {
 			tn.send(ctx, update)

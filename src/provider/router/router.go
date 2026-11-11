@@ -25,6 +25,18 @@ type Entry struct {
 	Account string
 	// Model is the provider's own name for the model.
 	Model string
+	// Preparation is the selected model's request metadata. Nil keeps the caller's legacy metadata.
+	Preparation *Preparation
+}
+
+// Preparation is supplied by model wiring for each actual chain entry.
+// A non-nil value must have positive context and output allowances.
+type Preparation struct {
+	ContextWindow    int64
+	MaxOutputTokens  int64
+	Interruption     string
+	InterruptionRole string
+	System           []provider.SystemBlock
 }
 
 // String returns the entry as a chain names it: provider:account/model.
@@ -58,7 +70,19 @@ type Move struct {
 	Err *provider.Error
 }
 
-type reportKey struct{}
+type (
+	reportKey  struct{}
+	prepareKey struct{}
+)
+
+// WithPrepare installs the request preparation owned by the turn. It runs
+// once for each selected chain entry, before any request is sent there, so
+// provider-specific context can be made portable before a fallback. A retry
+// on the same entry reuses the prepared request. Its callback context masks
+// this hook, so a summary model's router does not recursively prepare itself.
+func WithPrepare(ctx context.Context, prepare func(context.Context, Entry, provider.Request) (provider.Request, error)) context.Context {
+	return context.WithValue(ctx, prepareKey{}, prepare)
+}
 
 // WithReport returns a context whose requests report their moves to report.
 // It is called on the goroutine that ranges over the stream, before the
@@ -148,6 +172,22 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 				}
 				yield(provider.Event{}, at(entry, failure))
 				return
+			}
+			if prepare, ok := ctx.Value(prepareKey{}).(func(context.Context, Entry, provider.Request) (provider.Request, error)); ok {
+				req.Model, req.Credential = entry.Model, cred
+				prepared, err := prepare(context.WithValue(ctx, prepareKey{}, struct{}{}), entry, req)
+				if err != nil {
+					failure := &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
+					var perr *provider.Error
+					if errors.As(err, &perr) {
+						failureCopy := *perr
+						failureCopy.Err = err
+						failure = &failureCopy
+					}
+					yield(provider.Event{}, at(entry, failure))
+					return
+				}
+				req = prepared
 			}
 			refreshed := false
 			for retries := 0; ; {
