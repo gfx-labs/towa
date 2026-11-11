@@ -30,6 +30,7 @@ type Config struct {
 	Limits     Limits           `koanf:"limits"`
 	Hooks      []Hook           `koanf:"hooks"`
 	Embeddings Embeddings       `koanf:"embeddings"`
+	OpenAI     OpenAI           `koanf:"openai"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -84,7 +85,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults, authDefaults, embeddingsDefaults,
+		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -108,7 +109,7 @@ func (c *Config) validate() error {
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
-		c.Embeddings.validate, c.validateEmbeddingsAccount,
+		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate,
 		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
