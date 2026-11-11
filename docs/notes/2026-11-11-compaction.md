@@ -2,6 +2,12 @@
 
 2026-11-11
 
+## Orchestration follow-on
+
+`BoundedSummaryRequest` retains the prompt and previous summary whole and removes oldest serialized conversation text when the summary input would exceed the context estimate. Its `SummaryReport` reports omitted text, including the prompt formats' tool-result caps and excluded thinking/native content. The estimate is jcode's four bytes per token (`crates/jcode-compaction-core/src/lib.rs:43`, origin/master `8e11eb23e`). It reserves at least 4,000 tokens as jcode does for summary requests (`crates/jcode-base/src/compaction.rs:1792`), or the requested output allowance when larger. This is not an exact tokenizer. A provider context error is returned without replacing any history. The fixed instructions and previous summary are never silently shortened.
+
+`compaction.pending_wait_ms` defaults to 15,000, from the same jcode commit's `crates/jcode-base/src/compaction.rs:44` (`HARD_THRESHOLD_PENDING_WAIT_MS`). Zero means no emergency wait. The caller's context must also bound the wait.
+
 `src/compact` and `src/config/compaction.go`. Nothing calls the package yet, and no request was sent to any provider. The quality of a summary written with either prompt is untested.
 
 ## What was built

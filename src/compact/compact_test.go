@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 	"uuid"
 
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,34 @@ import (
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
+
+func TestBoundedSummaryRequest(t *testing.T) {
+	for _, prompt := range []string{config.SummaryCheckpoint, config.SummaryShort} {
+		t.Run(prompt, func(t *testing.T) {
+			old := strings.Repeat("earlier 記録\n", 3000)
+			recent := "Most recent instruction: preserve the output file."
+			entries := session(
+				transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: old}}}},
+				transcript.Item{Text: &transcript.Text{Text: recent}},
+			)
+			in := SummaryInput{Prompt: prompt, Model: "summary", MaxOutputTokens: 1000, Replaced: entries}
+			const window = 6000
+			req, report, err := BoundedSummaryRequest(in, window)
+			require.NoError(t, err)
+			require.LessOrEqual(t, report.InputTokens+report.ReservedTokens, int64(window))
+			require.NotEmpty(t, report.Omissions)
+			require.Positive(t, report.Omissions[len(report.Omissions)-1].Bytes)
+			text := req.Items[0].User.Parts[0].Text
+			require.True(t, utf8.ValidString(text))
+			require.Contains(t, text, recent)
+			require.Contains(t, text, "Oldest conversation text omitted")
+			require.Equal(t, old, entries[0].Item.User.Parts[0].Text)
+			in.Previous = strings.Repeat("previous summary ", 3000)
+			_, _, err = BoundedSummaryRequest(in, window)
+			require.Error(t, err)
+		})
+	}
+}
 
 // settings are the values Decide is tested with. They are jcode's, which
 // are also the defaults in src/config/compaction.go.

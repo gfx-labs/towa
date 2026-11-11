@@ -24,6 +24,9 @@ type Compaction struct {
 	// summary, keeping EmergencyKeepRecentMessages.
 	EmergencyThreshold          float64 `koanf:"emergency_threshold"`
 	EmergencyKeepRecentMessages int     `koanf:"emergency_keep_recent_messages"`
+	// PendingWaitMillis bounds the emergency wait for an existing summary.
+	// The caller's context may end it sooner.
+	PendingWaitMillis int64 `koanf:"pending_wait_ms"`
 
 	// ReactiveThreshold is the fraction of the budget that starts a
 	// compaction in reactive mode. ReactiveThresholdTokens is a token count
@@ -115,6 +118,7 @@ var compactionDefaults = map[string]any{
 	"compaction.keep_recent_messages":           10,     // core:19 RECENT_TURNS_TO_KEEP
 	"compaction.emergency_threshold":            0.95,   // core:13 CRITICAL_THRESHOLD
 	"compaction.emergency_keep_recent_messages": 2,      // core:22 MIN_TURNS_TO_KEEP
+	"compaction.pending_wait_ms":                15000,  // crates/jcode-base/src/compaction.rs:44 HARD_THRESHOLD_PENDING_WAIT_MS
 	"compaction.reactive_threshold":             0.80,   // config-types:351
 	"compaction.reactive_threshold_tokens":      400000, // config-types:352
 	// jcode projects against the constant COMPACTION_THRESHOLD and has no
@@ -182,6 +186,7 @@ func (c Compaction) validate() error {
 		}
 	}
 	for key, value := range map[string]int64{
+		"compaction.pending_wait_ms":                c.PendingWaitMillis,
 		"compaction.max_context_tokens":             c.MaxContextTokens,
 		"compaction.reactive_threshold_tokens":      c.ReactiveThresholdTokens,
 		"compaction.proactive_floor_tokens":         c.ProactiveFloorTokens,

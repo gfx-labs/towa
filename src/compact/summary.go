@@ -69,9 +69,13 @@ func SummaryRequest(in SummaryInput) (provider.Request, error) {
 // in Pi's compaction.ts and utils.ts. Pi has no sentence about searching:
 // jcode's is added after the prompt when the tool is enabled.
 func checkpointText(in SummaryInput) string {
+	return checkpointWrap(in, checkpointConversation(in.Replaced))
+}
+
+func checkpointConversation(replaced []transcript.Entry) string {
 	var parts []string
-	for _, m := range spans(in.Replaced) {
-		entries := in.Replaced[m.start:m.end]
+	for _, m := range spans(replaced) {
+		entries := replaced[m.start:m.end]
 		if m.role == roleUser {
 			for _, e := range entries {
 				switch {
@@ -103,8 +107,12 @@ func checkpointText(in SummaryInput) string {
 			parts = append(parts, "[Assistant tool calls]: "+strings.Join(calls, "; "))
 		}
 	}
+	return strings.Join(parts, "\n\n")
+}
+
+func checkpointWrap(in SummaryInput, conversation string) string {
 	var b strings.Builder
-	b.WriteString("<conversation>\n" + strings.Join(parts, "\n\n") + "\n</conversation>\n\n")
+	b.WriteString("<conversation>\n" + conversation + "\n</conversation>\n\n")
 	prompt := checkpointPrompt
 	if in.Previous != "" {
 		b.WriteString("<previous-summary>\n" + in.Previous + "\n</previous-summary>\n\n")
@@ -121,17 +129,18 @@ func checkpointText(in SummaryInput) string {
 // build_compaction_conversation_text in jcode's
 // crates/jcode-compaction-core/src/lib.rs.
 func shortText(in SummaryInput) string {
+	return shortWrap(in, shortConversation(in.Replaced))
+}
+
+func shortConversation(replaced []transcript.Entry) string {
 	var b strings.Builder
-	if in.Previous != "" {
-		b.WriteString("## Previous Summary\n\n" + in.Previous + "\n\n## New Conversation\n\n")
-	}
-	for _, m := range spans(in.Replaced) {
+	for _, m := range spans(replaced) {
 		if m.role == roleUser {
 			b.WriteString("**User:**\n")
 		} else {
 			b.WriteString("**Assistant:**\n")
 		}
-		for _, e := range in.Replaced[m.start:m.end] {
+		for _, e := range replaced[m.start:m.end] {
 			switch {
 			case e.Item.User != nil:
 				if text := partsText(e.Item.User.Parts, "[Image]"); text != "" {
@@ -151,6 +160,15 @@ func shortText(in SummaryInput) string {
 		}
 		b.WriteString("\n")
 	}
+	return b.String()
+}
+
+func shortWrap(in SummaryInput, conversation string) string {
+	var b strings.Builder
+	if in.Previous != "" {
+		b.WriteString("## Previous Summary\n\n" + in.Previous + "\n\n## New Conversation\n\n")
+	}
+	b.WriteString(conversation)
 	b.WriteString("\n\n---\n\n" + shortPrompt)
 	if in.ConversationSearch {
 		b.WriteString(" " + searchSentence)
