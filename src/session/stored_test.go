@@ -240,10 +240,10 @@ func TestStoredSessionIsLoadedByAnotherAgent(t *testing.T) {
 	// included, as the first agent's client saw it, with the prompts.
 	replayed, rest := shown(t, others)
 	require.Equal(t, want, replayed)
-	// Then the stored title and the commands, all before the answer.
-	require.Len(t, rest, 2)
+	// The stored title precedes the answer. Commands follow the answer.
+	require.Len(t, rest, 1)
 	require.Equal(t, "Fix the parser", *rest[0].SessionInfoUpdate.Title)
-	require.NotNil(t, rest[1].AvailableCommandsUpdate)
+	commandNotification(t, next, id)
 	var loaded acp.LoadSessionResponse
 	require.NoError(t, json.Unmarshal(got[`8`].Result, &loaded))
 	require.Equal(t, acp.SessionModeId("ask"), loaded.Modes.CurrentModeId)
@@ -329,7 +329,8 @@ func TestResumeTitleASavedSessionAndListInPages(t *testing.T) {
 	require.Nil(t, got[`5`].Error)
 	replayed, rest := shown(t, others)
 	require.Empty(t, replayed)
-	require.Len(t, rest, 2)
+	require.Len(t, rest, 1)
+	commandNotification(t, next, ids[0])
 	next.Send(prompt(`6`, ids[0], "second"))
 	got, _ = next.Await(`6`)
 	require.JSONEq(t, endTurn, string(got[`6`].Result))

@@ -153,6 +153,7 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	s.title, s.meta = meta.Title, meta
 	attached := false
 	defer a.discard(ctx, s, &attached)
+	a.announceAfterResponse(ctx, s)
 	if err := a.openRuntime(ctx, s); err != nil {
 		return nil, nil, err
 	}
@@ -191,10 +192,6 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	if err := a.send(ctx, s, acp.SessionUpdate{SessionInfoUpdate: info}); err != nil {
 		return nil, nil, err
 	}
-	if err := a.announce(ctx, s); err != nil {
-		return nil, nil, err
-	}
-
 	if err := a.put(s, a); err != nil {
 		return nil, nil, err
 	}

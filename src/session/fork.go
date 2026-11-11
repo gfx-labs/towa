@@ -110,6 +110,7 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	s.title = meta.Title
 	attached := false
 	defer a.discard(ctx, s, &attached)
+	a.announceAfterResponse(ctx, s)
 	if err := a.openRuntime(ctx, s); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}

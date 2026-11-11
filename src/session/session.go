@@ -54,7 +54,8 @@ type session struct {
 	// allowed are the tools the client allowed for the rest of the session.
 	allowed map[string]bool
 	// announced is set once the client has been sent the commands.
-	announced bool
+	announced       bool
+	announcePending bool
 	// owner is the agent of the connection the session is live on. The
 	// host's table lock guards it.
 	owner *Agent
