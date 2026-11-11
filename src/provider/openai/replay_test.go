@@ -2,6 +2,7 @@ package openai_test
 
 import (
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -27,10 +28,17 @@ import (
 //	ACPHARNESS_RECORD_OPENAI=1 ACPHARNESS_CODEX_TOKEN=... ACPHARNESS_CODEX_ACCOUNT_ID=... \
 //	    go test ./src/provider/openai -run TestExchange/codex_
 //
-// ACPHARNESS_OPENAI_MODEL and ACPHARNESS_CODEX_MODEL name the models. A
-// recording holds the model it was made with, so a replay needs the same
-// values. Without the record variable a scenario replays its file, and is
-// skipped when the file does not exist.
+// ACPHARNESS_OPENAI_MODEL and ACPHARNESS_CODEX_MODEL name the models, and a
+// replay reads the model back from the recording. ACPHARNESS_OPENAI_BASE_URL
+// points the API key scenarios at another Responses-compatible server, and
+// ACPHARNESS_OPENAI_EFFORT, when set, replaces their reasoning effort: an
+// empty value sends none, for a model that has no reasoning.
+// Without the record variable a scenario replays its file, and is skipped
+// when the file does not exist.
+//
+// The api_ recordings in testdata were made from a local Ollama server, not
+// from OpenAI: see docs/notes/2026-11-11-provider-openai.md for what that
+// does and does not show.
 const (
 	recordEnv     = "ACPHARNESS_RECORD_OPENAI"
 	cacheKey      = "acpharness-recording"
@@ -42,7 +50,9 @@ type scenario struct {
 	scheme auth.Scheme
 	effort string
 	prompt string
-	tools  []provider.Tool
+	// model replaces the model from the environment when recording.
+	model string
+	tools []provider.Tool
 	// maxOutput provokes an incomplete response when set.
 	maxOutput int64
 	check     func(t *testing.T, events []provider.Event, err error)
@@ -90,6 +100,19 @@ func scenarios() []scenario {
 		check: func(t *testing.T, events []provider.Event, err error) {
 			require.NoError(t, err)
 			require.Equal(t, provider.StopMaxTokens, events[len(events)-1].Stop)
+		},
+	}, scenario{
+		name: "api_unknown_model", scheme: auth.SchemeAPIKey, model: "acpharness-no-such-model",
+		prompt: "Reply with the single word: ready",
+		check: func(t *testing.T, events []provider.Event, err error) {
+			var perr *provider.Error
+			require.ErrorAs(t, err, &perr)
+			require.Empty(t, events)
+			// Sending the same model name again cannot help.
+			require.Equal(t, provider.Fail, perr.Class)
+			require.Equal(t, provider.ReasonRequest, perr.Reason)
+			require.NotZero(t, perr.Status)
+			require.Contains(t, perr.Message, "acpharness-no-such-model", "the message is the server's own")
 		},
 	})
 }
@@ -179,6 +202,15 @@ func TestExchange(t *testing.T) {
 				if cred.Token == "" || model == "" {
 					t.Skip("the credential or the model for this endpoint is not in the environment")
 				}
+				if s.model != "" {
+					model = s.model
+				}
+				if s.scheme == auth.SchemeAPIKey {
+					cfg.BaseURL = os.Getenv("ACPHARNESS_OPENAI_BASE_URL")
+					if effort, ok := os.LookupEnv("ACPHARNESS_OPENAI_EFFORT"); ok {
+						s.effort = effort
+					}
+				}
 				require.NoError(t, os.MkdirAll("testdata", 0o755))
 				httpClient.Transport = &providertest.Recorder{
 					Next: httpClient.Transport, Path: path,
@@ -190,7 +222,7 @@ func TestExchange(t *testing.T) {
 					t.Skipf("%s has not been recorded", path)
 				}
 				require.NoError(t, err)
-				model = recordedModel(t, ex)
+				model, s.effort = recordedSettings(t, ex)
 				server := providertest.Replay(t, path)
 				cfg.BaseURL, cfg.CodexBaseURL = server.URL+"/v1", server.URL+"/backend-api/codex"
 			}
@@ -240,21 +272,18 @@ func requireBuilds(t *testing.T, req provider.Request) {
 	}
 }
 
-func recordedModel(t *testing.T, ex *providertest.Exchange) string {
+// recordedSettings returns the model and the reasoning effort a recording
+// was made with. They are the two parts of a request that the environment
+// chose, so a replay takes them from the file.
+func recordedSettings(t *testing.T, ex *providertest.Exchange) (model, effort string) {
 	t.Helper()
-	dec := jsontext.NewDecoder(strings.NewReader(string(ex.Request.Body)))
-	_, err := dec.ReadToken()
-	require.NoError(t, err)
-	for dec.PeekKind() != '}' {
-		name, err := dec.ReadToken()
-		require.NoError(t, err)
-		if name.String() == "model" {
-			value, err := dec.ReadToken()
-			require.NoError(t, err)
-			return value.String()
-		}
-		require.NoError(t, dec.SkipValue())
+	var body struct {
+		Model     string `json:"model"`
+		Reasoning struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
 	}
-	t.Fatal("the recorded request names no model")
-	return ""
+	require.NoError(t, json.Unmarshal(ex.Request.Body, &body))
+	require.NotEmpty(t, body.Model, "the recorded request names no model")
+	return body.Model, body.Reasoning.Effort
 }

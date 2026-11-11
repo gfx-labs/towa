@@ -1,0 +1,49 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/responses",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"llama3.2:3b\",\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"input\":[{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Read the file notes.txt with the read tool.\"}]}],\"tools\":[{\"type\":\"function\",\"name\":\"read\",\"description\":\"Read a file and return its content.\",\"strict\":false,\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}],\"tool_choice\":\"auto\",\"parallel_tool_calls\":false,\"store\":false,\"stream\":true,\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"acpharness-recording\"}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Cache-Control": [
+        "no-cache"
+      ],
+      "Connection": [
+        "keep-alive"
+      ],
+      "Content-Type": [
+        "text/event-stream"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:55:40 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "event: response.created\ndata: {\"response\":{\"background\":false,\"completed_at\":null,\"created_at\":1794405340,\"error\":null,\"frequency_penalty\":0,\"id\":\"resp_849904\",\"incomplete_details\":null,\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{},\"model\":\"llama3.2:3b\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":null,\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"in_progress\",\"store\":false,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Read a file and return its content.\",\"name\":\"read\",\"parameters\":{\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":1,\"truncation\":\"disabled\",\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.in_progress\ndata: {\"response\":{\"background\":false,\"completed_at\":null,\"created_at\":1794405340,\"error\":null,\"frequency_penalty\":0,\"id\":\"resp_849904\",\"incomplete_details\":null,\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{},\"model\":\"llama3.2:3b\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":null,\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"in_progress\",\"store\":false,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Read a file and return its content.\",\"name\":\"read\",\"parameters\":{\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":1,\"truncation\":\"disabled\",\"usage\":null},\"sequence_number\":1,\"type\":\"response.in_progress\"}\n\n"
+      },
+      {
+        "text": "event: response.output_item.added\ndata: {\"item\":{\"arguments\":\"\",\"call_id\":\"call_0gbswja9\",\"id\":\"fc_501240_0\",\"name\":\"read\",\"status\":\"in_progress\",\"type\":\"function_call\"},\"output_index\":0,\"sequence_number\":2,\"type\":\"response.output_item.added\"}\n\nevent: response.function_call_arguments.delta\ndata: {\"delta\":\"{\\\"path\\\":\\\"notes.txt\\\"}\",\"item_id\":\"fc_501240_0\",\"output_index\":0,\"sequence_number\":3,\"type\":\"response.function_call_arguments.delta\"}\n\nevent: response.function_call_arguments.done\ndata: {\"arguments\":\"{\\\"path\\\":\\\"notes.txt\\\"}\",\"item_id\":\"fc_501240_0\",\"output_index\":0,\"sequence_number\":4,\"type\":\"response.function_call_arguments.done\"}\n\nevent: response.output_item.done\ndata: {\"item\":{\"arguments\":\"{\\\"path\\\":\\\"notes.txt\\\"}\",\"call_id\":\"call_0gbswja9\",\"id\":\"fc_501240_0\",\"name\":\"read\",\"status\":\"completed\",\"type\":\"function_call\"},\"output_index\":0,\"sequence_number\":5,\"type\":\"response.output_item.done\"}\n\n"
+      },
+      {
+        "text": "event: response.completed\ndata: {\"response\":{\"background\":false,\"completed_at\":1794405340,\"created_at\":1794405340,\"error\":null,\"frequency_penalty\":0,\"id\":\"resp_849904\",\"incomplete_details\":null,\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{},\"model\":\"llama3.2:3b\",\"object\":\"response\",\"output\":[{\"arguments\":\"{\\\"path\\\":\\\"notes.txt\\\"}\",\"call_id\":\"call_0gbswja9\",\"id\":\"fc_501240_0\",\"name\":\"read\",\"status\":\"completed\",\"type\":\"function_call\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":null,\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"completed\",\"store\":false,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Read a file and return its content.\",\"name\":\"read\",\"parameters\":{\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":1,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":167,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":17,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":184}},\"sequence_number\":6,\"type\":\"response.completed\"}\n\n"
+      }
+    ],
+    "incomplete": true
+  }
+}

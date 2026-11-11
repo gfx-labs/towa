@@ -37,7 +37,7 @@ Everything else the proxy must leave alone: `originator: acpharness`, `x-codex-r
 - A free-text tool call's input is stored as a JSON string, as the transcript contract says. A function call whose argument text is not valid JSON is also stored as a string, so that the argument repair sees what the model wrote. `Opaque.type` tells the two apart when the item goes back.
 - A tool result goes back as `custom_tool_call_output` when its call was a free-text call, and `function_call_output` otherwise.
 - `strict` is false on function tools. Strict mode needs every property required and no additional properties, which MCP tool schemas do not promise. jcode rewrites schemas to fit. That belongs in the dialect, not here.
-- `max_output_tokens` is not sent to the Codex backend, which rejects it (jcode does the same).
+- `max_output_tokens` is omitted on a Codex backend request, as jcode does. Whether the backend rejects it was not probed.
 - `reasoning.summary` is `auto` whenever an effort is sent. Without summaries a long reasoning phase produces no events.
 - `InputTokens` is `input_tokens` minus the cached and cache-write counts, because the transcript's count excludes the cache. Usage that reports fewer input tokens than cached ones is an error.
 - Stop reasons: a response with a tool call is `tool_use`, one with a refusal part is `refusal`, otherwise `end_turn`. `response.incomplete` maps `max_output_tokens` to `max_tokens` and `content_filter` to `refusal`. Any other incomplete reason is an error, not a guessed stop.
@@ -91,6 +91,35 @@ Encoding a request of 200 user messages of 2,000 characters, `go test -bench Enc
 
 The buffer is returned only after the transport has closed every reader of the body, because net/http may read a request body after the response arrives.
 
+## Recordings from Ollama
+
+`testdata/api_text.json`, `api_function_call.json` and `api_unknown_model.json` were recorded on 2026-11-11 from the local Ollama server (0.24.0, `llama3.2:3b`, `http://127.0.0.1:11434/v1`), through the recorder in `replay_test.go`:
+
+```sh
+ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=placeholder-not-a-key ACPHARNESS_OPENAI_MODEL=llama3.2:3b \
+  ACPHARNESS_OPENAI_EFFORT= ACPHARNESS_OPENAI_BASE_URL=http://127.0.0.1:11434/v1 \
+  go test -count 1 -run 'TestExchange/api_(text|function_call|unknown_model)$' ./src/provider/openai/
+```
+
+Five requests were sent in all. `TestExchange` now replays the three files through the real client over HTTP, and fails if the request the client builds differs from the recorded one.
+
+These are Ollama's emulation of the Responses API, not OpenAI. They show that the parser reads a real server's stream for a text reply and a function call, that the deltas add up to the finished text, that usage and the stop reason come out, and that a 404 with an error body becomes a `request` error of class fail. They show nothing about OpenAI's reasoning items, encrypted content, custom tools, usage-limit errors, context-length errors, rate limit headers, or the Codex backend.
+
+What Ollama sent that is worth knowing:
+
+- It answered the first two requests with HTTP 400, `"llama3.2:3b" does not support thinking`, because the request carried `reasoning`. The recordings were made without an effort (`ACPHARNESS_OPENAI_EFFORT=`), so no recording covers a request with `reasoning`. The client was not changed.
+- Events this client does not read arrive and are skipped: `response.in_progress`, `response.content_part.added`, `response.content_part.done`, `response.output_text.done`, `response.function_call_arguments.done`.
+- The function call's arguments came in one delta, so no recording covers arguments split over several deltas.
+- The unknown model error is `{"error":{"message":...,"type":"not_found_error","param":null,"code":null}}` with status 404. A null `code` is read as no code.
+- Usage has `cached_tokens: 0` and `reasoning_tokens: 0`. No recording covers the subtraction of cached tokens from input tokens.
+- The parser needed no change.
+
+The fixtures were searched for the host name, the user name and home paths, and hold none. They hold the URL `http://127.0.0.1:11434/v1/responses`, the model name, the prompts and a `Date` header.
+
+## Config
+
+`src/config/openai.go` has the `openai` section: `transport` (default `sse`), `max_idle_sockets` (no default, required for `websocket`), `compact_threshold` (default off), `parallel_tool_calls` (default false, as jcode sends) and `error_body_bytes` (default 1 MiB, a choice and not a measurement: the comment in the file gives the sizes seen). It is not wired into `config.go` yet.
+
 ## Checked
 
 - `go build`, `go vet`, `go test -race`, `golangci-lint run` on `./src/provider/openai/...`, the `darwin/arm64` build and the `CGO_ENABLED=0` build pass.
@@ -98,13 +127,13 @@ The buffer is returned only after the transport has closed every reader of the b
 
 ## Not checked
 
-- Nothing has run against OpenAI. Every wire shape here is read from jcode and openai/codex, not observed.
-- `testdata/` is empty, so `TestExchange` skips all seven scenarios. The recordings need a real account:
-  - `api_text`, `api_function_call`, `api_custom_call`, `api_max_output_tokens`: `ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=... ACPHARNESS_OPENAI_MODEL=... go test ./src/provider/openai -run TestExchange/api_`
+- Nothing has run against OpenAI. Every OpenAI wire shape here is read from jcode and openai/codex, not observed. The only real server the client has talked to is Ollama, for the three recordings above.
+- Not recorded, and skipped by `TestExchange`: `api_custom_call`, `api_max_output_tokens`, `codex_text`, `codex_function_call`, `codex_custom_call`. They need a real account:
+  - the API scenarios: `ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=... ACPHARNESS_OPENAI_MODEL=... go test ./src/provider/openai -run TestExchange/api_`. This would also replace the three Ollama recordings with OpenAI's.
   - `codex_text`, `codex_function_call`, `codex_custom_call`: `ACPHARNESS_RECORD_OPENAI=1 ACPHARNESS_CODEX_TOKEN=... ACPHARNESS_CODEX_ACCOUNT_ID=... ACPHARNESS_CODEX_MODEL=... go test ./src/provider/openai -run TestExchange/codex_`
   - The recorder replaces the token and the account id.
-- No recording exists for an error response (usage limit, context length, 401), for the compact call, or for a second turn that sends encrypted reasoning back. Each needs its own scenario and a real account in that state.
-- The WebSocket transport has no test in the repo. `providertest` covers plain HTTP only.
+- No recording exists for an OpenAI error response (usage limit, context length, 401), for the compact call, or for a second turn that sends encrypted reasoning back. Each needs its own scenario and a real account in that state.
+- The WebSocket transport has no test in the repo and has never talked to a real server. `providertest` covers plain HTTP only.
 - `x-codex-routing-hint` and `session-id` are sent because jcode and openai/codex send them. Whether the backend needs them was not probed.
 
 ## Not done

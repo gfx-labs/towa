@@ -1,0 +1,45 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/responses",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"acpharness-no-such-model\",\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"input\":[{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Reply with the single word: ready\"}]}],\"tools\":[],\"tool_choice\":\"auto\",\"parallel_tool_calls\":false,\"store\":false,\"stream\":true,\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"acpharness-recording\"}"
+    }
+  },
+  "response": {
+    "status": 404,
+    "header": {
+      "Cache-Control": [
+        "no-cache"
+      ],
+      "Connection": [
+        "keep-alive"
+      ],
+      "Content-Length": [
+        "117"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 13:55:14 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "{\"error\":{\"message\":\"model 'acpharness-no-such-model' not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
+      }
+    ]
+  }
+}
