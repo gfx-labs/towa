@@ -65,6 +65,13 @@ jobs:
         run: |
           go vet ./...
           go test ./...
+      # tools/conformance is its own module too. It builds the binary and
+      # drives it over stdio with coder/acp-go-sdk as the client, so a second
+      # implementation checks what we put on the wire.
+      - name: conformance
+        run: |
+          go -C tools/conformance vet ./...
+          go -C tools/conformance test -race ./...
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0
