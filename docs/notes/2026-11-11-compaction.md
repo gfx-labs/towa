@@ -135,13 +135,21 @@ ACPHARNESS_JCODE_REPO=/home/a/repo/github.com/1jehuang/jcode \
     nice -n 10 go test ./src/compact -run TestPromptsMatchTheirSources -count=1
 ```
 
-## Still untested or owned elsewhere
+## Runtime semantic state acceptance
+
+`src/cli/runtime_compact_test.go` starts from the unchanged recorded `looptest.ReadTurn` history in the real directory store. It opens the runtime factory with a captured Codex model variant and an in-process Responses endpoint that aborts every main request without returning a model response. Embeddings independently use `llama3.2:3b`. Two actual runtime turns see the same preceding Usage entry and must issue exactly one embedding request. An offline third turn changes the configured model name and must issue a second embedding request, proving state reset by an observable external effect rather than controller pointer identity.
+
+The single-input fixture `src/cli/testdata/ollama_runtime_turn_embedding.json` was captured from the local Ollama endpoint on November 11, 2026 with one explicitly authorized request, bringing this lane's total to eight local requests across its tasks. The input is the final assistant text from the existing real ReadTurn recording. The fixture returned HTTP 200 with one 3,072-dimensional vector and is loaded before acceptance. The recording transport refuses a second request. Offline replay uses the same unchanged exchange for the reset case, with no further Ollama calls. No models were pulled, settings changed, external endpoints called, or model responses fabricated. The fixture contains only a loopback URL and no home paths, machine names, user names or placeholder key.
+
+The runtime regression passes five repetitions under the race detector. A scratch-only Go overlay that removes the same-model controller reuse branch fails at the intended assertion: expected one embedding request, observed two. The live checkout is never reverted for this negative control. The kept test is the owner-boundary regression, not an assertion about controller identity.
 
 Native windows preserve each item's origin and copy the native compaction's origin onto the enclosing appended item. Replay requires exact canonical provider, model and account through `Item.OpaqueCompatible`. `Items` and `EnsurePortable` accept an optional target origin. An absent target or legacy nil origin cannot replay opaque context. The controller receives the selected request origin in `BeforeInput.Origin`, regenerates a portable summary from retained source on mismatch, and cancels pending native work when that origin changes. It never infers or backfills a legacy origin.
+
+## Still untested or owned elsewhere
 
 - Summary quality for continuing real coding work, repeated checkpoint merges, omitted input and long-history native portability. A short local summary is not a quality benchmark.
 - OpenAI native automatic/explicit responses and cross-provider fallback on real encrypted history. A real account is needed.
 - Anthropic thinking/cache/OAuth behavior. Ollama proves none of it.
 - Exact token fitting for arbitrary model tokenizers, multimodal content or huge kept suffixes.
-- Real semantic topic-shift quality and the controller's single-turn embedding request as distinct from the recorded relevance-keep request.
+- Real semantic topic-shift quality. Both the single-turn runtime embedding and relevance-keep request paths now have real local recordings, but these do not measure topic detection quality.
 - Loop/session/runtime integration, compaction ACP updates and `/compact` are owned by their lanes. This lane supplies the agreed callback and no edits to their paths.
