@@ -387,7 +387,8 @@ func (c *Connection) respond(id jsontext.Value, result any, rerr *RequestError) 
 		}
 	}
 	if rerr != nil {
-		err, _ = c.write(&outboundError{JSONRPC: version, ID: id, Error: rerr})
+		writeErr, encodeErr := c.write(&outboundError{JSONRPC: version, ID: id, Error: rerr})
+		err = errors.Join(writeErr, encodeErr)
 	}
 	if err != nil {
 		c.logger.Debug("acp: response not written", "err", err)
@@ -511,6 +512,9 @@ func (c *Connection) write(msg any) (err, encodeErr error) {
 	buf.B = append(buf.B, '\n')
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	_, err = c.w.Write(buf.B)
+	n, err := c.w.Write(buf.B)
+	if err == nil && n != len(buf.B) {
+		err = io.ErrShortWrite
+	}
 	return err, nil
 }
