@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+
+	"github.com/valyala/bytebufferpool"
 )
 
 // methodCancelRequest is the protocol-level notification that cancels one
@@ -180,7 +182,7 @@ func (c *Connection) Serve(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	lines := make(chan []byte)
+	lines := make(chan *bytebufferpool.ByteBuffer)
 	readDone := make(chan error, 1)
 	go func() { readDone <- c.read(lines) }()
 
@@ -190,7 +192,7 @@ func (c *Connection) Serve(ctx context.Context) error {
 		select {
 		case line := <-lines:
 			arrival++
-			c.dispatch(context.WithValue(ctx, arrivalKey{}, arrival), line)
+			c.dispatchLine(context.WithValue(ctx, arrivalKey{}, arrival), line)
 		case err = <-readDone:
 			serving = false
 		case <-ctx.Done():
@@ -214,27 +216,48 @@ func (c *Connection) Serve(ctx context.Context) error {
 
 // read passes each message to lines until the reader ends or the connection
 // is done. It returns nil when the reader ended between messages.
-func (c *Connection) read(lines chan<- []byte) error {
+func (c *Connection) read(lines chan<- *bytebufferpool.ByteBuffer) error {
 	br := bufio.NewReader(c.r)
 	for {
-		line, err := br.ReadBytes('\n')
+		line, err := readLine(br)
 		if err != nil {
+			partial := len(bytes.TrimSpace(line.B)) > 0
+			bytebufferpool.Put(line)
 			switch {
 			case !errors.Is(err, io.EOF):
 				return err
-			case len(bytes.TrimSpace(line)) > 0:
+			case partial:
 				return io.ErrUnexpectedEOF
 			}
 			return nil
 		}
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
+		if len(bytes.TrimSpace(line.B)) == 0 {
+			bytebufferpool.Put(line)
 			continue
 		}
 		select {
 		case lines <- line:
 		case <-c.done:
+			bytebufferpool.Put(line)
 			return nil
+		}
+	}
+}
+
+// Ownership passes to Serve after read sends the buffer. Unmarshal copies
+// raw values, so neither a request goroutine nor a pending response keeps it.
+func (c *Connection) dispatchLine(ctx context.Context, line *bytebufferpool.ByteBuffer) {
+	defer bytebufferpool.Put(line)
+	c.dispatch(ctx, bytes.TrimSpace(line.B))
+}
+
+func readLine(br *bufio.Reader) (*bytebufferpool.ByteBuffer, error) {
+	line := bytebufferpool.Get()
+	for {
+		part, err := br.ReadSlice('\n')
+		line.B = append(line.B, part...)
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return line, err
 		}
 	}
 }
@@ -474,13 +497,14 @@ func (r response) unwrap() (jsontext.Value, error) {
 // any of it is written: when it cannot be encoded, encodeErr says why and
 // nothing has reached the peer.
 func (c *Connection) write(msg any) (err, encodeErr error) {
-	var buf bytes.Buffer
-	if err := json.MarshalWrite(&buf, msg, wireOptions); err != nil {
+	buf := bytebufferpool.Get()
+	defer bytebufferpool.Put(buf)
+	if err := json.MarshalWrite(buf, msg, wireOptions); err != nil {
 		return nil, err
 	}
-	buf.WriteByte('\n')
+	buf.B = append(buf.B, '\n')
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	_, err = c.w.Write(buf.Bytes())
+	_, err = c.w.Write(buf.B)
 	return err, nil
 }
