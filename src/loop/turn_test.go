@@ -108,6 +108,30 @@ func TestAStopHookCannotKeepATurnGoingForever(t *testing.T) {
 	assert.Equal(t, 2, f.Served())
 }
 
+func TestATurnTokenLimitStopsBeforeTheNextRequest(t *testing.T) {
+	scenario := looptest.ReadTurn
+	scenario.Requests = 1
+	f := looptest.Replay(t, scenario)
+	var c client
+	turn := f.Turn(acp.SessionId(uuid.NewV7().String()), c.update)
+	limits := f.Config.Limits
+	limits.MaxInputTokens = 1
+	turn.Limits = &limits
+	result, err := f.Loop.Run(t.Context(), turn)
+	require.NoError(t, err)
+	assert.Equal(t, acp.StopReasonMaxTurnRequests, result.StopReason)
+	require.NotNil(t, result.Stop)
+	assert.Equal(t, harness.StopLimit, result.Stop.Kind)
+	assert.Equal(t, config.KeyMaxInputTokens, result.Stop.Limit)
+	require.NotNil(t, result.Usage)
+	assert.Positive(t, result.Usage.InputTokens)
+	assert.Equal(t, 1, f.Served())
+	_, log := entries(t, f.Store, turn.SessionID)
+	require.NotEmpty(t, log)
+	require.NotNil(t, log[len(log)-1].Item.ToolResult)
+	assert.Equal(t, transcript.OutcomeCompleted, log[len(log)-1].Item.ToolResult.Outcome)
+}
+
 func TestARecordedTurnThroughTheClientRouterLoopAndStore(t *testing.T) {
 	f := looptest.Replay(t, looptest.ReadTurn)
 	var c client
