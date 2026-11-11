@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -382,6 +383,22 @@ func modeOverride() Override {
 			return OverrideEffect{}, err
 		}
 		return OverrideEffect{Set: map[acp.SessionConfigId]Value{ModeOption: {ID: acp.SessionConfigValueId(mode)}}}, nil
+	}}
+}
+
+// pathsOverride lets session/new name a list of paths under key. The paths
+// are carried to the turn as sent: config.Context's rules for them apply
+// where the context is loaded.
+func pathsOverride(key string, set func(turn *loop.Turn, paths []string)) Override {
+	return Override{Key: key, Parse: func(value jsontext.Value) (OverrideEffect, error) {
+		var paths []string
+		if err := json.Unmarshal(value, &paths); err != nil {
+			return OverrideEffect{}, err
+		}
+		if slices.Contains(paths, "") {
+			return OverrideEffect{}, errors.New("a path is empty")
+		}
+		return OverrideEffect{Turn: func(turn *loop.Turn) { set(turn, paths) }}, nil
 	}}
 }
 

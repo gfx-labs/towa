@@ -48,6 +48,11 @@ type Supports struct {
 	// SystemPrompt: the turn builds its system prompt with agentctx.Build
 	// from loop.Turn.SystemPrompt.
 	SystemPrompt bool
+	// ContextOverrides: the turn's context is loaded with
+	// loop.Turn.ContextFiles and loop.Turn.SkillsDirs added to the
+	// configured ones. It allows the context_files and skills_dirs keys of
+	// _meta.acpharness on session/new.
+	ContextOverrides bool
 	// MCP: the turn connects to loop.Turn.McpServers over stdio, and over
 	// the transports named here. Nil means it connects to none.
 	MCP *acp.McpCapabilities
@@ -114,6 +119,14 @@ func NewAgent(o Options) (*Agent, error) {
 		registry.AddCommand(modeCommand()),
 	); err != nil {
 		return nil, err
+	}
+	if o.Supports.ContextOverrides {
+		if err := errors.Join(
+			registry.AddOverride(pathsOverride("context_files", func(turn *loop.Turn, paths []string) { turn.ContextFiles = paths })),
+			registry.AddOverride(pathsOverride("skills_dirs", func(turn *loop.Turn, paths []string) { turn.SkillsDirs = paths })),
+		); err != nil {
+			return nil, err
+		}
 	}
 	return &Agent{
 		version:  o.Version,

@@ -279,6 +279,7 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 			o.Supports = session.Supports{
 				AdditionalDirectories: true,
 				SystemPrompt:          true,
+				ContextOverrides:      true,
 				MCP:                   &acp.McpCapabilities{Http: true},
 			}
 			o.Registry = &session.Registry{}
@@ -306,7 +307,7 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 		w.Send(request(`"new"`, "session/new", `{"cwd":"/work","additionalDirectories":["/lib"],`+
 			`"systemPrompt":{"mode":"append","content":[{"type":"text","text":"be brief"}]},`+
 			`"mcpServers":[{"type":"http","name":"docs","url":"https://mcp.example/","headers":[]}],`+
-			`"_meta":{"acpharness":{"cwd_suffix":"/sub"},"traceparent":"00-x"}}`))
+			`"_meta":{"acpharness":{"cwd_suffix":"/sub","context_files":["notes.md"],"skills_dirs":["~/skills"]},"traceparent":"00-x"}}`))
 		got, _ = w.Await(`"new"`)
 		require.Nil(t, got[`"new"`].Error)
 		var created acp.NewSessionResponse
@@ -321,6 +322,8 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 		require.Len(t, turn.McpServers, 1)
 		require.Equal(t, "docs", turn.McpServers[0].Http.Name)
 		require.Equal(t, "/work/sub", turn.Cwd)
+		require.Equal(t, []string{"notes.md"}, turn.ContextFiles)
+		require.Equal(t, []string{"~/skills"}, turn.SkillsDirs)
 
 		// What the wiring did not turn on, or cannot be applied, is refused.
 		refused := map[string]string{
@@ -331,7 +334,8 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 			`6`: `{"cwd":"/work","mcpServers":[{"type":"sse","name":"docs","url":"https://mcp.example/","headers":[]}]}`,
 			`7`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"opus"}}}`,
 			`8`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"mode":"yolo"}}}`,
-			`9`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"cwd_suffix":7}}}`,
+			`9`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"cwd_suffix":7}}}`,
+			`10`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"context_files":[""]}}}`,
 		}
 		for n, params := range refused {
 			w.Send(request(n, "session/new", params))
@@ -349,6 +353,7 @@ func TestUnsupportedSessionFieldsAndContentAreRefused(t *testing.T) {
 		refused := map[string]string{
 			`1`: request(`1`, "session/new", `{"cwd":"/work","mcpServers":[],"additionalDirectories":["/lib"]}`),
 			`2`: request(`2`, "session/new", `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"text","text":"x"}]}}`),
+			`4`: request(`4`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"skills_dirs":["/s"]}}}`),
 			`3`: request(`3`, "session/prompt", `{"sessionId":"`+id+`","prompt":[{"type":"image","data":"","mimeType":"image/png"}]}`),
 		}
 		for n, line := range refused {
