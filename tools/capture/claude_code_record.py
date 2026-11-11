@@ -32,13 +32,10 @@ where only claude_code_sandbox.py runs. Nothing is written to prompts/.
 
 import argparse
 import base64
-import getpass
 import hashlib
 import json
 import os
-import re
 import shutil
-import socket
 import stat
 import subprocess
 import sys
@@ -50,6 +47,7 @@ sys.path.insert(0, str(HERE))
 
 import claude_code
 import claude_code_sandbox as inside
+import hostscan
 
 BWRAP = "/usr/bin/bwrap"
 SANDBOX_SCRIPT = HERE / "claude_code_sandbox.py"
@@ -64,8 +62,6 @@ LOADER_LINK = {"path": "lib64/ld-linux-x86-64.so.2", "symlink": "../lib/x86_64-l
 # Empty. The interpreter looks for it at startup and warns on stderr without it.
 DYNLOAD_DIRECTORY = {"path": "lib/python3.13/lib-dynload", "directory": True}
 
-# What a recorded request may not contain. Checked on every header and body.
-CREDENTIAL_HEADERS = ("authorization", "x-api-key", "cookie", "proxy-authorization")
 
 
 class RecordError(Exception):
@@ -216,37 +212,6 @@ def invoke(session: Path, label: str, runs: list, timeout, expected: dict, limit
     return out
 
 
-def scan(runs: list) -> list:
-    """Findings that block publication: a credential that is not the
-    placeholder, or a trace of this host in what the executable sent or printed."""
-    host_marks = {"home directory path": "/home/", "host name": socket.gethostname(), "user name": getpass.getuser()}
-    key = inside.PLACEHOLDER_KEY
-    findings = []
-
-    def check_text(where: str, text: str):
-        for token in set(re.findall(r"sk-ant-[A-Za-z0-9_-]+", text)) - {key}:
-            findings.append(f"{where}: key-shaped text other than the placeholder ({len(token)} characters)")
-        for label, mark in host_marks.items():
-            if mark and mark in text:
-                findings.append(f"{where}: contains the {label}")
-
-    for run in runs:
-        for stream in ("stdout", "stderr"):
-            check_text(f"run {run['label']} {stream}", str(run.get(stream, "")))
-        for index, request in enumerate(run["requests"]):
-            where = f"run {run['label']} request {index} ({request['method']} {request['path']})"
-            for name, value in request["headers"]:
-                if name.lower() in CREDENTIAL_HEADERS and value not in (key, f"Bearer {key}"):
-                    findings.append(f"{where}: header {name} is not the placeholder")
-            if "body_base64" in request:
-                findings.append(f"{where}: the body is not UTF-8 and was not scanned")
-                body = base64.b64decode(request["body_base64"]).decode("utf-8", "replace")
-            else:
-                body = request["body"]
-            check_text(where, request["path"] + "\n" + "\n".join(f"{k}: {v}" for k, v in request["headers"]) + "\n" + body)
-    return findings
-
-
 def write_report(report_dir: Path, report: dict) -> Path:
     """Written beside the session's sandbox directories, in one the sandbox was
     never given, through a temporary file so a reader sees all of it or none."""
@@ -333,7 +298,7 @@ def main() -> int:
             "sys_path": inside.SYS_PATH,
         },
         "invocations": [],
-        "scan_findings": [],
+        "scan": {"blocking": []},
     }
     # The probe runs alone first. Its result comes from a sandbox in which only
     # claude_code_sandbox.py ran, so nothing else could have written it.
@@ -347,9 +312,9 @@ def main() -> int:
         ok = recorded["ok"]
         if "runs" in recorded:
             try:
-                report["scan_findings"] = scan(recorded["runs"])
+                report["scan"] = hostscan.scan_runs(recorded["runs"], inside.PLACEHOLDER_KEY)
             except (KeyError, TypeError, ValueError) as e:
-                report["scan_findings"] = [f"the recorded runs are malformed and were not scanned: {type(e).__name__}: {e}"]
+                report["scan"] = {"blocking": [f"the recorded runs are malformed and were not scanned: {type(e).__name__}: {e}"]}
     path = write_report(session / "report", report)
 
     for invocation in report["invocations"]:
@@ -365,11 +330,15 @@ def main() -> int:
         for run in invocation.get("runs", []):
             seen = [f"{r['method']} {r['path']}" for r in run["requests"]]
             print(f"  run {run['label']}: exit {run.get('exit_code', 'timeout')}, {len(seen)} requests: {seen}")
-    for finding in report["scan_findings"]:
-        print(f"SCAN: {finding}")
+    for finding in report["scan"]["blocking"]:
+        print(f"SCAN, blocking: {finding}")
+    for where, classes in report["scan"].get("noted_counts_by_class", {}).items():
+        print(f"SCAN, noted: {where}: {classes}")
+    for skipped in report["scan"].get("checks_not_made", []):
+        print(f"SCAN, check not made: {skipped}")
     print(f"executable started: {report['executable_was_started']}")
     print(f"report: {path}")
-    return 0 if ok and not report["scan_findings"] else 1
+    return 0 if ok and not report["scan"]["blocking"] else 1
 
 
 if __name__ == "__main__":

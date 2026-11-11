@@ -24,10 +24,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
+sys.path.insert(0, str(HERE))
+
+import outdir  # noqa: E402
 UPSTREAM = "https://github.com/openai/codex"
 PINNED = "ce0323f2f2d3b25e82806cd555237da3db4e1897"
 
@@ -139,8 +143,7 @@ def spec_tool_names(spec: dict) -> list[str]:
 
 
 def capture(clone: Path, commit: str, probe: dict, out: Path):
-    if out.exists():
-        shutil.rmtree(out)
+    """Writes the capture into out, an empty scratch directory."""
     files = []
 
     def write(rel: str, data: bytes, source: dict):
@@ -314,8 +317,14 @@ def main():
         clone, commit = checkout(work.resolve(), args.ref)
         out = (args.out or REPO / "prompts" / "codex" / commit[:8]).resolve()
         probe = run_probe(clone, work.resolve())
-        capture(clone, commit, probe, out)
-    except CaptureError as e:
+        # Built in scratch, then installed: the destination is never emptied.
+        stage = Path(tempfile.mkdtemp(prefix=f"codex-{commit[:8]}-", dir=work.resolve()))
+        try:
+            capture(clone, commit, probe, stage)
+            outdir.install(stage, out)
+        finally:
+            shutil.rmtree(stage)
+    except (CaptureError, outdir.InstallError) as e:
         print(f"capture failed: {e}", file=sys.stderr)
         return 1
     print(f"wrote {out}")

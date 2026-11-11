@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import threading
 from pathlib import Path
 
@@ -38,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bunfs  # noqa: E402
 import jseval  # noqa: E402
+import outdir  # noqa: E402
 import zodschema  # noqa: E402
 from jseval import UNDEF, Env, Function, JSObject, Unknown, Unresolved  # noqa: E402
 
@@ -48,6 +50,9 @@ LAUNCHER = "@anthropic-ai/claude-code"
 PLATFORM = "@anthropic-ai/claude-code-linux-x64"
 EXECUTABLE = "package/claude"
 SDK_TYPES = "package/sdk-tools.d.ts"
+# The entries of the output directory this script writes. profiles/ beside
+# them holds recorded captures written by claude_code_request.py.
+OWNED_OUTPUT = ("interruption", "system", "tools", "package", "manifest.json")
 
 # Budget for one item: the combinations of undecided conditions that are
 # evaluated, and the distinct texts written out. Over either, the item is
@@ -459,8 +464,19 @@ def run(version: str, work: Path, out: Path):
     if not any(stamp in data for data in sources.values()):
         raise CaptureError(f"no module carries the banner for version {version}")
 
-    if out.exists():
-        shutil.rmtree(out)
+    # Built in the scratch directory, then installed. The destination is read
+    # by other tools while this runs for a minute, so it is never emptied.
+    work.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f"static-{version}-", dir=work))
+    try:
+        manifest = build(version, launcher, platform, executable, modules, sources, stage)
+        outdir.install(stage, out, OWNED_OUTPUT)
+    finally:
+        shutil.rmtree(stage)
+    return manifest
+
+
+def build(version, launcher, platform, executable, modules, sources, out: Path):
     capture = Capture(sources, out)
     capture.write(
         "package/sdk-tools.d.ts",
@@ -528,7 +544,7 @@ def main():
     def work_thread():
         try:
             outcome["manifest"] = run(args.version, work, out)
-        except (CaptureError, bunfs.BundleError) as e:
+        except (CaptureError, bunfs.BundleError, outdir.InstallError) as e:
             outcome["error"] = e
 
     thread = threading.Thread(target=work_thread)
