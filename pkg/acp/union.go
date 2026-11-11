@@ -11,6 +11,22 @@ type objectValue map[string]jsontext.Value
 
 type arrayValue []objectValue
 
+// The old generator encoded object variants through map[string]any. Keep
+// that shaping here: removing it changes integer encoding above 2^53. A
+// separate protocol change can remove that loss of precision, not this
+// serializer migration.
+func marshalUnionObject(enc *jsontext.Encoder, value any) error {
+	b, err := json.Marshal(value, enc.Options(), jsontext.EscapeForHTML(true))
+	if err != nil {
+		return err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(b, &object); err != nil {
+		return err
+	}
+	return json.MarshalEncode(enc, object, jsontext.EscapeForHTML(true))
+}
+
 func objectMembers(b jsontext.Value) (objectValue, bool) {
 	if b.Kind() != '{' {
 		return nil, false

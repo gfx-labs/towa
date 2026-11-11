@@ -96,7 +96,12 @@ type response struct {
 // members of a map in sorted order, and U+2028 and U+2029 escaped. <, > and &
 // are left as they are: the messages carry source code, and escaping makes
 // each of those six bytes long.
-var wireOptions = json.JoinOptions(json.Deterministic(true), jsontext.EscapeForJS(true))
+var wireOptions = json.JoinOptions(
+	json.Deterministic(true),
+	jsontext.EscapeForJS(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+)
 
 type (
 	arrivalKey struct{}

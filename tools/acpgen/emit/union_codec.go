@@ -170,7 +170,7 @@ func emitUnionMarshal(f *File, name string, variants []variantInfo) {
 						gg.Id("v").Dot("Meta").Op("=").Nil()
 						gg.Id("v").Dot("Annotations").Op("=").Nil()
 					}
-					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("v"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
+					gg.Return(Id("marshalUnionObject").Call(Id("enc"), Op("&").Id("v")))
 				}
 			})
 		}
@@ -256,11 +256,18 @@ func emitDefaultsCodec(f *File, name string, defaults []defaultCodec) {
 	if len(defaults) > 0 {
 		// v1's generated default marshaler used json.Marshal, so strings
 		// inside these types were HTML-escaped even on a non-escaping wire.
-		f.Func().Params(Id("v").Id(name)).Id("MarshalJSONTo").Params(Id("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().Block(
-			Id("type").Id("Alias").Id(name),
-			Id("a").Op(":=").Id("Alias").Call(Id("v")),
-			Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("a"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true)))),
-		)
+		f.Func().Params(Id("v").Id(name)).Id("MarshalJSONTo").Params(Id("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().BlockFunc(func(g *Group) {
+			g.Type().Id("Alias").Id(name)
+			g.Id("a").Op(":=").Id("Alias").Call(Id("v"))
+			for _, d := range defaults {
+				if d.nilable {
+					g.If(Id("a").Dot(d.fieldName).Op("==").Nil()).Block(
+						If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Index().Byte().Parens(Lit(d.defaultJSON)), Op("&").Id("a").Dot(d.fieldName)), Id("err").Op("!=").Nil()).Block(Return(Id("err"))),
+					)
+				}
+			}
+			g.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("a"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
+		})
 		f.Line()
 	}
 	applied := []defaultCodec{}
