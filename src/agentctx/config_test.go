@@ -35,6 +35,7 @@ file = "~/house.md"
 	require.Equal(t, config.Context{
 		ExtraFiles:    []string{"notes.md"},
 		ExtraDirs:     []string{"docs"},
+		SkillsEnabled: true,
 		SkillsDirs:    []string{"~/a", "/b"},
 		MaxFileBytes:  1000,
 		MaxTotalBytes: 5000,
