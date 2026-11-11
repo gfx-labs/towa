@@ -12,8 +12,8 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/gfx-labs/acpharness/src/acp"
-	"github.com/gfx-labs/acpharness/src/acp/acptest"
+	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/session"
 )

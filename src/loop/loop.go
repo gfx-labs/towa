@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/acp"
+	"github.com/gfx-labs/acpharness/pkg/acp"
 )
 
 // Turn is one prompt and what a turn needs to answer it.

@@ -27,7 +27,7 @@ jobs:
       - name: static build
         run: CGO_ENABLED=0 go build ./...
       - run: go vet ./...
-      # src/acp/*_gen.go must be what tools/acpgen writes for the schema
+      # pkg/acp/*_gen.go must be what tools/acpgen writes for the schema
       # files in the repo.
       - name: generated code is current
         run: |

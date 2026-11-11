@@ -1,12 +1,12 @@
 # acpgen
 
-Generates the `*_gen.go` files of `src/acp` from the ACP schema files in `src/acp/schema`.
+Generates the `*_gen.go` files of `pkg/acp` from the ACP schema files in `pkg/acp/schema`.
 
 ```
-go generate ./src/acp
+go generate ./pkg/acp
 ```
 
-That runs `go run . -schema ../../src/acp/schema -out ../../src/acp` in this directory. Both flags are required.
+That runs `go run . -schema ../../pkg/acp/schema -out ../../pkg/acp` in this directory. Both flags are required.
 
 This is its own Go module, so its one dependency (`dave/jennifer`) stays out of the acpharness binary's module.
 
@@ -33,4 +33,4 @@ Each changed file says so in its first lines.
 go vet ./... && go test ./...
 ```
 
-CI regenerates `src/acp` and fails when the result differs from what is committed.
+CI regenerates `pkg/acp` and fails when the result differs from what is committed.

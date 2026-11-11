@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/acp"
-	"github.com/gfx-labs/acpharness/src/acp/acptest"
+	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
 )
 
 // The tests run in synctest bubbles so that a message that never arrives

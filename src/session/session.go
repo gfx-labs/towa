@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/gfx-labs/acpharness/src/acp"
+	"github.com/gfx-labs/acpharness/pkg/acp"
 )
 
 // session is one conversation. At most one turn runs at a time.

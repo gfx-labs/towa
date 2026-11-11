@@ -3,7 +3,7 @@
 // schema files in schema/.
 //
 // The *_gen.go files come from tools/acpgen. Regenerate them with
-// "go generate ./src/acp" after changing the schema files or the generator.
+// "go generate ./pkg/acp" after changing the schema files or the generator.
 package acp
 
-//go:generate go run -C ../../tools/acpgen . -schema ../../src/acp/schema -out ../../src/acp
+//go:generate go run -C ../../tools/acpgen . -schema ../../pkg/acp/schema -out ../../pkg/acp
