@@ -16,24 +16,26 @@ type Config struct {
 	// DefaultModel names the entry of Models a session starts with.
 	DefaultModel string `koanf:"default_model"`
 	// Models are the named models, each an ordered chain of accounts.
-	Models     map[string]Model `koanf:"models"`
-	Telemetry  Telemetry        `koanf:"telemetry"`
-	Auth       Auth             `koanf:"auth"`
-	Accounts   []Account        `koanf:"accounts"`
-	Providers  []Provider       `koanf:"providers"`
-	Store      Store            `koanf:"store"`
-	Tools      Tools            `koanf:"tools"`
-	MCP        MCP              `koanf:"mcp"`
-	Session    Session          `koanf:"session"`
-	Context    Context          `koanf:"context"`
-	Listen     Listen           `koanf:"listen"`
-	Limits     Limits           `koanf:"limits"`
-	Hooks      []Hook           `koanf:"hooks"`
-	Embeddings Embeddings       `koanf:"embeddings"`
-	OpenAI     OpenAI           `koanf:"openai"`
-	WebFetch   WebFetch         `koanf:"webfetch"`
-	Jev        Jev              `koanf:"jev"`
-	Compaction Compaction       `koanf:"compaction"`
+	Models             map[string]Model   `koanf:"models"`
+	Telemetry          Telemetry          `koanf:"telemetry"`
+	Auth               Auth               `koanf:"auth"`
+	Accounts           []Account          `koanf:"accounts"`
+	Providers          []Provider         `koanf:"providers"`
+	Store              Store              `koanf:"store"`
+	Tools              Tools              `koanf:"tools"`
+	MCP                MCP                `koanf:"mcp"`
+	Session            Session            `koanf:"session"`
+	Context            Context            `koanf:"context"`
+	Listen             Listen             `koanf:"listen"`
+	Limits             Limits             `koanf:"limits"`
+	Hooks              []Hook             `koanf:"hooks"`
+	Embeddings         Embeddings         `koanf:"embeddings"`
+	OpenAI             OpenAI             `koanf:"openai"`
+	WebFetch           WebFetch           `koanf:"webfetch"`
+	Jev                Jev                `koanf:"jev"`
+	Compaction         Compaction         `koanf:"compaction"`
+	ConversationSearch ConversationSearch `koanf:"conversation_search"`
+	Subagents          Subagents          `koanf:"subagents"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -89,6 +91,7 @@ func defaults() map[string]any {
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
 		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults, jevDefaults, compactionDefaults,
+		conversationSearchDefaults, subagentsDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -114,6 +117,7 @@ func (c *Config) validate() error {
 		func() error { return validateHookList(c.Hooks) },
 		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate,
 		c.Jev.validate, c.validateJevAccount, c.Compaction.validate, c.validateCompaction,
+		c.ConversationSearch.validate, c.Subagents.validate, c.validateSubagentModels,
 		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
@@ -149,6 +153,15 @@ func (c *Config) validateJevAccount() error {
 		}
 	}
 	return fmt.Errorf("jev.account: %q is not the id of a configured account", c.Jev.Account)
+}
+
+func (c *Config) validateSubagentModels() error {
+	for _, name := range c.Subagents.Models {
+		if _, ok := c.Models[name]; !ok {
+			return fmt.Errorf("subagents.models: %q is not a configured model", name)
+		}
+	}
+	return nil
 }
 
 func (c *Config) validateCompaction() error {
