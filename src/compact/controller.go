@@ -39,9 +39,9 @@ type BeforeInput struct {
 	ContextWindow int64
 }
 
-// Controller owns one pending call and bounded embedding history. Before
-// and Close are serialized by the existing session owner. Close cancels the
-// pending call, but the controller can be reused on a later turn.
+// Controller owns one pending call and bounded embedding history. Before,
+// Finish and Close are serialized by the existing session owner. Close
+// joins the pending call, but the controller can be reused on a later turn.
 type Controller struct {
 	opts                  ControllerOptions
 	pending               *Task
@@ -76,15 +76,40 @@ func NewController(opts ControllerOptions) (*Controller, error) {
 	return &Controller{opts: opts}, nil
 }
 
-// Close cancels only this controller's pending provider call. The existing
-// session context owns the controller's lifetime.
+// Close cancels and joins this controller's context-aware provider call
+// before its owner releases provider resources. Embedding history is kept.
 func (c *Controller) Close() {
 	if c.pending != nil {
 		c.pending.Cancel()
+		<-c.pending.done
 		c.pending = nil
 	}
 	c.pendingNativeProvider = ""
 	c.pendingNativeOrigin = transcript.Origin{}
+}
+
+// Finish drains work already complete at turn end, then cancels and joins
+// unfinished work. It never starts a request or waits for summary success.
+// The owner appends returned effects before taking its final usage snapshot.
+func (c *Controller) Finish(ctx context.Context, in BeforeInput) ([]transcript.Item, error) {
+	if c.pending == nil {
+		return nil, nil
+	}
+	result, ready, err := c.pending.Poll()
+	compatible := c.pendingNativeProvider == "" ||
+		(c.pendingNativeProvider == in.ProviderName && c.pendingNativeOrigin == in.Origin)
+	c.Close()
+	if !ready || !compatible || ctx.Err() != nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	effects, err := c.effects(result, in.Entries)
+	if errors.Is(err, ErrSuperseded) {
+		return nil, nil
+	}
+	return effects, err
 }
 
 // Before returns effects to append durably, in order, before the loop calls
