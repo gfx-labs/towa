@@ -1,0 +1,470 @@
+{
+  "upstream": "@anthropic-ai/claude-code",
+  "version": "2.1.280",
+  "profile": "print-sdk.default.claude-opus-5-5",
+  "captured_by": "tools/capture/claude_code_record.py, extracted by tools/capture/claude_code_request.py",
+  "scope": "The tools list of one recorded request: name, description and input_schema of each tool, as sent. Nothing else of the request is here.",
+  "what_this_profile_is": {
+    "arguments": [
+      "-p",
+      "hi",
+      "--dangerously-skip-permissions"
+    ],
+    "user_agent": "claude-cli/2.1.280 (external, sdk-cli)",
+    "model_in_request": "claude-opus-5-5",
+    "anthropic_beta": "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,effort-2025-11-24,fallback-credit-2026-06-01",
+    "note": "Print mode with no settings, no login and an empty working directory. The model is the executable's default; it was not chosen with --model. Other modes, models, settings and accounts send other tool lists and descriptions, and none of those was recorded."
+  },
+  "provenance": {
+    "platform_tarball_integrity": "sha512-dJHWFrDSIZ26hdLucnK3ehLmzdzYl3MsPC1RzUctAUaYnZlH5kfAZxnK8qYRAQ89GX3OPrLsnFdt/QnP+0Ck6Q==",
+    "executable_sha256": "1e08503dbdf3c2cb0d706d32f3408277388d1c76ef108673e8fe42c1b322925b",
+    "sandbox_script_sha256": "d1d84ef8b8d54c800b3be6787da9a55c9c4cfe627fb3aa11a8af602c24dc00c8",
+    "sandbox_runtime_manifest_sha256": "ec3f358b694b326309acef74d568dbe67c7ddfbcd7537853810f2aa9cf2a33c5",
+    "report_sha256": "501bec620e52dd9109588ce347b1c51783239b5a03a5c72fd3f37c4874f43da4",
+    "requests_recorded": 2,
+    "request_bodies_identical": true,
+    "request_body_sha256": "297ad1a80989ac37bb2e00c680fc01fdf56234fb0b998e520aa4813932f5d194",
+    "request_body_bytes": 61155,
+    "executable_exit_code": 1,
+    "model_side": "None. The recording server answered every request with HTTP 400, so no model reply exists and no tool was called.",
+    "raw_request": "Not stored in the repository. It holds the sandbox's paths, the capture host's kernel release and identifiers generated for the run.",
+    "raw_request_scan": {
+      "blocking": [],
+      "noted_counts_by_class": {
+        "run default request 0 (POST /v1/messages?beta=true)": {
+          "calendar_date": 2,
+          "generated_identifier": 3,
+          "host_kernel": 1,
+          "sandbox_path": 2
+        },
+        "run default request 1 (POST /v1/messages?beta=true)": {
+          "calendar_date": 2,
+          "generated_identifier": 3,
+          "host_kernel": 1,
+          "sandbox_path": 2
+        }
+      }
+    }
+  },
+  "tool_file_layout": "JSON, two-space indent, members in the order sent, non-ASCII characters unescaped, one trailing newline. The request body was checked to survive a JSON round trip byte for byte before extraction.",
+  "tools_in_request": [
+    "Agent",
+    "Bash",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "Edit",
+    "EnterWorktree",
+    "ExitWorktree",
+    "ListAgents",
+    "NotebookEdit",
+    "Read",
+    "ReportFindings",
+    "ScheduleWakeup",
+    "SendMessage",
+    "Skill",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "Workflow",
+    "Write"
+  ],
+  "files": [
+    {
+      "path": "tools/Agent.json",
+      "sha256": "2ff9e52eac4b8dd2db9b3bcccc27fd9aa53fec57e46a7002f9a3a555471c0c0b",
+      "bytes": 3642
+    },
+    {
+      "path": "tools/Bash.json",
+      "sha256": "317f094797911b5614570745b8aa97b84aeee47dc2d3e8a51683e894c37b159f",
+      "bytes": 2795
+    },
+    {
+      "path": "tools/CronCreate.json",
+      "sha256": "8f75989ff3e9dc35eb7a3e5d0a150108bfd8d822fadb90b35624026852ba6895",
+      "bytes": 4264
+    },
+    {
+      "path": "tools/CronDelete.json",
+      "sha256": "3b288c733064654c80219649f4c4f3d83fd886c0398bcca6a3ea6d0006d9c277",
+      "bytes": 526
+    },
+    {
+      "path": "tools/CronList.json",
+      "sha256": "5256033b96ac338463718b038aa83e717dc071bcbdc2149384de21b0a60e2f9b",
+      "bytes": 318
+    },
+    {
+      "path": "tools/Edit.json",
+      "sha256": "3b3d5a77d9ea8479a317d0fd9f13da4b550b82408ce04661a9aa81cf0106c0ba",
+      "bytes": 1194
+    },
+    {
+      "path": "tools/EnterWorktree.json",
+      "sha256": "646e908e6b4b4bea3ff8ef3ef3497f9c84fe20cfbb95caeb22ab1286897e8b7a",
+      "bytes": 4143
+    },
+    {
+      "path": "tools/ExitWorktree.json",
+      "sha256": "0aad9567ac1174ce34671e215d06f1996afa203fa8907eab956f011e50f443ab",
+      "bytes": 2686
+    },
+    {
+      "path": "tools/ListAgents.json",
+      "sha256": "98d6e53a8711809d7e17fdf789f889beb61bffe54b64837ceef558c3c89a3dae",
+      "bytes": 1295
+    },
+    {
+      "path": "tools/NotebookEdit.json",
+      "sha256": "a6065a715fe2ad00aeb59c45df157090d7b1c1bd3671e47c37374c094c5f7112",
+      "bytes": 1966
+    },
+    {
+      "path": "tools/Read.json",
+      "sha256": "e00c2383a412208fdc1428a023201dc7fa020a12f084868f437343473d798fbe",
+      "bytes": 1836
+    },
+    {
+      "path": "tools/ReportFindings.json",
+      "sha256": "cf6fe622596a84e8e48eb538cd4b3f50238a9d229f160978b370605d4ae9a7d7",
+      "bytes": 3210
+    },
+    {
+      "path": "tools/ScheduleWakeup.json",
+      "sha256": "f33c993844ff968c86a1fbee9bf047de123810e24d04995d196bd131eb39de44",
+      "bytes": 5144
+    },
+    {
+      "path": "tools/SendMessage.json",
+      "sha256": "5a43412a71d14df3e43895926be35444f05b2b351e8f3e1a2e7958c8bc483333",
+      "bytes": 6031
+    },
+    {
+      "path": "tools/Skill.json",
+      "sha256": "88060a4b51f43fd9dee42c8a67990787c29dddf2f999b0295046904ee532adc6",
+      "bytes": 1945
+    },
+    {
+      "path": "tools/TaskStop.json",
+      "sha256": "2edaa8cc02263a3a4cda2e5a104a3028108b50cb0d451f38b5636c7b14f7b5d7",
+      "bytes": 921
+    },
+    {
+      "path": "tools/WebFetch.json",
+      "sha256": "b58b8d3b06c64e4c1e99d9749af8b669094406cb91a9e683be92ced5fef4e293",
+      "bytes": 994
+    },
+    {
+      "path": "tools/Workflow.json",
+      "sha256": "842fce3c234747ad9ed3ea16dafb54df5d99a6e3c0284a3f788a522e50e84c6f",
+      "bytes": 5684
+    },
+    {
+      "path": "tools/Write.json",
+      "sha256": "37bc8026715ca35fb05faf67c415418251c67f0498b54650f5bf2f7cf3785362",
+      "bytes": 780
+    }
+  ],
+  "not_written": [
+    {
+      "name": "WebSearch",
+      "found_counts_by_class": {
+        "calendar_date": 1
+      }
+    }
+  ],
+  "host_scan": {
+    "classes_refused": {
+      "credential": "key-shaped text other than the placeholder key",
+      "host_home_path": "a /home/<name> path at the root of the filesystem (the sandbox has no /home)",
+      "host_user_name": "this host's user name as a whole word",
+      "host_name": "this host's name as a whole word",
+      "host_network_interface": "the name of one of this host's network interfaces",
+      "host_kernel": "this host's kernel release, or any Linux kernel version",
+      "generated_identifier": "a UUID or a 64-digit hex value, as generated for a device or session",
+      "sandbox_path": "a path under the sandbox's /work or /input",
+      "calendar_date": "a month name followed by a year, as the executable writes the date of the run into some texts"
+    },
+    "checks_not_made": [
+      "user name as a bare word: it has 1 character(s), under 3"
+    ],
+    "result": "See not_written."
+  },
+  "compared_with_static_capture": {
+    "static_manifest_sha256": "7e3a1ea1dfc350ffd63294bcccfb82c7211d829facdbc46669ed97ec9831ded6",
+    "per_tool": {
+      "Agent": {
+        "static": "none",
+        "static_reason": "prompt() returned Unknown, not a constant string"
+      },
+      "Bash": {
+        "static": "none",
+        "static_reason": "more than 48 combinations of undecided conditions"
+      },
+      "CronCreate": {
+        "static": "equal",
+        "equal_to": [
+          "tools/CronCreate.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/CronCreate.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "CronDelete": {
+        "static": "equal",
+        "equal_to": [
+          "tools/CronDelete.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/CronDelete.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "CronList": {
+        "static": "equal",
+        "equal_to": [
+          "tools/CronList.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/CronList.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "Edit": {
+        "static": "equal",
+        "equal_to": [
+          "tools/Edit.v1.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/Edit.v1.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          },
+          {
+            "file": "tools/Edit.v2.json",
+            "description_equal": false,
+            "input_schema_equal": true
+          },
+          {
+            "file": "tools/Edit.v3.json",
+            "description_equal": false,
+            "input_schema_equal": true
+          },
+          {
+            "file": "tools/Edit.v4.json",
+            "description_equal": false,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "EnterWorktree": {
+        "static": "equal",
+        "equal_to": [
+          "tools/EnterWorktree.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/EnterWorktree.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "ExitWorktree": {
+        "static": "equal",
+        "equal_to": [
+          "tools/ExitWorktree.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/ExitWorktree.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "ListAgents": {
+        "static": "equal",
+        "equal_to": [
+          "tools/ListAgents.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/ListAgents.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "NotebookEdit": {
+        "static": "equal",
+        "equal_to": [
+          "tools/NotebookEdit.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/NotebookEdit.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "Read": {
+        "static": "none",
+        "static_reason": "more than 48 combinations of undecided conditions"
+      },
+      "ReportFindings": {
+        "static": "equal",
+        "equal_to": [
+          "tools/ReportFindings.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/ReportFindings.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "ScheduleWakeup": {
+        "static": "none",
+        "static_reason": "more than 48 combinations of undecided conditions"
+      },
+      "SendMessage": {
+        "static": "none",
+        "static_reason": "inputSchema is Unknown, not a schema built from constants"
+      },
+      "Skill": {
+        "static": "equal",
+        "equal_to": [
+          "tools/Skill.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/Skill.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "TaskStop": {
+        "static": "equal",
+        "equal_to": [
+          "tools/TaskStop.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/TaskStop.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          }
+        ]
+      },
+      "WebFetch": {
+        "static": "none",
+        "static_reason": "prompt() returned Unknown, not a constant string"
+      },
+      "Workflow": {
+        "static": "none",
+        "static_reason": "more than 48 combinations of undecided conditions"
+      },
+      "Write": {
+        "static": "equal",
+        "equal_to": [
+          "tools/Write.v1.json"
+        ],
+        "variants": [
+          {
+            "file": "tools/Write.v1.json",
+            "description_equal": true,
+            "input_schema_equal": true
+          },
+          {
+            "file": "tools/Write.v2.json",
+            "description_equal": false,
+            "input_schema_equal": true
+          },
+          {
+            "file": "tools/Write.v3.json",
+            "description_equal": false,
+            "input_schema_equal": true
+          },
+          {
+            "file": "tools/Write.v4.json",
+            "description_equal": false,
+            "input_schema_equal": true
+          }
+        ]
+      }
+    },
+    "static_tools_not_in_this_request": [
+      "AppifactRepl",
+      "AskUserQuestion",
+      "ClaudeDesign",
+      "DesignSync",
+      "EndConversation",
+      "ExitPlanMode",
+      "FetchInboxMessage",
+      "Glob",
+      "Grep",
+      "LSP",
+      "ListConnectors",
+      "ListMcpResourcesTool",
+      "ObserverReport",
+      "Poll",
+      "Projects",
+      "ProposeGoal",
+      "PushNotification",
+      "ReadMcpResourceDirTool",
+      "ReadMcpResourceTool",
+      "ReadNotifications",
+      "RefreshMcpTools",
+      "RemoteTrigger",
+      "SearchMcpRegistry",
+      "SendFeedback",
+      "SendFile",
+      "SendUserFile",
+      "SendUserMessage",
+      "ShareOnboardingGuide",
+      "ShowOnboardingRolePicker",
+      "SubagentHandback",
+      "SuggestConnectors",
+      "SuggestPluginInstall",
+      "SuggestSkills",
+      "TaskCreate",
+      "TaskGet",
+      "TaskList",
+      "TaskUpdate",
+      "TestingPermission",
+      "TodoWrite",
+      "ToolSearch",
+      "WaitForMcpServers",
+      "mcp",
+      "memory_list",
+      "memory_read",
+      "memory_write",
+      "propose_skills",
+      "self_hosted_runner_get_pool",
+      "self_hosted_runner_list_runners",
+      "self_hosted_runner_list_secrets",
+      "self_hosted_runner_list_sessions",
+      "self_hosted_runner_read_health",
+      "self_hosted_runner_read_metrics",
+      "self_hosted_runner_requeue_session",
+      "self_hosted_runner_spawn_local",
+      "self_hosted_runner_tail_log"
+    ]
+  }
+}
