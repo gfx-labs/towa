@@ -13,18 +13,19 @@ import (
 // its type, its defaults and its validation. A field is added to a section
 // when the code that reads it exists.
 type Config struct {
-	Telemetry Telemetry  `koanf:"telemetry"`
-	Auth      Auth       `koanf:"auth"`
-	Accounts  []Account  `koanf:"accounts"`
-	Providers []Provider `koanf:"providers"`
-	Store     Store      `koanf:"store"`
-	Tools     Tools      `koanf:"tools"`
-	MCP       MCP        `koanf:"mcp"`
-	Session   Session    `koanf:"session"`
-	Context   Context    `koanf:"context"`
-	Listen    Listen     `koanf:"listen"`
-	Limits    Limits     `koanf:"limits"`
-	Hooks     []Hook     `koanf:"hooks"`
+	Telemetry  Telemetry  `koanf:"telemetry"`
+	Auth       Auth       `koanf:"auth"`
+	Accounts   []Account  `koanf:"accounts"`
+	Providers  []Provider `koanf:"providers"`
+	Store      Store      `koanf:"store"`
+	Tools      Tools      `koanf:"tools"`
+	MCP        MCP        `koanf:"mcp"`
+	Session    Session    `koanf:"session"`
+	Context    Context    `koanf:"context"`
+	Listen     Listen     `koanf:"listen"`
+	Limits     Limits     `koanf:"limits"`
+	Hooks      []Hook     `koanf:"hooks"`
+	Embeddings Embeddings `koanf:"embeddings"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -79,7 +80,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults, authDefaults,
+		limitsDefaults, authDefaults, embeddingsDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -103,10 +104,25 @@ func (c *Config) validate() error {
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
+		c.Embeddings.validate, c.validateEmbeddingsAccount,
 	} {
 		if err := section(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateEmbeddingsAccount reports an embeddings account that no account
+// entry defines. An empty account means the endpoint takes no credential.
+func (c *Config) validateEmbeddingsAccount() error {
+	if c.Embeddings.Account == "" {
+		return nil
+	}
+	for _, a := range c.Accounts {
+		if a.ID == c.Embeddings.Account {
+			return nil
+		}
+	}
+	return fmt.Errorf("embeddings.account: %q is not the id of a configured account", c.Embeddings.Account)
 }
