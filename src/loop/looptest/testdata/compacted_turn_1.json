@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:11434/v1/chat/completions",
+    "header": {
+      "Accept": [
+        "text/event-stream"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/test"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"llama3.2:3b\",\"messages\":[{\"role\":\"user\",\"content\":\"The conversation history before this point was compacted into the following summary:\\n\\n<summary>\\n**Summary of Our Conversation**\\n\\n**Context:** We're working on an interaction with a user who requested to use a tool called \\\"read_file\\\" to read the contents of a file named \\\"notes.txt\\\" and then display its launch code.\\n\\n**What we did:** The user provided a request for the tool, and I attempted to generate a response. However, my initial attempt was incomplete and contained errors. You kindly offered an alternative format for the response, which I will use moving forward.\\n\\n**Current state:** The \\\"read_file\\\" tool now provides a more suitable output in the format {'filename': 'notes.txt', 'content': 'Launch Code: 7421'}, allowing us to provide clear and concise responses to user requests. There is still room for improvement, but this updated format addresses the issues encountered earlier.\\n\\n**User preferences:** The user specified that they wanted to use the \\\"read_file\\\" tool to read a specific file named \\\"notes.txt\\\" and display its launch code. They also indicated a willingness to provide feedback on my responses, which has helped us refine our approach.\\n</summary>\"},{\"role\":\"user\",\"content\":\"Reply with OK.\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":256}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Content-Type": [
+        "text/event-stream"
+      ],
+      "Date": [
+        "Wed, 11 Nov 2026 15:09:20 GMT"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "data: {\"id\":\"chatcmpl-205\",\"object\":\"chat.completion.chunk\",\"created\":1794409760,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"OK\"},\"finish_reason\":null}]}\n\n"
+      },
+      {
+        "text": "data: {\"id\":\"chatcmpl-205\",\"object\":\"chat.completion.chunk\",\"created\":1794409760,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"chatcmpl-205\",\"object\":\"chat.completion.chunk\",\"created\":1794409760,\"model\":\"llama3.2:3b\",\"system_fingerprint\":\"fp_ollama\",\"choices\":[],\"usage\":{\"prompt_tokens\":267,\"completion_tokens\":2,\"total_tokens\":269}}\n\ndata: [DONE]\n\n"
+      }
+    ],
+    "incomplete": true
+  }
+}
