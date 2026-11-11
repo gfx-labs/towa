@@ -425,7 +425,8 @@ func testCallDroppedOverHTTP(t *testing.T, gateway bool) {
 	})
 
 	remote := Server{Name: "s", Transport: config.MCPTransportStreamableHTTP, URL: ts.URL, Direct: true}
-	m := newTestManager(t, Options{Servers: []Server{remote}, HTTPClient: newCountingClient().Client})
+	client := newCountingClient()
+	m := newTestManager(t, Options{Servers: []Server{remote}, HTTPClient: client.Client})
 	list, err := m.Tools(t.Context(), nil)
 	require.NoError(t, err)
 	set := tools.Set{Tools: list}
@@ -451,9 +452,12 @@ func testCallDroppedOverHTTP(t *testing.T, gateway bool) {
 	}
 
 	// A server that is gone gets nothing written to it, which is a
-	// failure and not an unknown.
+	// failure and not an unknown. The client's kept connections are closed
+	// first: a request written to one the server closed a moment ago ends
+	// in EOF, and that is rightly an unknown.
 	ts.CloseClientConnections()
 	ts.Close()
+	client.base.CloseIdleConnections()
 	echo, ok := set.Lookup("echo")
 	require.True(t, ok)
 	res = run(t, echo, `{"text":"x"}`)

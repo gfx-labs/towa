@@ -193,13 +193,16 @@ func startHTTPServer(t *testing.T, transport string, wrap func(http.Handler) htt
 
 // countingClient is a client from src/httpclient that counts its requests.
 type countingClient struct {
-	Client   *http.Client
+	Client *http.Client
+	// base owns the connections. Client wraps its transport, and a wrapped
+	// transport hides CloseIdleConnections.
+	base     *http.Client
 	requests atomic.Int64
 }
 
 func newCountingClient() *countingClient {
-	c := &countingClient{}
-	client, err := wrapClient(httpclient.New(), func(base http.RoundTripper) http.RoundTripper {
+	c := &countingClient{base: httpclient.New()}
+	client, err := wrapClient(c.base, func(base http.RoundTripper) http.RoundTripper {
 		return roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			c.requests.Add(1)
 			return base.RoundTrip(r)
