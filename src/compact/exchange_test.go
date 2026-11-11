@@ -59,7 +59,7 @@ func TestControllerExchange(t *testing.T) {
 		Config: cfg, Summary: model, SummaryContextWindow: looptest.ContextSize,
 		SummaryInput: compact.SummaryInput{
 			Model: looptest.Model, MaxOutputTokens: 1024,
-			Credential: auth.Credential{Scheme: auth.SchemeAPIKey, Token: "compaction-test-key"},
+			Credential: auth.Credential{Account: looptest.Account, Scheme: auth.SchemeAPIKey, Token: "compaction-test-key"},
 		},
 	}
 	controller, err := compact.NewController(opts)
@@ -69,8 +69,14 @@ func TestControllerExchange(t *testing.T) {
 	effects, err := controller.Before(t.Context(), in)
 	require.NoError(t, err)
 	require.Empty(t, effects)
+	startup := time.NewTimer(5 * time.Second)
+	defer startup.Stop()
 	select {
 	case <-gate.arrived:
+	case <-startup.C:
+		_, err := controller.Before(t.Context(), in)
+		require.NoError(t, err, "summary failed before reaching the transport")
+		t.Fatal("summary did not reach the transport")
 	case <-t.Context().Done():
 		t.Fatal(context.Cause(t.Context()))
 	}
@@ -183,10 +189,15 @@ func TestSummaryExchange(t *testing.T) {
 		Source: source, Mode: config.CompactionReactive, Model: model, ContextWindow: looptest.ContextSize,
 		Input: compact.SummaryInput{
 			Prompt: config.SummaryShort, Model: looptest.Model, MaxOutputTokens: 1024,
-			Credential: auth.Credential{Scheme: auth.SchemeAPIKey, Token: "compaction-test-key"},
+			Credential: auth.Credential{Account: looptest.Account, Scheme: auth.SchemeAPIKey, Token: "compaction-test-key"},
 		},
 	})
 	defer task.Cancel()
+	finished := make(chan error, 1)
+	go func() {
+		_, err := task.Wait(ctx, time.Minute)
+		finished <- err
+	}()
 	// Append while the model is working. A nil captured FirstKept must not
 	// cause this new entry to disappear from the next context.
 	followup := transcript.NewEntry(entries[len(entries)-1].ID, time.Now(), transcript.Item{
@@ -196,6 +207,8 @@ func TestSummaryExchange(t *testing.T) {
 	entries = history(t, st, id)
 	select {
 	case <-gate.arrived:
+	case err := <-finished:
+		t.Fatalf("summary finished before reaching the transport: %v", err)
 	case <-ctx.Done():
 		t.Fatal(context.Cause(ctx))
 	}
