@@ -39,6 +39,9 @@ type TurnFunc func(ctx context.Context, turn loop.Turn) (loop.Result, error)
 type Runtime struct {
 	Turn  TurnFunc
 	Close func(context.Context) error
+	// Mapper describes replay with this runtime's tools and model metadata.
+	// Nil uses Options.Mapper. A supplied mapper stays immutable until Close.
+	Mapper *loop.Mapper
 }
 
 // Client is what the agent calls on the ACP client.
@@ -96,9 +99,8 @@ type Options struct {
 	// means sessions live in this process only: the methods that need a
 	// store then answer Method not found and are not advertised.
 	Store store.Store
-	// Mapper turns stored items into the updates session/load replays. It
-	// is the mapper the turn shows them with, so a loaded session looks as
-	// it did live.
+	// Mapper is the replay mapper for legacy Turn callers and runtimes
+	// that leave Runtime.Mapper nil. A runtime mapper takes precedence.
 	Mapper loop.Mapper
 }
 

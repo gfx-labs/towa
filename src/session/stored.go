@@ -162,6 +162,10 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	}
 
 	if replay {
+		mapper := a.mapper
+		if s.runtime.Mapper != nil {
+			mapper = *s.runtime.Mapper
+		}
 		// Every entry, including the ones a compaction took out of the
 		// model's context: the client saw them.
 		entries, err := a.store.History(ctx, meta.ID, store.Range{})
@@ -172,7 +176,7 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 			if err != nil {
 				return nil, nil, storeError(r.id, err)
 			}
-			updates, err := a.mapper.Updates(entry.Item)
+			updates, err := mapper.Updates(entry.Item)
 			if err != nil {
 				return nil, nil, fmt.Errorf("session: replaying entry %s of session %s: %w", entry.ID, r.id, err)
 			}
