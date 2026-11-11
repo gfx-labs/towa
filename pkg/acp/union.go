@@ -1,7 +1,6 @@
 package acp
 
 import (
-	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 )
@@ -57,31 +56,4 @@ func (a arrayValue) allHave(names ...string) bool {
 		}
 	}
 	return true
-}
-
-func stringMember(b jsontext.Value, name string) (string, bool) {
-	if b.Kind() != '{' {
-		return "", false
-	}
-	dec := jsontext.NewDecoder(bytes.NewReader(b))
-	if _, err := dec.ReadToken(); err != nil {
-		return "", false
-	}
-	for dec.PeekKind() != '}' {
-		key, err := dec.ReadToken()
-		if err != nil {
-			return "", false
-		}
-		if key.String() == name {
-			if dec.PeekKind() != '"' {
-				return "", false
-			}
-			value, err := dec.ReadToken()
-			return value.String(), err == nil
-		}
-		if err := dec.SkipValue(); err != nil {
-			return "", false
-		}
-	}
-	return "", false
 }

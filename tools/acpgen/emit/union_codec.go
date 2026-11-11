@@ -85,8 +85,9 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 		if hasDisc {
 			// A discriminator that is absent or not a string selects no
 			// variant here.
-			g.List(Id("disc"), Id("_")).Op(":=").Id("stringMember").Call(Id("b"), Lit(discKey))
-			g.Switch(Id("disc")).BlockFunc(func(sw *Group) {
+			g.Var().Id("disc").Struct(Id("Value").String().Tag(map[string]string{"json": discKey}))
+			g.Id("_").Op("=").Qual(jsonPkg, "Unmarshal").Call(Id("b"), Op("&").Id("disc"))
+			g.Switch(Id("disc").Dot("Value")).BlockFunc(func(sw *Group) {
 				for _, vi := range variants {
 					if vi.discValue != "" {
 						sw.Case(Lit(vi.discValue)).Block(jDecodeVariant(name, vi)...)

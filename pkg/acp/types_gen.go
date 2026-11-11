@@ -311,8 +311,11 @@ func (u *AuthMethod) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "terminal":
 		var v AuthMethodTerminalInline
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -1105,8 +1108,11 @@ func (u *ContentBlock) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "text":
 		var v ContentBlockText
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -1399,8 +1405,11 @@ func (u *CreateElicitationRequest) UnmarshalJSONFrom(dec *jsontext.Decoder) erro
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "mode")
-	switch disc {
+	var disc struct {
+		Value string `json:"mode"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "form":
 		var v CreateElicitationForm
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -1580,8 +1589,11 @@ func (u *CreateElicitationResponse) UnmarshalJSONFrom(dec *jsontext.Decoder) err
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "action")
-	switch disc {
+	var disc struct {
+		Value string `json:"action"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "accept":
 		var v CreateElicitationAccept
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -2234,8 +2246,11 @@ func (u *ElicitationPropertySchema) UnmarshalJSONFrom(dec *jsontext.Decoder) err
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "string":
 		var v ElicitationPropertySchemaString
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -3064,8 +3079,11 @@ func (u *IdleStateUpdate) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "stopReason")
-	switch disc {
+	var disc struct {
+		Value string `json:"stopReason"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "end_turn":
 		var v IdleStateUpdateEndTurn
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -3369,8 +3387,11 @@ func (u *InitialSessionConfigOption) UnmarshalJSONFrom(dec *jsontext.Decoder) er
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "boolean":
 		var v InitialSessionConfigOptionBoolean
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -3895,8 +3916,11 @@ func (u *McpServer) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "http":
 		var v McpServerHttpInline
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -4136,8 +4160,11 @@ func (u *MultiSelectItems) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "string":
 		var v MultiSelectItemsString
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -4666,8 +4693,11 @@ func (u *PlanUpdateContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "items":
 		var v PlanUpdateContentItems
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -5085,8 +5115,11 @@ func (u *RequestPermissionOutcome) UnmarshalJSONFrom(dec *jsontext.Decoder) erro
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "outcome")
-	switch disc {
+	var disc struct {
+		Value string `json:"outcome"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "cancelled":
 		var v RequestPermissionOutcomeCancelled
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -5593,8 +5626,11 @@ func (u *SessionConfigOption) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "select":
 		var v SessionConfigOptionSelect
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -6657,8 +6693,11 @@ func (u *SessionUpdate) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "sessionUpdate")
-	switch disc {
+	var disc struct {
+		Value string `json:"sessionUpdate"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "user_message_chunk":
 		var v SessionUpdateUserMessageChunk
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -7302,8 +7341,11 @@ func (u *SetSessionConfigOptionRequest) UnmarshalJSONFrom(dec *jsontext.Decoder)
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "boolean":
 		var v SetSessionConfigOptionBoolean
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -7504,8 +7546,11 @@ func (u *StateUpdate) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "state")
-	switch disc {
+	var disc struct {
+		Value string `json:"state"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "running":
 		var v StateUpdateRunning
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -8133,8 +8178,11 @@ func (u *ToolCallContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "content":
 		var v ToolCallContentContent
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -8777,8 +8825,11 @@ func (u *UnstableContentBlock) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "text":
 		var v UnstableContentBlockText
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -9358,8 +9409,11 @@ func (u *UnstableMcpServer) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "http":
 		var v UnstableMcpServerHttpInline
 		if err := json.Unmarshal(b, &v, opts); err != nil {
@@ -9827,8 +9881,11 @@ func (u *UnstableSessionConfigOption) UnmarshalJSONFrom(dec *jsontext.Decoder) e
 		return err
 	}
 	opts := dec.Options()
-	disc, _ := stringMember(b, "type")
-	switch disc {
+	var disc struct {
+		Value string `json:"type"`
+	}
+	_ = json.Unmarshal(b, &disc)
+	switch disc.Value {
 	case "select":
 		var v UnstableSessionConfigOptionSelect
 		if err := json.Unmarshal(b, &v, opts); err != nil {
