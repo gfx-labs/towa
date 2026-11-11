@@ -48,6 +48,9 @@ type session struct {
 	allowed map[string]bool
 	// announced is set once the client has been sent the commands.
 	announced bool
+	// owner is the agent of the connection the session is live on. The
+	// host's table lock guards it.
+	owner *Agent
 	// meta is the session as the store last had it. It is the zero value
 	// without a store.
 	meta store.Meta

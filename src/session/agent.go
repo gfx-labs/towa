@@ -92,72 +92,34 @@ type Options struct {
 // Agent is the ACP agent for one connection. It advertises only what it
 // implements: a method behind a capability it does not advertise answers
 // "Method not found".
+//
+// What a process has once (the store, the registry, the table of live
+// sessions) is in the Host the agent was made from. The agent itself holds
+// what belongs to its connection: the client and what the client
+// advertised.
 type Agent struct {
-	version  string
-	turn     TurnFunc
-	logger   *slog.Logger
-	tracer   trace.Tracer
-	turns    metric.Int64Counter
-	client   Client
-	registry *Registry
-	supports Supports
-	store    store.Store
-	mapper   loop.Mapper
-	// pageSize is session.list_page_size.
-	pageSize int
-	// attachMu makes loads, resumes and deletes of stored sessions happen
-	// one at a time.
-	attachMu sync.Mutex
+	*shared
+	client Client
+	// ended is set once the connection has ended. The host's table lock
+	// guards it.
+	ended bool
 
 	mu          sync.Mutex
 	initialized bool
 	gate        Gate
-	sessions    map[acp.SessionId]*session
 }
 
 var _ acp.Agent = (*Agent)(nil)
 
-// NewAgent returns an agent with no sessions. Call SetClient before the
-// connection is served.
+// NewAgent returns the agent of a process that serves one connection, such
+// as standard input and output. Call SetClient before the connection is
+// served.
 func NewAgent(o Options) (*Agent, error) {
-	turns, err := o.Meter.Int64Counter("acpharness.turns",
-		metric.WithDescription("Prompt turns finished, by stop reason."),
-		metric.WithUnit("{turn}"))
+	h, err := NewHost(o)
 	if err != nil {
 		return nil, err
 	}
-	registry := &Registry{}
-	if o.Registry != nil {
-		registry = o.Registry.clone()
-	}
-	if err := errors.Join(
-		registry.AddConfigOption(modeOption(acp.SessionConfigValueId(o.Session.Mode))),
-		registry.AddOverride(modeOverride()),
-		registry.AddCommand(modeCommand()),
-	); err != nil {
-		return nil, err
-	}
-	if o.Supports.ContextOverrides {
-		if err := errors.Join(
-			registry.AddOverride(pathsOverride("context_files", func(turn *loop.Turn, paths []string) { turn.ContextFiles = paths })),
-			registry.AddOverride(pathsOverride("skills_dirs", func(turn *loop.Turn, paths []string) { turn.SkillsDirs = paths })),
-		); err != nil {
-			return nil, err
-		}
-	}
-	return &Agent{
-		version:  o.Version,
-		turn:     o.Turn,
-		logger:   o.Logger,
-		tracer:   o.Tracer,
-		turns:    turns,
-		registry: registry,
-		supports: o.Supports,
-		store:    o.Store,
-		mapper:   o.Mapper,
-		pageSize: o.Session.ListPageSize,
-		sessions: map[acp.SessionId]*session{},
-	}, nil
+	return h.NewAgent(), nil
 }
 
 // SetClient sets the client the agent sends session updates to. The agent is
@@ -304,9 +266,9 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 			return acp.NewSessionResponse{}, fmt.Errorf("session: storing session %s: %w", s.id, err)
 		}
 	}
-	a.mu.Lock()
-	a.sessions[s.id] = s
-	a.mu.Unlock()
+	if err := a.put(s, a); err != nil {
+		return acp.NewSessionResponse{}, err
+	}
 	a.logger.Info("session created", "session", s.id, "cwd", s.cwd)
 	return acp.NewSessionResponse{
 		SessionId:     s.id,
@@ -646,10 +608,9 @@ func (a *Agent) CloseSession(ctx context.Context, p acp.CloseSessionRequest) (ac
 	if err := a.ready(); err != nil {
 		return acp.CloseSessionResponse{}, err
 	}
-	a.mu.Lock()
-	s := a.sessions[p.SessionId]
-	delete(a.sessions, p.SessionId)
-	a.mu.Unlock()
+	// A session that is live on another connection is not this one's to
+	// close, and is unknown to it like any session it has not loaded.
+	s := a.takeOwned(a, p.SessionId)
 	if s == nil {
 		return acp.CloseSessionResponse{}, nil
 	}
@@ -710,16 +671,18 @@ func (a *Agent) SetSessionMode(ctx context.Context, p acp.SetSessionModeRequest)
 	return acp.SetSessionModeResponse{}, a.setOption(ctx, s, ModeOption, Value{ID: acp.SessionConfigValueId(p.ModeId)}, false, false)
 }
 
-// UnstableSessionStatus says whether the session is in memory or only in
-// the store. It changes nothing.
+// UnstableSessionStatus says whether the session is in memory, on any
+// connection, or only in the store. It changes nothing.
 func (a *Agent) UnstableSessionStatus(ctx context.Context, p acp.UnstableSessionStatusRequest) (acp.UnstableSessionStatusResponse, error) {
+	if err := a.ready(); err != nil {
+		return acp.UnstableSessionStatusResponse{}, err
+	}
 	id := acp.SessionId(p.SessionId)
-	_, err := a.session(id)
-	if err == nil {
+	if s, _ := a.lookup(id); s != nil {
 		return acp.UnstableSessionStatusResponse{Status: acp.UnstableSessionStatusOpen}, nil
 	}
-	if !isUnknownSession(err) || a.store == nil {
-		return acp.UnstableSessionStatusResponse{}, err
+	if a.store == nil {
+		return acp.UnstableSessionStatusResponse{}, unknownSession(id)
 	}
 	if _, err := a.storedMeta(ctx, id); err != nil {
 		return acp.UnstableSessionStatusResponse{}, err
@@ -768,15 +731,24 @@ func (a *Agent) UnstableSessionOptions(ctx context.Context, p acp.UnstableSessio
 	}, nil
 }
 
-// UnstableSetSessionTitle sets a session's title. With a store the title
-// is written there before the answer, and a session that is in the store
-// and not in memory can be titled too. A session in memory has the client
-// told.
+// UnstableSetSessionTitle sets a session's title. The session need not be
+// live on this connection: one that is live on another has that
+// connection's client told, and one that is only in the store has the
+// title written there. With a store the title is written before the answer.
 func (a *Agent) UnstableSetSessionTitle(ctx context.Context, p acp.UnstableSetSessionTitleRequest) (acp.UnstableSetSessionTitleResponse, error) {
+	if err := a.ready(); err != nil {
+		return acp.UnstableSetSessionTitleResponse{}, err
+	}
 	id := acp.SessionId(p.SessionId)
 	title := strings.TrimSpace(p.Title)
-	s, err := a.session(id)
-	if err != nil && isUnknownSession(err) && a.store != nil {
+	// Held so that the session is not loaded on a connection between the
+	// lookup and the write, which would then keep the old title.
+	defer a.lock(id)()
+	s, owner := a.lookup(id)
+	if s == nil {
+		if a.store == nil {
+			return acp.UnstableSetSessionTitleResponse{}, unknownSession(id)
+		}
 		meta, err := a.storedMeta(ctx, id)
 		switch {
 		case err != nil:
@@ -790,13 +762,10 @@ func (a *Agent) UnstableSetSessionTitle(ctx context.Context, p acp.UnstableSetSe
 		}
 		return acp.UnstableSetSessionTitleResponse{Title: title}, nil
 	}
-	if err != nil {
-		return acp.UnstableSetSessionTitleResponse{}, err
-	}
 	if title == "" {
 		return acp.UnstableSetSessionTitleResponse{}, invalid("title is empty")
 	}
-	if err := a.announce(ctx, s); err != nil {
+	if err := owner.announce(ctx, s); err != nil {
 		return acp.UnstableSetSessionTitleResponse{}, err
 	}
 	s.setMu.Lock()
@@ -807,7 +776,7 @@ func (a *Agent) UnstableSetSessionTitle(ctx context.Context, p acp.UnstableSetSe
 	if err := a.persist(ctx, s); err != nil {
 		return acp.UnstableSetSessionTitleResponse{}, err
 	}
-	err = a.send(ctx, s, acp.SessionUpdate{SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
+	err := owner.send(ctx, s, acp.SessionUpdate{SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
 		SessionUpdate: "session_info_update", Title: &title,
 	}})
 	return acp.UnstableSetSessionTitleResponse{Title: title}, err
@@ -823,15 +792,16 @@ func (a *Agent) ready() error {
 	return nil
 }
 
-// session returns an active session, or the error for an unknown one.
+// session returns a session that is live on this connection, or the error
+// for an unknown one.
 func (a *Agent) session(id acp.SessionId) (*session, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	s := a.sessions[id]
-	if s == nil {
+	// A session that is live on another connection is unknown to this one
+	// until it loads or resumes it.
+	s, owner := a.lookup(id)
+	if s == nil || owner != a {
 		return nil, unknownSession(id)
 	}
 	return s, nil

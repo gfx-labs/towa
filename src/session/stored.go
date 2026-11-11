@@ -54,9 +54,10 @@ func (a *Agent) ResumeSession(ctx context.Context, p acp.ResumeSessionRequest) (
 
 // attach makes a stored session live in this process.
 //
-// A session that is already live here is started again from the store: its
-// running turn is cancelled and waited for, as session/close does, and the
-// session is rebuilt from what the store holds. Nothing durable is lost,
+// A session that is already live in this process, on this connection or on
+// another, is taken over and started again from the store: its running turn
+// is cancelled and waited for, as session/close does, and the session is
+// rebuilt from what the store holds and belongs to this connection. Nothing durable is lost,
 // since the turn stores each entry as it is made. What only this process
 // knew goes: the tools allowed "always" and the _meta overrides of the
 // request that first made the session, which this request replaces.
@@ -71,8 +72,9 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 		}
 		return nil, nil, err
 	}
-	a.attachMu.Lock()
-	defer a.attachMu.Unlock()
+	// One at a time for a session, so that two loads cannot both make it
+	// live.
+	defer a.lock(r.id)()
 
 	meta, err := a.storedMeta(ctx, r.id)
 	if err != nil {
@@ -86,12 +88,22 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 		return nil, nil, err
 	}
 
-	a.mu.Lock()
-	live := a.sessions[r.id]
-	delete(a.sessions, r.id)
-	a.mu.Unlock()
+	// From whichever connection has it. Its client is told nothing, since
+	// the protocol has no message for it: the turn it was running answers
+	// as cancelled, and its next request for the session answers that the
+	// session is unknown.
+	live := a.take(r.id)
 	if live != nil {
 		if err := live.close(ctx); err != nil {
+			return nil, nil, err
+		}
+		// The old turn may have updated metadata while it stopped.
+		meta, err = a.storedMeta(ctx, r.id)
+		if err != nil {
+			return nil, nil, err
+		}
+		values, perTurn, err = a.startValues(r.meta, r.initial, a.storedValues(meta))
+		if err != nil {
 			return nil, nil, err
 		}
 	}
@@ -140,9 +152,9 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 		return nil, nil, err
 	}
 
-	a.mu.Lock()
-	a.sessions[s.id] = s
-	a.mu.Unlock()
+	if err := a.put(s, a); err != nil {
+		return nil, nil, err
+	}
 	a.logger.Info("session attached from the store", "session", s.id, "replayed", replay, "was_live", live != nil)
 	return modeState(a.registry.option(ModeOption), values[ModeOption].ID),
 		a.registry.configOptions(values, a.Gate().BooleanOptions()), nil
@@ -206,8 +218,9 @@ func (a *Agent) ListSessions(ctx context.Context, p acp.ListSessionsRequest) (ac
 	return resp, nil
 }
 
-// DeleteSession removes a session from the store. One that is live here is
-// closed first: its turn is cancelled and waited for.
+// DeleteSession removes a session from the store. One that is live in this
+// process, on any connection, is closed first: its turn is cancelled and
+// waited for.
 func (a *Agent) DeleteSession(ctx context.Context, p acp.DeleteSessionRequest) (acp.DeleteSessionResponse, error) {
 	if a.store == nil {
 		return acp.DeleteSessionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionDelete)
@@ -215,17 +228,12 @@ func (a *Agent) DeleteSession(ctx context.Context, p acp.DeleteSessionRequest) (
 	if err := a.ready(); err != nil {
 		return acp.DeleteSessionResponse{}, err
 	}
-	a.attachMu.Lock()
-	defer a.attachMu.Unlock()
+	defer a.lock(p.SessionId)()
 	meta, err := a.storedMeta(ctx, p.SessionId)
 	if err != nil {
 		return acp.DeleteSessionResponse{}, err
 	}
-	a.mu.Lock()
-	live := a.sessions[p.SessionId]
-	delete(a.sessions, p.SessionId)
-	a.mu.Unlock()
-	if live != nil {
+	if live := a.take(p.SessionId); live != nil {
 		if err := live.close(ctx); err != nil {
 			return acp.DeleteSessionResponse{}, err
 		}
@@ -310,10 +318,4 @@ func storeError(id acp.SessionId, err error) error {
 
 func cwdMismatch(asked, stored string) *acp.RequestError {
 	return acp.NewInvalidParams(map[string]any{"error": "cwd is not the session's working directory", "cwd": asked, "sessionCwd": stored})
-}
-
-// isUnknownSession reports the error for a session that is not in memory.
-func isUnknownSession(err error) bool {
-	var re *acp.RequestError
-	return errors.As(err, &re) && re.Code == acp.NewResourceNotFound(nil).Code
 }
