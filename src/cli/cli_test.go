@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,15 @@ func TestServeAnswersAClientOnStdio(t *testing.T) {
 	w.Send(`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"` + created.SessionID + `","prompt":[{"type":"text","text":"hello"}]}}`)
 	got, others := w.Await(`2`)
 	require.JSONEq(t, `{"stopReason":"end_turn"}`, string(got[`2`].Result))
-	require.Len(t, others, 1)
+	// The turn's reply reaches the client once. The agent may send other
+	// notifications too, such as the session's commands.
+	replies := 0
+	for _, m := range others {
+		if strings.Contains(string(m.Params), `"sessionUpdate":"agent_message_chunk"`) {
+			replies++
+		}
+	}
+	require.Equal(t, 1, replies, "notifications: %v", others)
 
 	// The client closing standard input ends the program without an error.
 	w.Close()
