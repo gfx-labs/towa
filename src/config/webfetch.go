@@ -8,6 +8,7 @@ import (
 
 // WebFetch configures the fetch of one URL for the model.
 type WebFetch struct {
+	Enabled bool `koanf:"enabled"`
 	// Timeout bounds one fetch, from the request to the last byte of the
 	// body, across redirects.
 	Timeout time.Duration `koanf:"timeout"`
@@ -25,6 +26,7 @@ type WebFetch struct {
 // at 8e11eb23e: DEFAULT_TIMEOUT (line 17), MAX_SIZE (line 9) and
 // MAX_OUTPUT_CHARS (line 12), which despite its name counts bytes.
 var webfetchDefaults = map[string]any{
+	"webfetch.enabled":          true,
 	"webfetch.timeout":          "30s",
 	"webfetch.max_body_bytes":   5 << 20,
 	"webfetch.max_result_bytes": 40000,

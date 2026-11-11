@@ -33,6 +33,7 @@ type Config struct {
 	OpenAI     OpenAI           `koanf:"openai"`
 	WebFetch   WebFetch         `koanf:"webfetch"`
 	Jev        Jev              `koanf:"jev"`
+	Compaction Compaction       `koanf:"compaction"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -87,7 +88,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults, jevDefaults,
+		limitsDefaults, authDefaults, embeddingsDefaults, openaiDefaults, webfetchDefaults, jevDefaults, compactionDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -112,7 +113,7 @@ func (c *Config) validate() error {
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
 		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate,
-		c.Jev.validate, c.validateJevAccount,
+		c.Jev.validate, c.validateJevAccount, c.Compaction.validate, c.validateCompaction,
 		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
@@ -148,4 +149,14 @@ func (c *Config) validateJevAccount() error {
 		}
 	}
 	return fmt.Errorf("jev.account: %q is not the id of a configured account", c.Jev.Account)
+}
+
+func (c *Config) validateCompaction() error {
+	if c.Compaction.Mode == CompactionSemantic && c.Embeddings.BaseURL == "" {
+		return fmt.Errorf("compaction.mode %q requires embeddings.base_url", CompactionSemantic)
+	}
+	if c.OpenAI.CompactThreshold != 0 {
+		return fmt.Errorf("openai.compact_threshold is no longer supported; use compaction.openai_native_threshold_tokens with compaction.openai_native")
+	}
+	return nil
 }
