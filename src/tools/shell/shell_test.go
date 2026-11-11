@@ -240,10 +240,23 @@ func TestACommandThatIgnoresTermIsKilledAfterTheGracePeriod(t *testing.T) {
 func TestAChildLeftInTheGroupIsKilledAfterTheCommandExits(t *testing.T) {
 	cfg, s := toolsConfig(t), &stream{}
 	e := env(t, s)
-	// The subshell ignores SIGTERM, and the sleep it becomes inherits that.
-	const command = `(trap '' TERM; exec sleep 300) & echo $!; trap 'exit 0' TERM; wait`
+	// Both traps must be installed before readiness is printed. In particular,
+	// a child PID printed before the parent's trap permits an early SIGTERM.
+	const command = `trap 'exit 0' TERM; (trap '' TERM; : > child-ready; exec sleep 300) & child=$!; while [ ! -f child-ready ]; do sleep 0.01; done; echo "$child"; wait`
+	var child int
+	t.Cleanup(func() {
+		if child > 0 {
+			_ = syscall.Kill(child, syscall.SIGKILL)
+		}
+	})
 	res := cancelWhen(t, cfg, e, shell.Input{Command: command, CancelGrace: 10 * time.Second}, func() bool {
-		return strings.HasSuffix(s.String(), "\n")
+		text := s.String()
+		if !strings.HasSuffix(text, "\n") {
+			return false
+		}
+		var err error
+		child, err = strconv.Atoi(strings.TrimSpace(text))
+		return err == nil && child > 0
 	})
 	require.Equal(t, "terminated", res.StopSignal)
 	require.Zero(t, res.ExitCode)
