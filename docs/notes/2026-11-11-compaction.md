@@ -1,135 +1,145 @@
-# Compaction: the decision, the summary request and the appended entry
+# Compaction
 
 2026-11-11
 
-## Orchestration follow-on
+`src/compact` and `src/config/compaction.go`. The controller boundary is agreed with the loop lane. This lane edits no loop, router, session or runtime assembly code.
 
-`BoundedSummaryRequest` retains the prompt and previous summary whole and removes oldest serialized conversation text when the summary input would exceed the context estimate. Its `SummaryReport` reports omitted text, including the prompt formats' tool-result caps and excluded thinking/native content. The estimate is jcode's four bytes per token (`crates/jcode-compaction-core/src/lib.rs:43`, origin/master `8e11eb23e`). It reserves at least 4,000 tokens as jcode does for summary requests (`crates/jcode-base/src/compaction.rs:1792`), or the requested output allowance when larger. This is not an exact tokenizer. A provider context error is returned without replacing any history. The fixed instructions and previous summary are never silently shortened.
+## Boundary and ownership
 
-`compaction.pending_wait_ms` defaults to 15,000, from the same jcode commit's `crates/jcode-base/src/compaction.rs:44` (`HARD_THRESHOLD_PENDING_WAIT_MS`). Zero means no emergency wait. The caller's context must also bound the wait.
+```go
+controller, err := compact.NewController(compact.ControllerOptions{
+    Config: compactionConfig,
+    Summary: summaryProvider,
+    SummaryInput: compact.SummaryInput{
+        Model: summaryModel,
+        MaxOutputTokens: summaryMaxOutputTokens,
+        Effort: summaryEffort,
+        ConversationSearch: conversationSearchEnabled,
+    },
+    SummaryContextWindow: summaryContextWindow,
+    Embedder: embeddingsClient,
+    Native: nativeForProvider,
+})
+if err != nil {
+    return err
+}
+defer controller.Close()
+effects, err := controller.Before(ctx, compact.BeforeInput{
+    Entries: fullStoredHistory,
+    Request: selectedRequest,
+    ProviderName: selectedContextName,
+    ContextWindow: selectedContextWindow,
+})
+if err != nil {
+    return err
+}
+// The existing session owner appends effects, then calls compact.Items and
+// loop.Conversation before sending selectedRequest.
+```
 
-`src/compact` and `src/config/compaction.go`. Nothing calls the package yet, and no request was sent to any provider. The quality of a summary written with either prompt is untested.
+The names in this fragment are the caller's resolved dependencies, not additional configuration keys. `SummaryContextWindow == 0` uses the selected request model's window. A different summary model needs its own metadata. The summary provider can be a router, which supplies the credential. A direct provider needs a credential in `SummaryInput`.
 
-## What was built
+The loop hook is `Options.NewCompactor func(context.Context, Turn, Resolved) (*compact.Controller, error)`. It is called once per turn and may return a session-owned controller. `Close` cancels the one pending call and leaves the controller reusable. There is no session map, second store, polling timer, tool dispatcher or alternate context lifecycle in this package. The existing session owner serializes `Before`, `Close`, and appends.
 
-| file | what |
-|---|---|
-| `src/config/compaction.go` | `Compaction`, `compactionDefaults`, `validate` |
-| `decide.go` | `Decide(Input) (Decision, error)`, `ContextTokens`, `Budget` |
-| `cut.go` | `Cut`: where a compaction divides the active entries. `Messages` |
-| `summary.go` | `SummaryRequest`: the `provider.Request` asking for the summary. `SummaryText`: the summary from the response, or why it cannot be used |
-| `prompt_checkpoint.go`, `prompt_short.go` | the copied prompts with their sources |
-| `compact.go` | `Entry`, `NativeEntry`, `EmergencySummary`, `Read`, `Items`, the `Native` interface |
-| `semantic.go` | the `Embedder` interface, `TopicShift`, `SemanticKeep` |
+`Before` returns zero or more effects, ordered as summary usage and then the compaction. The caller appends them as one group. The controller never appends directly. `Source` captures the old prefix and its latest compaction id. `Result.ItemFor` refuses a superseded prefix and preserves every entry appended while a summary ran. In particular, a capture with nil `FirstKept` uses the first newly appended entry when applied, rather than discarding those new entries.
 
-## How the loop would use it
+Read the full `Store.History`, not `Load`: a compaction's `FirstKept` may refer to an entry before that compaction's position. Only the context view is shortened. Nothing deletes or rewrites an entry. No path dispatches a stored tool call. The loop's existing `Conversation` repairs unanswered calls before normalizing a request.
 
-1. After a model request: `Decide` with the mode, the model's context window, that request's usage, the count from `Messages(view.Active)` and, for proactive and semantic, the per-turn history the caller keeps.
-2. On `Background` or `Emergency`: `Read(entries)` for the active entries and the earlier summary, then `Cut(view.Active, decision.Keep)` (or the count from `SemanticKeep`).
-3. `Background`: send `SummaryRequest(...)` to the summary model, pass the response's items and stop reason to `SummaryText`, append `Entry(...)`. With `Decision.Native`: call the `Native`, append `NativeEntry(...)`.
-4. `Emergency`: append `Entry(...)` with `EmergencySummary(...)` and `ModeEmergency`. No model is asked.
-5. Before every request: `Items(entries, providerName)` in place of the plain list of items, and then the loop's `Conversation` as today.
+The router's preparation callback runs for the actual selected chain entry and masks itself in the summary request context. This handles native portability on fallback without recursively preparing the summary's router. `BeforeInput.ProviderName` must be the wire client's opaque-context identity, exactly the value in `Item.Provider`, not necessarily the configured provider id. Codex OAuth and API-key Responses have different identities. The coordinator and provider/loop lanes own `provider.ContextNamer` wiring for this distinction.
 
-## Append only
+## Decision and emergency wait
 
-The package has no function that takes entries and returns fewer of them for storing. `Read` and `Items` return views. `Entry` and `NativeEntry` return one new entry. `TestItemsAfterCompactions` checks that after two compactions every earlier entry is still in the slice and unchanged.
+`Decide(Input) (Decision, error)` follows jcode's `CompactionManager` at origin/master `8e11eb23e`, read with `git show` (`crates/jcode-base/src/compaction.rs`: `ensure_context_fits` 981, `should_compact_with` 881, `anti_signals_block` 508, `should_compact_proactively` 557, `should_compact_semantic` 604).
 
-A compaction's `FirstKept` is the id of the first entry still sent. The nil id means nothing before the compaction is kept. An id the transcript does not hold before the compaction is an error, not an empty session.
+- Context tokens are the last request's input plus cache reads and writes. The budget is the model window, capped by `max_context_tokens`.
+- At `emergency_threshold`, it chooses emergency compaction, or a context-full stop when mode is off or too few messages remain to cut.
+- Reactive uses the configured fraction or absolute threshold, whichever comes first.
+- Proactive uses EWMA growth and lookahead, with floor, sample, stall and cooldown guards.
+- Semantic requires the configured embedder. Topic shift and projection are gated as proactive is. Fewer than four observed turn vectors means topic-shift history is still warming, not permission to ignore a missing or failed embeddings endpoint.
+- Native auto leaves compaction to the server. Native explicit starts a background native request at its threshold. Native off uses the ordinary mode.
 
-## The decision
+`Controller.Before` polls completed work without waiting. At emergency it waits for pending work with a channel select bounded by both the caller's context and `compaction.pending_wait_ms`. The default is 15,000 from `crates/jcode-base/src/compaction.rs:44` (`HARD_THRESHOLD_PENDING_WAIT_MS`), same jcode commit. Zero means no wait. Duration overflow and invalid fractions are configuration errors.
 
-Follows jcode's `CompactionManager` at origin/master 8e11eb23e (`crates/jcode-base/src/compaction.rs`: `ensure_context_fits` 981, `should_compact_with` 881, `anti_signals_block` 508, `should_compact_proactively` 557, `should_compact_semantic` 604).
+If the wait expires, the task is cancelled and an explicit emergency omission entry is returned, retaining the configured emergency message count and tool-call/result pairs. This is not presented as a model-written summary. Provider errors, refusal, truncated output and cancellation are returned, not silently converted into a successful model summary. A tool-safe cut that replaces nothing returns context-full.
 
-- The context size is the last request's `InputTokens + CacheReadTokens + CacheWriteTokens`. The budget is the model's window, or `max_context_tokens` when that is smaller.
-- At `emergency_threshold` of the budget the answer is `Emergency`, or `Stop` when the mode is `off` or there are no more messages than the emergency keep. This is checked first, also while a compaction is running.
-- `reactive`: `Background` at `reactive_threshold` of the budget or at `reactive_threshold_tokens`, whichever comes first.
-- `proactive`: `Background` when the context plus `lookahead_turns` times the EWMA of its growth reaches `proactive_threshold` of the budget. Held back below the floor, with fewer than `min_samples` sizes, when the last `stall_window` sizes show no growth, and for `min_turns_between` turns after a compaction.
-- `semantic`: the same holds, then a topic shift, then the proactive projection.
-- Native: when the provider can compact itself, `auto` returns `None` (the server compacts in the stream) and `explicit` returns `Background` with `Native` set at `openai_native_threshold_tokens`. `off` falls through to the mode.
+Limits: the decision uses reported usage. There is no tokenizer or estimate of a newly added user message, tool result or the first request of a session. An emergency cut keeps a configured count, not a token-counted suffix. A still-oversized kept suffix can be rejected by the provider. Unlike jcode, this package does not shorten stored tool results or repeatedly halve the configured count. These limits are not a claim that every next request is guaranteed to fit.
 
-`TestDecide` is a table of 22 cases over these rules.
+## Summary request and omission report
 
-Differences from jcode:
+`SummaryRequest` builds the prompt. `BoundedSummaryRequest` retains the fixed instructions and previous summary whole and removes oldest serialized conversation text when it would exceed the summary context estimate. `SummaryReport` reports omitted UTF-8 text bytes, including each prompt format's tool-result caps, excluded thinking, and unreadable native items. The controller appends a labelled harness omission notice to the summary when necessary, so omissions are not hidden from the next model or stored history.
 
-- jcode estimates the context from message text when it has no usage. `Decide` takes only the reported usage, so nothing is decided before the first request of a session. A loaded session has its last `Usage` entry.
-- jcode waits a bounded time for a running compaction before it cuts at the emergency threshold. `Decide` answers `Emergency` at once. The wait is the caller's to add.
-- jcode's emergency cut also shortens long tool results and halves the kept count until the context fits. Here the emergency keep is one configured count. Shortening a result would rewrite an entry.
-- jcode counts messages and calls them turns. The config keys here say messages. A message is a run of items of one role.
+The estimate is jcode's four bytes per token (`crates/jcode-compaction-core/src/lib.rs:43`, origin/master `8e11eb23e`). It reserves at least 4,000 tokens as jcode does for summary requests (`crates/jcode-base/src/compaction.rs:1792`), or the requested output allowance when larger. This is not an exact tokenizer or exact wire-overhead measurement. Fixed instructions and previous summary that cannot fit produce an error. A provider context error leaves history unchanged.
 
-## The two prompts
+The conversation is plain text in one user message, with no tools, as both upstreams do. Text logs of old tool calls cannot dispatch a tool. Stored blob references are never sent. Thinking signatures and native ciphertext do not enter the summary prompt.
 
 | prompt | source | commit |
 |---|---|---|
-| `checkpoint` system, first prompt, merge prompt | `packages/coding-agent/src/core/compaction/utils.ts` (`SUMMARIZATION_SYSTEM_PROMPT`) and `compaction.ts` (`SUMMARIZATION_PROMPT`, `UPDATE_SUMMARIZATION_PROMPT` with `UPDATE_SUMMARIZATION_INSTRUCTIONS`) in earendil-works/pi | 4839e41d6463d759a92ee55f4ca7c8ae57e52c9c |
-| the wrapper a summary is sent in | `packages/coding-agent/src/core/messages.ts` (`COMPACTION_SUMMARY_PREFIX`, `COMPACTION_SUMMARY_SUFFIX`), same commit | |
-| `short` prompt | `crates/jcode-compaction-core/src/lib.rs:85` (`SUMMARY_PROMPT`) in 1jehuang/jcode, read with `git show origin/master:` | 8e11eb23ea33c7b09d43aa9a3b52fa3f0728f39e |
-| `short` system prompt | `crates/jcode-base/src/compaction.rs:1799`, same commit | |
+| checkpoint system, first prompt, merge prompt | earendil-works/pi `packages/coding-agent/src/core/compaction/utils.ts` (`SUMMARIZATION_SYSTEM_PROMPT`) and `compaction.ts` (`SUMMARIZATION_PROMPT`, `UPDATE_SUMMARIZATION_PROMPT`, `UPDATE_SUMMARIZATION_INSTRUCTIONS`) | `4839e41d6463d759a92ee55f4ca7c8ae57e52c9c` |
+| summary wrapper | Pi `packages/coding-agent/src/core/messages.ts` (`COMPACTION_SUMMARY_PREFIX`, `COMPACTION_SUMMARY_SUFFIX`) | same |
+| short prompt | jcode `crates/jcode-compaction-core/src/lib.rs:85` (`SUMMARY_PROMPT`) | `8e11eb23ea33c7b09d43aa9a3b52fa3f0728f39e` |
+| short system | jcode `crates/jcode-base/src/compaction.rs:1799` | same |
 
-`TestPromptsMatchTheirSources` reads those files at those commits with `git show` and checks that each constant is in its file byte for byte. It needs the two checkouts, which a clone of this repo does not have, so it runs only when they are named and skips otherwise:
+The constants in `prompt_checkpoint.go` and `prompt_short.go` are copied exactly and carry source comments. The optional conversation-search sentence is held separately and added only when `ConversationSearch` is true. Checkpoint results use Pi's 2,000 UTF-16-unit cap. Short results use jcode's 500-byte cap. Their original layouts remain unchanged before the whole-conversation budget cut. Pi's optional focus instructions and read/modified file lists are not built.
 
-```
-ACPHARNESS_PI_REPO=~/.jcode/scratch/pi-src ACPHARNESS_JCODE_REPO=~/repo/github.com/1jehuang/jcode \
-    go test ./src/compact -run TestPromptsMatchTheirSources
-```
+`TestPromptsMatchTheirSources` compares prompt bytes with those exact commits when `ACPHARNESS_PI_REPO` and `ACPHARNESS_JCODE_REPO` point to the source checkouts. Without them it skips rather than substituting hand-written source fixtures.
 
-It passed on 2026-11-11 against both.
+## Native compaction and portability
 
-The sentence about searching: jcode's prompt ends with "You can search the full conversation later if you need exact error messages or code snippets." It is held apart as `searchSentence` and added only when `SummaryInput.ConversationSearch` is set. With the flag set, the `short` prompt is jcode's whole. Pi's prompt has no such sentence, so with the flag set the same sentence follows the checkpoint prompt after a blank line. That one addition is ours and not Pi's.
-
-The conversation is sent as text in one user message, as both upstreams do, so the model does not carry on with it. The text layout follows each upstream: Pi's `[User]:`, `[Assistant]:`, `[Assistant tool calls]:`, `[Tool result]:` inside `<conversation>` tags with tool results cut at 2000 UTF-16 units, and jcode's `**User:**`, `[Tool: name - input]`, `[Result: ...]` with tool results cut at 500 bytes. Thinking is left out by both. These layouts were written from reading the two sources and are not compared with them by a test.
-
-Not ported: jcode cuts the whole prompt to the summary model's context window (`compaction.rs:1792`). `SummaryRequest` does not, so a replaced part larger than the summary model's window fails at the provider with a context-full error. Pi's `Additional focus:` custom instructions and its file lists (`<read-files>`, `<modified-files>`) are not built.
-
-A later summary is given to the model as a user message between Pi's prefix and suffix, for both prompts. jcode uses a `## Previous Conversation Summary` heading instead. One wrapper was chosen so that `Items` does not depend on which prompt wrote the summary.
-
-## Native compaction
-
-`compact.Native` is `Compact(ctx, provider.Request) (NativeResult, error)`. `(*openai.Client).Compact` returns `*openai.Compacted`, a type of that package, so it does not satisfy the interface directly. The wiring wraps it:
+`Native` is `Compact(context.Context, provider.Request) (NativeResult, error)`. Runtime assembly wraps the OpenAI client's package-specific return type:
 
 ```go
 native := compact.NativeFunc(func(ctx context.Context, req provider.Request) (compact.NativeResult, error) {
-	compacted, err := openaiClient.Compact(ctx, req)
-	if err != nil {
-		return compact.NativeResult{}, err
-	}
-	return compact.NativeResult{Items: compacted.Items, Usage: compacted.Usage}, nil
+    result, err := openaiClient.Compact(ctx, req)
+    if err != nil {
+        return compact.NativeResult{}, err
+    }
+    return compact.NativeResult{Items: result.Items, Usage: result.Usage}, nil
 })
 ```
 
-`NativeEntry` stores the provider's items as JSON in the entry's `Opaque` with `Provider` set, and no summary text, because the provider's summary is encrypted. `Items` gives them back to that provider only. For any other provider it returns `*UnreadableError`: the replaced entries are still in the store, so the caller can summarise them with a model. That fallback is not built.
+`ControllerOptions.Native` maps the actual wire identity to this adapter, returning nil for endpoints without the feature. When native config is enabled a missing resolver is an error. Explicit native requests must receive the loop's normalized `BeforeInput.Request.Items`, including its existing interruption and lost-tool-result handling. The whole returned native window is retained, not just the encrypted item. Empty windows, missing compaction items, invalid item variants, absent opaque content and mismatched provider tags are errors.
 
-## Semantic mode
+`AutoItem` converts a finished native `compaction` item into a compaction effect at that same position in the streamed output. Earlier input/output is represented by it, and later entries remain active. This follows OpenAI's compaction guide for stateless input-array chaining: discard the prefix before the most recent compaction item, not the whole response. This harness does not use `previous_response_id` chaining.
 
-Built: the `Embedder` interface (`Embed(ctx, []string) ([][]float32, error)`, which `*embed.Client` has), `TopicShift` over the turn embeddings, and `SemanticKeep`, which widens the kept part back to the earliest older message whose similarity to the current goal reaches `relevance_keep_threshold`.
+`Items` returns a native window only to its owning provider. For another it returns `UnreadableError`. `EnsurePortable` reconstructs the readable replaced prefix from full history, reuses the latest earlier text summary when applicable, and asks the configured summary model for a real new summary. The ciphertext is not sent. The portable result is appended, not written over the native entry. A new native stream item invalidates older background work. A provider change cancels pending explicit native work for the old provider.
 
-Missing:
+Native auto, explicit and cross-provider fallback have no real upstream recording here. These paths are implemented and source-reviewed, not account-validated. No invented native response was recorded.
 
-- Nothing produces `Input.Embeddings`. After each turn the caller has to embed the first `embed_max_chars` characters of the turn's assistant text and keep the latest `embedding_history_window` vectors. jcode caches these (256 entries). There is no cache here.
-- `SemanticKeep` is not tested: a test needs an embeddings endpoint or a recording of one, and a hand-written vector table would be a stand-in. `TopicShift` is covered through `TestDecide` with literal vectors.
-- With no embeddings endpoint configured, semantic mode decides exactly as proactive mode. Config does not refuse `mode = "semantic"` with an empty `embeddings.base_url`, because that needs the whole `Config`: see the requests.
+## Semantic embeddings
 
-## Config
+`*embed.Client` satisfies `Embedder`. The controller embeds each newly observed completed request's plain user/assistant text with `EmbedTurn`, retains at most `embedding_history_window` vectors, and clears topic history after a compaction. It never reads gated `Stored` parts. `SemanticKeep` embeds the current goal and candidate older messages and keeps from the earliest sufficiently relevant message. Embeddings errors, wrong dimensions, non-finite values and zero norms are returned. There is no silent switch to proactive when embeddings fail.
 
-Every default is jcode's, cited by file and line in `src/config/compaction.go`. None is unsourced, so none is required. Two keys have no jcode setting behind them and take jcode's constant as the default: `proactive_threshold` (`COMPACTION_THRESHOLD`, 0.80) and `history_window` (`TOKEN_HISTORY_WINDOW`, 20). `summary_prompt` defaults to `checkpoint` because `docs/design.md` says so.
+The coordinator's whole-config validation rejects semantic mode without `embeddings.base_url`. `NewController` also rejects semantic mode without an embedder. There is no in-process model or second embedding transport.
 
-The defaults were decoded through koanf into `Compaction` and passed `validate` in a throwaway test, which was deleted.
+## Recordings and checks
 
-## Checks
+Provenance: Ollama 0.24.0 on loopback, loaded `llama3.2:3b`, no model pull, settings change, account or external request. The source conversation is the loop lane's real `ReadTurn` recording (`98425d2`, normal-client fixture `49b5c7d`), replayed through its Chat client, router, actual read tool and directory store.
 
+This follow-on made four actual local requests: summary and embeddings, then one approved replacement of each. The first two could not persist because the recorder's parent directory was absent. The replacement run creates the directory and explicitly loads both saved exchanges. Including the earlier three Anthropic-emulation requests, the total is seven, approved by the coordinator. There are no further local requests or retries in these tests unless recording is explicitly enabled.
+
+- `testdata/ollama_summary.json`: real streamed short-prompt summary of that recorded read-tool turn, requested max output 1,024. The summary was accepted only with a complete end-turn stop and nonempty text. Tests replay it through the real Messages client and a context-owned background task and through `Controller.Before`, append to a real store, reopen the store, preserve every original entry, retain an entry appended during summarization, refuse a stale result, and confirm no old tool is dispatched again. Gating the real HTTP transport tests zero wait and caller cancellation/deadline without fabricating provider output.
+- `testdata/ollama_semantic.json`: real `/v1/embeddings` request through `src/embed` from `SemanticKeep`. The loaded model returned two vectors of 3,072 dimensions with HTTP 200. The replay checks the measured request path and relevance-keep bounds, not embedding quality or a real topic-shift workload.
+- Fixture headers, bodies and responses were checked for home paths, machine/user names and the placeholder key. The key is redacted. The only network location is the permitted loopback endpoint.
+
+Checks:
+
+```sh
+nice -n 10 go build ./src/compact/... ./src/config/...
+nice -n 10 go vet ./src/compact/...
+nice -n 10 go test -race ./src/compact/... -count=1
+nice -n 10 mise exec -- golangci-lint run ./src/compact/... ./src/config/...
+CGO_ENABLED=0 nice -n 10 go build ./src/compact/...
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 nice -n 10 go build ./src/compact/...
+ACPHARNESS_PI_REPO=/home/a/.jcode/scratch/pi-src \
+ACPHARNESS_JCODE_REPO=/home/a/repo/github.com/1jehuang/jcode \
+    nice -n 10 go test ./src/compact -run TestPromptsMatchTheirSources -count=1
 ```
-nice -n 10 go build ./src/compact/... ./src/config/... && go vet ./src/compact/...
-nice -n 10 go test -race ./src/compact/...
-nice -n 10 golangci-lint run ./src/compact/...
-GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./src/compact/... ./src/config/...
-```
 
-All pass. `golangci-lint run ./src/config/...` reports `compactionDefaults` and `Compaction.validate` as unused until they are wired.
+## Still untested or owned elsewhere
 
-## Not done
-
-- No summary was requested from a model. Whether either prompt gives a summary a session can continue from is untested.
-- Nothing calls the package. The loop's `Conversation` still returns an error for a `Compaction` item, which is right as long as it is given `Items`' result, which holds none.
-- Reporting a compaction to the client (`compaction_update`) and the `/compact` command are the session's.
-- Compaction entries from a native `auto` compaction: the server's compaction item arrives in the stream as a `Native` item of kind `compaction`. Nothing here turns it into a `Compaction` entry, so the entries before it are still sent.
-- The summary request is not cut to the summary model's window.
-- No wait for a running compaction at the emergency threshold.
+- Summary quality for continuing real coding work, repeated checkpoint merges, omitted input and long-history native portability. A short local summary is not a quality benchmark.
+- OpenAI native automatic/explicit responses and cross-provider fallback on real encrypted history. A real account is needed.
+- Anthropic thinking/cache/OAuth behavior. Ollama proves none of it.
+- Exact token fitting for arbitrary model tokenizers, multimodal content or huge kept suffixes.
+- Real semantic topic-shift quality and the controller's single-turn embedding request as distinct from the recorded relevance-keep request.
+- Loop/session/runtime integration, compaction ACP updates and `/compact` are owned by their lanes. This lane supplies the agreed callback and no edits to their paths.

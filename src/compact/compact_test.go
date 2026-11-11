@@ -153,7 +153,7 @@ func TestDecide(t *testing.T) {
 			want:   None, keep: 10,
 		},
 		{
-			name: "semantic without embeddings decides as proactive", mode: config.CompactionSemantic, tokens: 100_000,
+			name: "semantic while topic history is still warming", mode: config.CompactionSemantic, tokens: 100_000,
 			change: func(in *Input) { in.History = growing },
 			want:   Background, by: TriggerProjection, keep: 10,
 		},

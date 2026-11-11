@@ -137,6 +137,9 @@ func standIn(entry transcript.Entry, providerName string) ([]transcript.Item, er
 		if err := json.Unmarshal(item.Opaque, &native); err != nil {
 			return nil, fmt.Errorf("compact: read the native items of compaction %s: %w", entry.ID, err)
 		}
+		if err := validateNativeWindow(native, providerName); err != nil {
+			return nil, fmt.Errorf("compact: stored native window %s: %w", entry.ID, err)
+		}
 		return native, nil
 	}
 	summary := item.Compaction.Summary
@@ -194,26 +197,73 @@ type NativeResult struct {
 // Items gives them back to that provider only. The entry has no summary
 // text: the provider's summary is encrypted.
 func NativeEntry(parent uuid.UUID, now time.Time, result NativeResult, providerName string, firstKept uuid.UUID) (transcript.Entry, error) {
+	item, err := NativeItem(result, providerName, firstKept)
+	if err != nil {
+		return transcript.Entry{}, err
+	}
+	return transcript.NewEntry(parent, now, item), nil
+}
+
+// NativeItem builds the item without choosing the caller's entry id,
+// parent or timestamp. The explicit endpoint's whole returned window is
+// retained, including any user or tool items beside the encrypted item.
+func NativeItem(result NativeResult, providerName string, firstKept uuid.UUID) (transcript.Item, error) {
 	if len(result.Items) == 0 {
-		return transcript.Entry{}, ErrEmptySummary
+		return transcript.Item{}, ErrEmptySummary
 	}
 	if providerName == "" {
-		return transcript.Entry{}, errors.New("compact: the native compaction names no provider")
+		return transcript.Item{}, errors.New("compact: the native compaction names no provider")
 	}
-	for i, item := range result.Items {
-		if err := item.Validate(); err != nil {
-			return transcript.Entry{}, fmt.Errorf("compact: native item %d: %w", i, err)
-		}
+	if err := validateNativeWindow(result.Items, providerName); err != nil {
+		return transcript.Item{}, err
 	}
 	opaque, err := json.Marshal(result.Items)
 	if err != nil {
-		return transcript.Entry{}, fmt.Errorf("compact: encode the native items: %w", err)
+		return transcript.Item{}, fmt.Errorf("compact: encode the native items: %w", err)
 	}
-	return transcript.NewEntry(parent, now, transcript.Item{
+	return transcript.Item{
 		Compaction: &transcript.Compaction{FirstKept: firstKept, Mode: ModeNative},
 		Provider:   providerName,
 		Opaque:     opaque,
-	}), nil
+	}, nil
+}
+
+func validateNativeWindow(items []transcript.Item, providerName string) error {
+	found := false
+	for i, item := range items {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("compact: native item %d: %w", i, err)
+		}
+		if item.Compaction != nil || item.Usage != nil || item.ModelSwitch != nil || item.Interrupted != nil {
+			return fmt.Errorf("compact: native item %d is not a provider request item", i)
+		}
+		if item.Native != nil {
+			if item.Provider != providerName || len(item.Opaque) == 0 {
+				return fmt.Errorf("compact: native item %d has a different provider or no content", i)
+			}
+			found = found || item.Native.Kind == "compaction"
+		}
+	}
+	if !found {
+		return errors.New("compact: native window contains no compaction item")
+	}
+	return nil
+}
+
+// AutoItem converts a completed server-side compaction item at its stream
+// position. Append it instead of the Native item. Everything before it is
+// represented by it, and entries appended afterward remain active. This is
+// for stateless input-array chaining, never previous_response_id chaining.
+// Non-compaction items are returned unchanged with converted false.
+func AutoItem(item transcript.Item) (out transcript.Item, converted bool, err error) {
+	if item.Native == nil || item.Native.Kind != "compaction" {
+		return item, false, nil
+	}
+	if len(item.Opaque) == 0 {
+		return transcript.Item{}, false, errors.New("compact: automatic compaction has no opaque content")
+	}
+	out, err = NativeItem(NativeResult{Items: []transcript.Item{item}}, item.Provider, uuid.Nil())
+	return out, err == nil, err
 }
 
 // EmergencySummary is the summary recorded when the context is cut without

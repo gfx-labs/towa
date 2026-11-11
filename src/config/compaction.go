@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"time"
+)
 
 // Compaction configures when a session's context is compacted and how the
 // summary is asked for.
@@ -170,7 +174,7 @@ func (c Compaction) validate() error {
 		"compaction.proactive_threshold": c.ProactiveThreshold,
 		"compaction.ewma_alpha":          c.EWMAAlpha,
 	} {
-		if value <= 0 || value > 1 {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value > 1 {
 			return fmt.Errorf("%s: %v is not above 0 and at most 1", key, value)
 		}
 	}
@@ -181,7 +185,7 @@ func (c Compaction) validate() error {
 		"compaction.topic_shift_threshold":    c.TopicShiftThreshold,
 		"compaction.relevance_keep_threshold": c.RelevanceKeepThreshold,
 	} {
-		if value < 0 || value > 1 {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
 			return fmt.Errorf("%s: %v is not between 0 and 1", key, value)
 		}
 	}
@@ -197,6 +201,9 @@ func (c Compaction) validate() error {
 		if value < 0 {
 			return fmt.Errorf("%s: %d is negative", key, value)
 		}
+	}
+	if c.PendingWaitMillis > math.MaxInt64/int64(time.Millisecond) {
+		return fmt.Errorf("compaction.pending_wait_ms: %d overflows a duration", c.PendingWaitMillis)
 	}
 	for key, value := range map[string]int{
 		"compaction.lookahead_turns":      c.LookaheadTurns,
@@ -229,3 +236,7 @@ func (c Compaction) validate() error {
 	}
 	return nil
 }
+
+// Validate checks a compaction section passed directly to a controller,
+// outside the configuration loader.
+func (c Compaction) Validate() error { return c.validate() }

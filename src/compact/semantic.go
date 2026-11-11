@@ -2,6 +2,7 @@ package compact
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -76,6 +77,9 @@ func messageText(entries []transcript.Entry, maxChars int) string {
 		switch {
 		case e.Item.User != nil:
 			for _, p := range e.Item.User.Parts {
+				if p.Stored != nil {
+					continue
+				}
 				b.WriteString(p.Text)
 				b.WriteByte('\n')
 			}
@@ -98,9 +102,12 @@ func messageText(entries []transcript.Entry, maxChars int) string {
 // earliest one whose similarity to it reaches relevance_keep_threshold is
 // kept, because the replaced part has to be one unbroken run.
 //
-// It sends one request to the embedder. A failure is returned: the caller
-// chooses whether to compact with the plain count.
+// It sends one request to the embedder. A failure is returned, never treated
+// as permission to switch semantic mode to proactive.
 func SemanticKeep(ctx context.Context, embedder Embedder, cfg config.Compaction, active []transcript.Entry) (int, error) {
+	if embedder == nil {
+		return 0, errors.New("compact: semantic mode needs an embedder")
+	}
 	msgs := spans(active)
 	candidates := len(msgs) - cfg.KeepRecentMessages
 	if candidates <= 0 {
@@ -126,6 +133,9 @@ func SemanticKeep(ctx context.Context, embedder Embedder, cfg config.Compaction,
 	if len(vectors) != len(inputs) {
 		return 0, fmt.Errorf("compact: the embedder returned %d vectors for %d inputs", len(vectors), len(inputs))
 	}
+	if err := validateVectors(vectors); err != nil {
+		return 0, err
+	}
 	for i := 1; i < len(vectors); i++ {
 		if Cosine(vectors[0], vectors[i]) < cfg.RelevanceKeepThreshold {
 			continue
@@ -138,4 +148,50 @@ func SemanticKeep(ctx context.Context, embedder Embedder, cfg config.Compaction,
 		return len(msgs) - index[i], nil
 	}
 	return cfg.KeepRecentMessages, nil
+}
+
+// EmbedTurn embeds the plain user/assistant text of a completed turn for
+// topic-shift detection. The loop passes only that turn's entries. No text
+// means no vector and no request. src/embed.Client implements Embedder.
+func EmbedTurn(ctx context.Context, embedder Embedder, cfg config.Compaction, entries []transcript.Entry) ([]float32, error) {
+	if embedder == nil {
+		return nil, errors.New("compact: semantic mode needs an embedder")
+	}
+	text := messageText(entries, cfg.EmbedMaxChars)
+	if text == "" {
+		return nil, nil
+	}
+	vectors, err := embedder.Embed(ctx, []string{text})
+	if err != nil {
+		return nil, fmt.Errorf("compact: embed turn: %w", err)
+	}
+	if len(vectors) != 1 {
+		return nil, fmt.Errorf("compact: embed turn returned %d vectors for one input", len(vectors))
+	}
+	if err := validateVectors(vectors); err != nil {
+		return nil, err
+	}
+	return vectors[0], nil
+}
+
+func validateVectors(vectors [][]float32) error {
+	if len(vectors) == 0 {
+		return errors.New("compact: the embedder returned no vectors")
+	}
+	for i, vector := range vectors {
+		if len(vector) == 0 || len(vector) != len(vectors[0]) {
+			return fmt.Errorf("compact: embedding %d has an empty or different dimension", i)
+		}
+		var norm float64
+		for _, x := range vector {
+			if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+				return fmt.Errorf("compact: embedding %d has a non-finite value", i)
+			}
+			norm += float64(x) * float64(x)
+		}
+		if norm == 0 {
+			return fmt.Errorf("compact: embedding %d has zero norm", i)
+		}
+	}
+	return nil
 }
