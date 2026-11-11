@@ -31,15 +31,24 @@ func result(call transcript.ToolCall, outcome transcript.Outcome, text string) t
 	}
 }
 
-// Conversation prepares stored history for a model request. It returns the
-// items a provider accepts, and the results to store first for calls that
-// have none.
+// Conversation prepares the items returned by compact.Items for a model
+// request. It returns the items a provider accepts, and the results to store
+// first for calls that have none.
 //
 // An Interrupted item becomes a user message with the interruption text.
 // Usage and ModelSwitch items are not part of the conversation. A call
 // without a result is one a process died on: nothing says whether it took
 // effect, so it gets the unknown outcome and is not run again.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
+	return ConversationWithRole(history, interruption, "")
+}
+
+// ConversationWithRole presents interruptions with the dialect's message role.
+func ConversationWithRole(history []transcript.Item, interruption, role string) (items []transcript.Item, repairs []transcript.Item, err error) {
+	interrupted := transcript.Item{User: &transcript.User{Role: role, Parts: []transcript.Part{{Text: interruption}}}}
+	if err := interrupted.Validate(); err != nil {
+		return nil, nil, err
+	}
 	answered := map[string]bool{}
 	for _, item := range history {
 		if item.ToolResult != nil {
@@ -80,11 +89,9 @@ func Conversation(history []transcript.Item, interruption string) (items []trans
 			if err := dangling(); err != nil {
 				return nil, nil, err
 			}
-			items = append(items, transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: interruption}}}})
+			items = append(items, interrupted)
 		case item.Compaction != nil:
-			// Nothing writes one yet. Guessing how to present a summary
-			// would send the model something no dialect defines.
-			return nil, nil, errors.New("loop: the session has a compaction entry, and compaction is not built yet")
+			return nil, nil, errors.New("loop: compaction must be materialized before Conversation")
 		}
 	}
 	return append(items, open...), open, nil

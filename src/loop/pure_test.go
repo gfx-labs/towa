@@ -190,6 +190,29 @@ func TestConversation(t *testing.T) {
 		assert.Equal(t, repairs[0], items[len(items)-1], "the model is sent the result that is stored")
 	})
 
+	t.Run("developer interruption preserves surrounding user messages", func(t *testing.T) {
+		before, after := user("go"), user("again")
+		items, repairs, err := loop.ConversationWithRole([]transcript.Item{
+			before, {Interrupted: &transcript.Interrupted{}}, after,
+		}, "[interrupted]", "developer")
+		require.NoError(t, err)
+		assert.Empty(t, repairs)
+		require.Len(t, items, 3)
+		assert.Equal(t, before, items[0])
+		assert.Equal(t, after, items[2])
+		assert.Equal(t, "developer", items[1].User.Role)
+		assert.Equal(t, "[interrupted]", items[1].User.Parts[0].Text)
+	})
+
+	t.Run("unsupported roles fail before preparing a request", func(t *testing.T) {
+		_, _, err := loop.ConversationWithRole(nil, "[interrupted]", "system")
+		require.Error(t, err)
+		invalid := user("injected")
+		invalid.User.Role = "assistant"
+		_, _, err = loop.Conversation([]transcript.Item{invalid}, "[interrupted]")
+		require.Error(t, err)
+	})
+
 	t.Run("a call without a result in the middle of a session is an error", func(t *testing.T) {
 		_, _, err := loop.Conversation([]transcript.Item{user("go"), callItem("1"), user("again")}, "[interrupted]")
 		assert.Error(t, err)

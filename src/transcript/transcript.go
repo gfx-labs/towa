@@ -51,7 +51,7 @@ type Item struct {
 	Opaque   jsontext.Value `json:"opaque,omitzero"`
 }
 
-// Validate reports an item that does not have exactly one variant set.
+// Validate checks the variant and any message role.
 func (i Item) Validate() error {
 	set := 0
 	for _, present := range []bool{
@@ -64,6 +64,13 @@ func (i Item) Validate() error {
 	}
 	switch set {
 	case 1:
+		if i.User != nil {
+			switch i.User.Role {
+			case "", "user", "developer":
+			default:
+				return fmt.Errorf("transcript: unsupported message role %q", i.User.Role)
+			}
+		}
 		return nil
 	case 0:
 		return errors.New("transcript: item has no variant set")
@@ -72,8 +79,10 @@ func (i Item) Validate() error {
 	}
 }
 
-// User is a message from the user.
+// User is a user or developer message.
 type User struct {
+	// Role is user when empty. Developer messages retain their instruction priority.
+	Role  string `json:"role,omitzero"`
 	Parts []Part `json:"parts"`
 }
 
