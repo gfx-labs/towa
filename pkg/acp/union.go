@@ -24,7 +24,7 @@ func marshalUnionObject(enc *jsontext.Encoder, value any) error {
 	if err := json.Unmarshal(b, &object); err != nil {
 		return err
 	}
-	return json.MarshalEncode(enc, object, jsontext.EscapeForHTML(true))
+	return json.MarshalEncode(enc, object, json.Deterministic(true), jsontext.EscapeForHTML(true))
 }
 
 func objectMembers(b jsontext.Value) (objectValue, bool) {
