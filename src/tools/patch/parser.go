@@ -88,6 +88,13 @@ func Parse(text string) (Patch, error) {
 	}
 	var p Patch
 	state := Kind("")
+	var added strings.Builder
+	finishAdd := func() {
+		if state == Add {
+			p.Hunks[len(p.Hunks)-1].Content = added.String()
+			added.Reset()
+		}
+	}
 	hunkLine := 0
 	ended := false
 	invalid := func(line int, message string) error { return &ParseError{Line: line, Message: message} }
@@ -142,6 +149,7 @@ func Parse(text string) (Patch, error) {
 			if err := ensure(number, header); err != nil {
 				return Patch{}, err
 			}
+			finishAdd()
 			ended = true
 			continue
 		}
@@ -154,6 +162,7 @@ func Parse(text string) (Patch, error) {
 				if err := ensure(number, header); err != nil {
 					return Patch{}, err
 				}
+				finishAdd()
 				p.Hunks = append(p.Hunks, Hunk{Kind: marker.kind, Path: strings.TrimPrefix(header, marker.prefix)})
 				state, hunkLine, matched = marker.kind, number, true
 				break
@@ -163,7 +172,8 @@ func Parse(text string) (Patch, error) {
 			continue
 		}
 		if state == Add && strings.HasPrefix(raw, "+") {
-			p.Hunks[len(p.Hunks)-1].Content += raw[1:] + "\n"
+			added.WriteString(raw[1:])
+			added.WriteByte('\n')
 			continue
 		}
 		if state != Update {
