@@ -310,7 +310,7 @@ func TestSendsItsHeadersAndReadsAnErrorResponse(t *testing.T) {
 	require.Equal(t, "/api/v1/chat/completions", path)
 	require.Equal(t, "Bearer sk-test", got.Get("Authorization"))
 	require.Equal(t, "https://github.com/gfx-labs/acpharness", got.Get("HTTP-Referer"))
-	require.Equal(t, "acpharness", got.Get("X-Title"))
+	require.Equal(t, "acpharness", got.Get("X-OpenRouter-Title"))
 	require.Equal(t, "acpharness/test", got.Get("User-Agent"))
 	require.Equal(t, provider.Retry, perr.Class)
 	require.Equal(t, provider.ReasonRateLimit, perr.Reason)

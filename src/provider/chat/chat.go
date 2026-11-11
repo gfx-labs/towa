@@ -90,7 +90,9 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 		h.Set("HTTP-Referer", c.cfg.Referer)
 	}
 	if c.cfg.Title != "" {
-		h.Set("X-Title", c.cfg.Title)
+		// https://openrouter.ai/docs/app-attribution names this header and
+		// keeps X-Title only for older clients (read 2026-11-11).
+		h.Set("X-OpenRouter-Title", c.cfg.Title)
 	}
 
 	resp, err := c.http.Do(httpReq)

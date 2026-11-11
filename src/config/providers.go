@@ -16,7 +16,7 @@ type Provider struct {
 	BaseURL string `koanf:"base_url"`
 
 	// Referer and Title name the application to the provider. They are sent
-	// as the HTTP-Referer and X-Title headers, and neither is sent when
+	// as the HTTP-Referer and X-OpenRouter-Title headers, and neither is sent when
 	// empty. OpenRouter uses them for attribution.
 	Referer string `koanf:"referer"`
 	Title   string `koanf:"title"`

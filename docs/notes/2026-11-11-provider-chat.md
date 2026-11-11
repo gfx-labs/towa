@@ -31,7 +31,7 @@ It covers plain HTTP only, not a WebSocket.
 - `Usage.InputTokens` is `prompt_tokens` minus cached and cache write tokens, because the contract says it excludes them. A negative result is an error, not clamped.
 - Cost is set only for OpenRouter, from `usage.cost`, in USD.
 - The cache key member is chosen by `cache_key_field` (`prompt_cache_key` or `session_id`) and nothing is sent when it is empty, since an endpoint may reject an unknown member.
-- `X-Title` is sent as the brief says. OpenRouter now documents `X-OpenRouter-Title` and still accepts `X-Title`.
+- The title goes in `X-OpenRouter-Title`, the header https://openrouter.ai/docs/app-attribution names (read 2026-11-11). That page keeps `X-Title` for older clients, and it is not sent. The design names `X-Title`.
 
 ## Error classes
 
