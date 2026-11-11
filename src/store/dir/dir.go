@@ -3,6 +3,7 @@
 //
 //	<root>/<session id>/meta.json       the session's Meta
 //	<root>/<session id>/log.jsonl       every entry, one JSON value per line
+//	<root>/<session id>/log.jsonl.zst   or the same lines, one zstd frame per Append
 //	<root>/<session id>/blobs/<sha256>  content stored by PutBlob
 //
 // Nothing outside that directory belongs to the session, so copying it
