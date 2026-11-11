@@ -225,10 +225,11 @@ type turn struct {
 	// stopDenials is how often a stop hook kept the turn going.
 	stopDenials int64
 	// model, mapper and schemas are the turn's resolved model.
-	model     Resolved
-	compactor *compact.Controller
-	mapper    Mapper
-	schemas   map[string]*repair.Schema
+	model           Resolved
+	compactor       *compact.Controller
+	compactionInput *compact.BeforeInput
+	mapper          Mapper
+	schemas         map[string]*repair.Schema
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -256,7 +257,7 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 	return result, err
 }
 
-func (tn *turn) run(ctx context.Context) (Result, error) {
+func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 	l, t, id := tn.l, tn.t, tn.id
 	if tn.limits.MaxWall > 0 {
 		var cancel context.CancelFunc
@@ -291,7 +292,22 @@ func (tn *turn) run(ctx context.Context) (Result, error) {
 		if tn.compactor == nil {
 			return Result{}, errors.New("loop: NewCompactor returned no controller")
 		}
-		defer tn.compactor.Close()
+		defer func() {
+			defer tn.compactor.Close()
+			if tn.compactionInput == nil {
+				return
+			}
+			in := *tn.compactionInput
+			in.Entries = tn.entries
+			effects, finishErr := tn.compactor.Finish(ctx, in)
+			if finishErr == nil && len(effects) > 0 {
+				finishErr = tn.applyCompaction(ctx, effects)
+			}
+			if finishErr != nil {
+				runErr = errors.Join(runErr, StopFor(finishErr))
+			}
+			out.Usage = tn.snapshot().Usage()
+		}()
 	}
 	if err := tn.load(ctx); err != nil {
 		return Result{}, err

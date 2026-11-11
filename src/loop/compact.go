@@ -68,9 +68,11 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 	}
 	req.Items = items
 	if tn.compactor != nil {
-		effects, err := tn.compactor.Before(ctx, compact.BeforeInput{
+		in := compact.BeforeInput{
 			Entries: tn.entries, Request: req, ProviderName: name, ContextWindow: window, Origin: origin,
-		})
+		}
+		tn.compactionInput = &in
+		effects, err := tn.compactor.Before(ctx, in)
 		if err != nil {
 			return provider.Request{}, StopFor(err)
 		}
