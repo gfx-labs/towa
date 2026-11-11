@@ -6,7 +6,7 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
 ## Goals
 
-- ACP compliant agent: `initialize`, `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_model`, `session/set_mode`, `session/request_permission`, `session/update` with plans, tool calls, thoughts, commands and usage.
+- ACP compliant agent: `initialize`, `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_config_option` (model, mode, thought level), `session/set_mode`, `session/request_permission`, `session/update` with plans, tool calls, thoughts, commands and usage. Method names follow `coder/acp-go-sdk` v0.13.5, which has no `session/set_model`.
 - Does real coding tasks locally as well as jcode does in a single session.
 - Low footprint per session: idle sessions use no CPU and little memory.
 - Claude OAuth, Codex OAuth, OpenAI Chat Completions and Responses, OpenRouter.
@@ -175,7 +175,7 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 ### Runtime model selection
 
 - `session/new` uses `_meta` or the configured default.
-- `session/set_model` switches between turns. A switch that changes tool dialect rewrites prior tool calls into the new dialect's neutral form only where the provider requires it; provider-native items that cannot transfer (thinking signatures, encrypted reasoning) are dropped with a recorded event, never sent to the wrong provider.
+- `session/set_config_option` with the `model` category switches between turns. The session advertises its named models as a select option. A switch that changes tool dialect rewrites prior tool calls into the new dialect's neutral form only where the provider requires it; provider-native items that cannot transfer (thinking signatures, encrypted reasoning) are dropped with a recorded event, never sent to the wrong provider.
 - Subagent spawns may name a model or chain.
 
 ## Tools
@@ -304,7 +304,9 @@ type Store interface {
 | todo | `plan` |
 | commands | `available_commands_update` |
 | mode | `current_mode_update` |
-| usage, cost, active account and model, fallback, compaction, limit hit | `_meta.acpharness` on the relevant update, and the prompt response `_meta` |
+| usage and cost | `usage_update` (context used, context size, cost) and `usage` on the prompt response |
+| model, mode, thought level | `config_option_update` |
+| active account, fallback, compaction, limit hit | `_meta.acpharness` on the relevant update, and the prompt response `_meta` |
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 
@@ -333,7 +335,7 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 
 ## Validation
 
-- ACP compliance: a conformance suite driving the agent through `acp-go-sdk` as a client over each transport (initialize, new, prompt, cancel mid-tool, load and replay, set_model, set_mode, permission in ask mode).
+- ACP compliance: a conformance suite driving the agent through `acp-go-sdk` as a client over each transport (initialize, new, prompt, cancel mid-tool, load and replay, set_config_option for model and mode, set_mode, permission in ask mode).
 - Providers: recorded real responses per provider for the stream parser, plus live smoke checks behind an env flag.
 - Task quality: a set of local coding tasks run against acpharness and jcode with the same model, comparing completion, turns, tokens and wall time.
 - Footprint: RSS and CPU for 1, 10 and 200 idle and active sessions, compared with jcode, measured by a reproducible script.
@@ -344,7 +346,7 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 2. Chat Completions provider (OpenRouter), generic dialect, agent loop with parallel tools, limits, cancellation. First real tasks run here.
 3. Anthropic provider with OAuth login, refresh and locking, Claude dialect with pinned prompts.
 4. Responses provider with Codex OAuth, Codex dialect, native compaction.
-5. Model chains, fallback, retries, `session/set_model`, usage and cost reporting.
+5. Model chains, fallback, retries, model switching through `session/set_config_option`, usage and cost reporting.
 6. Session store interface with a first backend, `session/load`, store benchmark.
 7. Extras: batch, output gating, search, todo and plan, web, subagents.
 8. MCP meta-tool with all three transports and OAuth.
