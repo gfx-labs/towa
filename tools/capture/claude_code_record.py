@@ -35,7 +35,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import claude_code  # noqa: E402
+import claude_code
 
 BWRAP = "/usr/bin/bwrap"
 PYTHON = "/usr/bin/python3"
@@ -136,7 +136,8 @@ def main() -> int:
     command += ["--ro-bind", PYTHON_STDLIB, PYTHON_STDLIB]
     command += ["--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64"]
     command += ["--bind", str(run_dir), "/work", "--chdir", "/work", PYTHON, "-I", "/work/sandbox.py", "/work"]
-    done = subprocess.run(command, env={}, stdin=subprocess.DEVNULL)
+    # The exit code is reported with the probe result below, not raised.
+    done = subprocess.run(command, env={}, stdin=subprocess.DEVNULL, check=False)
     result_path = run_dir / "result.json"
     if not result_path.exists():
         print(f"the sandbox wrote no result (exit {done.returncode}); run directory {run_dir}", file=sys.stderr)

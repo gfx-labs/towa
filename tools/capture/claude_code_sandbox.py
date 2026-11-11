@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import threading
+import typing
 from pathlib import Path
 
 PLACEHOLDER_KEY = "sk-ant-placeholder-not-a-real-key"
@@ -79,7 +80,8 @@ def probe(run_dir: Path) -> dict:
 
 
 class Recorder(http.server.BaseHTTPRequestHandler):
-    records = []
+    # Shared by every handler instance on purpose: one list for the server.
+    records: typing.ClassVar[list] = []
     lock = threading.Lock()
 
     def handle_any(self):
@@ -142,7 +144,13 @@ def main() -> int:
             Recorder.records.clear()
         try:
             done = subprocess.run(
-                [str(run_dir / "claude"), *run["args"]], cwd=cwd, env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=plan["timeout_seconds"]
+                [str(run_dir / "claude"), *run["args"]],
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=plan["timeout_seconds"],
+                check=False,  # a non-zero exit is part of what is recorded
             )
             outcome = {"exit_code": done.returncode, "stdout": done.stdout.decode("utf-8", "replace"), "stderr": done.stderr.decode("utf-8", "replace")}
         except subprocess.TimeoutExpired as e:
