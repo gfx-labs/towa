@@ -2,6 +2,7 @@ package extras
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -17,21 +18,34 @@ import (
 // NameSubagent is the child-turn tool's name in every dialect.
 const NameSubagent = "subagent"
 
-// Subagent adapts process-wide child admission to one tool. runner supplies
-// the calling session's loop from the current turn, not a turn cached when
-// the session was opened. The resolver is called for each invocation.
-func Subagent(spawner *subagent.Spawner, current func(context.Context) (loop.Turn, bool), runner func(context.Context, loop.Turn) (subagent.Runner, error)) (tools.Tool, error) {
+// Subagent adapts process-wide child admission to one tool. Each invocation
+// reads the actual current turn. The runner must open a fresh child runtime.
+func Subagent(spawner *subagent.Spawner, runner subagent.Runner) (tools.Tool, error) {
 	if spawner == nil {
 		return tools.Tool{}, errors.New("subagent: no spawner")
 	}
 	if runner == nil {
-		return tools.Tool{}, errors.New("subagent: no runner resolver")
-	}
-	if current == nil {
-		return tools.Tool{}, errors.New("subagent: no current-turn accessor")
+		return tools.Tool{}, errors.New("subagent: no child runtime runner")
 	}
 	t := newTool(NameSubagent, "Run a child agent with its own conversation and return its final message.", acp.ToolKindOther, []byte(`{"type":"object","required":["prompt"],"properties":{"intent":{"type":"string"},"prompt":{"type":"string","minLength":1},"model":{"type":"string","description":"A configured name allowed by subagents.models. Omit to inherit the current model."},"description":{"type":"string","description":"What the child is for."}}}`))
 	t.Effect = tools.Executes
+	t.Describe = func(raw jsontext.Value) (tools.Description, error) {
+		var in struct {
+			Description string `json:"description"`
+			Intent      string `json:"intent"`
+		}
+		if err := json.Unmarshal(raw, &in); err != nil {
+			return tools.Description{}, err
+		}
+		title := in.Description
+		if title == "" {
+			title = in.Intent
+		}
+		if title == "" {
+			title = NameSubagent
+		}
+		return tools.Description{Title: title, Kind: acp.ToolKindOther}, nil
+	}
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
 		var in struct {
 			Prompt      string `json:"prompt"`
@@ -41,21 +55,14 @@ func Subagent(spawner *subagent.Spawner, current func(context.Context) (loop.Tur
 		if err := json.Unmarshal(call.Input, &in); err != nil {
 			return tools.Result{}, err
 		}
-		turn, ok := current(ctx)
+		current, ok := loop.Current(ctx)
 		if !ok {
 			return tools.Result{}, errors.New("subagent: call has no current turn")
 		}
-		if call.Env.SessionID != turn.SessionID {
-			return tools.Result{}, fmt.Errorf("subagent: calling session %q differs from current turn %q", call.Env.SessionID, turn.SessionID)
+		if call.Env.SessionID != current.Turn.SessionID {
+			return tools.Result{}, fmt.Errorf("subagent: calling session %q differs from current turn %q", call.Env.SessionID, current.Turn.SessionID)
 		}
-		childLoop, err := runner(ctx, turn)
-		if err != nil {
-			return tools.Result{}, fmt.Errorf("subagent: resolving child runner: %w", err)
-		}
-		if childLoop == nil {
-			return tools.Result{}, errors.New("subagent: resolver returned no child runner")
-		}
-		res, err := spawner.Run(ctx, subagent.Parent{Loop: childLoop, Turn: turn, Progress: call.Env.Progress}, subagent.Input{Prompt: in.Prompt, Model: in.Model, Description: in.Description})
+		res, err := spawner.Run(ctx, subagent.Parent{Loop: runner, Turn: current.Turn, Progress: call.Env.Progress}, subagent.Input{Prompt: in.Prompt, Model: in.Model, Description: in.Description})
 		out := subagentOutput{Final: res.Final, SessionID: res.SessionID, StopReason: res.StopReason, Usage: res.Usage, Charged: res.Charged}
 		outcome := transcript.OutcomeCompleted
 		if err != nil {

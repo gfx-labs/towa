@@ -8,7 +8,19 @@ prompt, optional named model and description. The session supplies its runner
 per call in `Parent.Loop`, so process-wide admission does not retain a
 session's MCP connections or tool set. `Options.Loop` remains an optional
 default for callers sharing one loop. Result is the child's last
-message, session id, stop reason and usage. There is no dialect adapter.
+message, session id, stop reason and usage.
+
+`extras.Subagent(spawner, runner)` adapts it to `tools.Tool`. `loop.Current`
+supplies the actual parent turn for each invocation, including calls in
+batches. The explicit runner receives the child turn and must open and close
+a fresh child runtime. Reusing the parent's loop would retain its file-read
+tracker, MCP manager and session-bound tool closures. No earlier turn or model
+selection is captured. The tool
+is `Executes`, since its child can execute commands. Its JSON output carries
+the final message, child session id, usage and whether it was charged.
+Failed calls carry a typed kind and `harness.Stop` when available, never a
+successful partial message. The wrapper rejects a calling session that
+differs from the actual turn.
 
 The child inherits the parent's working directory, additional directories,
 context settings, client, permission function and per-turn limits. It has a
@@ -70,17 +82,27 @@ answer, stored parent id, descendant conversation search, permission and
 progress forwarding, refused model selection, depth and concurrency, and
 a configured limit returned as a typed error. Both per-call and default
 runner selection run through that loop. No fake loop or provider is used.
+The wrapper regression invokes the tool from a real dispatched call's
+permission context. Parent and child use distinct real loops and recorded
+clients. It checks the current model selection, inherited permission handling,
+and parent usage against the sum of both stored transcripts. The recording
+calls `read_file`, not `subagent`, so this does not establish model-generated
+selection of the subagent tool.
+
 The recordings say nothing about hosted providers' authentication, rate
 limits or reasoning items.
 
 ## Not done
 
-No dialect adapter or CLI wiring. No independently cancellable child ACP
-session or subagent association notifications. This is a synchronous child
+Central CLI wiring is owned by the coordinator. No independently cancellable
+child ACP session or subagent association notifications. This is a synchronous child
 turn, not swarm. Depth is a running-context limit, not a persisted policy
 for independently resumed children.
 
-A loop error currently returns no result usage. Therefore consumption before
-a failed child request is not charged to the parent here. Cancellation and
-configured limits that return usage are charged. The loop lane has been
-asked to preserve usage on errors.
+The wrapper regression also denies child permission with a transport error
+after its first model request. It verifies positive stored child usage,
+failed tool output, and that the parent total includes that usage. The loop
+returns its usage snapshot alongside the error and the capability charges it
+before returning the typed error. Hosted auth and rate-limit paths remain
+unrecorded. Full CLI child runtime resource cleanup is a central-wiring check,
+not established by these direct real-loop tests.

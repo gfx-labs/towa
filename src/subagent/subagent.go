@@ -140,8 +140,8 @@ type Error struct {
 	Stop *harness.Stop
 	// StopReason is how the child's turn ended, when it returned a result.
 	StopReason acp.StopReason
-	// Usage and Charged are as in Result. A child's turn that returned an
-	// error reports no usage, so what it used is then not known here.
+	// Usage and Charged are as in Result, including usage the child
+	// reported before its turn failed.
 	Usage   *acp.Usage
 	Charged bool
 	Err     error
