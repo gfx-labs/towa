@@ -57,6 +57,12 @@ type Turn struct {
 	SystemPrompt *acp.SystemPrompt
 	// McpServers are the servers the client named on session/new.
 	McpServers []acp.McpServer
+	// ContextFiles are extra context files the client named on session/new,
+	// added to context.extra_files where the turn is assembled.
+	ContextFiles []string
+	// SkillsDirs are skills directories the client named on session/new,
+	// added to context.skills_dirs.
+	SkillsDirs []string
 	// Client is what the client advertised in initialize.
 	Client acp.ClientCapabilities
 	// Sendable reports whether Update will send this update. Update returns
