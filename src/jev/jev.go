@@ -192,20 +192,12 @@ type Client struct {
 // passes, which tells it apart from the caller's own deadline.
 var errTimeout = errors.New("jev: timeout")
 
-// New returns the client for the configured route. Without one the error is
-// ErrDisabled. The configuration is one that config.Load accepted.
-func New(opts Options) (*Client, error) {
-	cfg := opts.Config
+// Endpoint returns the URL decisions are sent to.
+func Endpoint(cfg config.Jev) (string, error) {
 	if cfg.Route == "" {
-		return nil, ErrDisabled
+		return "", ErrDisabled
 	}
-	if opts.HTTPClient == nil {
-		return nil, errors.New("jev: no HTTP client")
-	}
-	c := &Client{cfg: cfg, model: cfg.Model}
 	if cfg.Route == config.JevCustom {
-		// A base URL that already ends in the path, or in the path of the
-		// other endpoint shape, names the same root.
 		root := strings.TrimRight(cfg.BaseURL, "/")
 		for _, suffix := range []string{customPath, "/v1/decisions", "/v1"} {
 			if trimmed, ok := strings.CutSuffix(root, suffix); ok {
@@ -213,15 +205,30 @@ func New(opts Options) (*Client, error) {
 				break
 			}
 		}
-		c.endpoint = root + customPath
-	} else {
-		r, ok := routes[cfg.Route]
-		if !ok {
-			return nil, fmt.Errorf("jev: route %q is not known", cfg.Route)
-		}
-		c.route, c.endpoint = r, r.endpoint
+		return root + customPath, nil
+	}
+	r, ok := routes[cfg.Route]
+	if !ok {
+		return "", fmt.Errorf("jev: route %q is not known", cfg.Route)
+	}
+	return r.endpoint, nil
+}
+
+// New returns the client for the configured route, or ErrDisabled without one.
+func New(opts Options) (*Client, error) {
+	cfg := opts.Config
+	endpoint, err := Endpoint(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if opts.HTTPClient == nil {
+		return nil, errors.New("jev: no HTTP client")
+	}
+	c := &Client{cfg: cfg, model: cfg.Model, endpoint: endpoint}
+	if cfg.Route != config.JevCustom {
+		c.route = routes[cfg.Route]
 		if c.model == "" {
-			c.model = r.model
+			c.model = c.route.model
 		}
 	}
 	if c.model == "" {
