@@ -1,7 +1,9 @@
 package session
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -81,10 +83,9 @@ func (a *Agent) repair(ctx context.Context, id acp.SessionId, stored uuid.UUID) 
 // A session that is already live in this process, on this connection or on
 // another, is taken over and started again from the store: its running turn
 // is cancelled and waited for, as session/close does, and the session is
-// rebuilt from what the store holds and belongs to this connection. Nothing durable is lost,
-// since the turn stores each entry as it is made. What only this process
-// knew goes: the tools allowed "always" and the _meta overrides of the
-// request that first made the session, which this request replaces.
+// rebuilt from what the store holds and belongs to this connection.
+// Config values, turn overrides and the system prompt survive in State.
+// Tools allowed "always" are connection-local and are not restored.
 func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.SessionModeState, []acp.SessionConfigOption, error) {
 	if err := a.ready(); err != nil {
 		return nil, nil, err
@@ -107,7 +108,11 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	if meta.Cwd != r.cwd {
 		return nil, nil, cwdMismatch(r.cwd, meta.Cwd)
 	}
-	values, perTurn, err := a.startValues(r.meta, r.initial, a.storedValues(meta))
+	state, merged, prompt, err := a.restore(meta, r.meta, r.systemPrompt)
+	if err != nil {
+		return nil, nil, err
+	}
+	values, perTurn, err := a.startValues(merged, r.initial, state.Values)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -126,7 +131,11 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 		if err != nil {
 			return nil, nil, err
 		}
-		values, perTurn, err = a.startValues(r.meta, r.initial, a.storedValues(meta))
+		state, merged, prompt, err = a.restore(meta, r.meta, r.systemPrompt)
+		if err != nil {
+			return nil, nil, err
+		}
+		values, perTurn, err = a.startValues(merged, r.initial, state.Values)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -138,8 +147,9 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	}
 	s := newSession(r.id, meta.Cwd)
 	// The request's list is the session's whole list from now on.
-	s.dirs, s.systemPrompt, s.mcpServers = r.dirs, r.systemPrompt, r.mcpServers
+	s.dirs, s.systemPrompt, s.mcpServers = r.dirs, prompt, r.mcpServers
 	s.values, s.perTurn = values, perTurn
+	s.overrides = overrides(merged)
 	s.title, s.meta = meta.Title, meta
 	if err := a.persist(ctx, s); err != nil {
 		return nil, nil, err
@@ -197,10 +207,18 @@ func (a *Agent) ListSessions(ctx context.Context, p acp.ListSessionsRequest) (ac
 	if err := a.ready(); err != nil {
 		return acp.ListSessionsResponse{}, err
 	}
+	filter := store.Filter{Archived: store.ArchivedExclude}
 	if p.Archived != nil {
-		return acp.ListSessionsResponse{}, invalid("archived: sessions cannot be archived")
+		switch *p.Archived {
+		case acp.SessionArchiveFilterExclude:
+		case acp.SessionArchiveFilterInclude:
+			filter.Archived = store.ArchivedAny
+		case acp.SessionArchiveFilterOnly:
+			filter.Archived = store.ArchivedOnly
+		default:
+			return acp.ListSessionsResponse{}, invalid("archived: unsupported filter %q", *p.Archived)
+		}
 	}
-	var filter store.Filter
 	if p.Cwd != nil {
 		if err := a.checkDirs(*p.Cwd, nil); err != nil {
 			return acp.ListSessionsResponse{}, err
@@ -237,6 +255,7 @@ func (a *Agent) ListSessions(ctx context.Context, p acp.ListSessionsRequest) (ac
 			Cwd:                   meta.Cwd,
 			AdditionalDirectories: meta.Dirs,
 			UpdatedAt:             new(meta.Updated.UTC().Format(time.RFC3339)),
+			Archived:              new(meta.Archived),
 		}
 		if meta.Title != "" {
 			info.Title = &meta.Title
@@ -303,7 +322,7 @@ func (a *Agent) storedValues(meta store.Meta) map[acp.SessionConfigId]Value {
 }
 
 // fillMeta writes what the session has of the fields SetMeta replaces.
-func (a *Agent) fillMeta(s *session, meta *store.Meta) {
+func (a *Agent) fillMeta(s *session, meta *store.Meta) error {
 	meta.Title, meta.Dirs = s.title, s.dirs
 	meta.Mode = string(s.values[ModeOption].ID)
 	// Without a model option the stored model is not this process's to
@@ -311,6 +330,32 @@ func (a *Agent) fillMeta(s *session, meta *store.Meta) {
 	if model, ok := s.values[ModelOption]; ok {
 		meta.Model = string(model.ID)
 	}
+	// Select-only overrides have already become config values. Reapplying
+	// them later would undo a subsequent set_config_option.
+	turnOverrides := map[string]any{}
+	for _, override := range a.registry.overrides {
+		value, ok := s.overrides[override.Key]
+		if !ok {
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		effect, err := override.Parse(encoded)
+		if err != nil {
+			return err
+		}
+		if effect.Turn != nil {
+			turnOverrides[override.Key] = value
+		}
+	}
+	state, err := json.Marshal(savedState{Values: s.values, Overrides: turnOverrides, SystemPrompt: s.systemPrompt}, json.Deterministic(true))
+	if err != nil {
+		return err
+	}
+	meta.State = state
+	return nil
 }
 
 // persist writes the session's title, directories, mode and model to the
@@ -321,9 +366,12 @@ func (a *Agent) persist(ctx context.Context, s *session) error {
 	}
 	s.mu.Lock()
 	meta := s.meta
-	a.fillMeta(s, &meta)
-	same := meta.Title == s.meta.Title && meta.Mode == s.meta.Mode && meta.Model == s.meta.Model && slices.Equal(meta.Dirs, s.meta.Dirs)
+	err := a.fillMeta(s, &meta)
+	same := meta.Title == s.meta.Title && meta.Mode == s.meta.Mode && meta.Model == s.meta.Model && slices.Equal(meta.Dirs, s.meta.Dirs) && bytes.Equal(meta.State, s.meta.State)
 	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	if same {
 		return nil
 	}

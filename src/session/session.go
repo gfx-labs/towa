@@ -25,7 +25,8 @@ type session struct {
 	mcpServers   []acp.McpServer
 	// perTurn are the changes the session's _meta overrides make to each
 	// turn.
-	perTurn []func(*loop.Turn)
+	perTurn   []func(*loop.Turn)
+	overrides map[string]any
 
 	// slot holds a token while a turn runs.
 	slot chan struct{}

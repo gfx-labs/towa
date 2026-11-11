@@ -179,8 +179,8 @@ func TestStoredSessionIsLoadedByAnotherAgent(t *testing.T) {
 	require.NotNil(t, sessions.Resume)
 	require.NotNil(t, sessions.List)
 	require.NotNil(t, sessions.Delete)
-	require.Nil(t, sessions.Fork)
-	require.Nil(t, sessions.Archive)
+	require.NotNil(t, sessions.Fork)
+	require.NotNil(t, sessions.Archive)
 
 	first.Send(newSession)
 	got, _ = first.Await(`"new"`)

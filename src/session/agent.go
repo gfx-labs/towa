@@ -161,6 +161,8 @@ func (a *Agent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.Init
 		capabilities.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
 		capabilities.SessionCapabilities.List = &acp.SessionListCapabilities{}
 		capabilities.SessionCapabilities.Delete = &acp.SessionDeleteCapabilities{}
+		capabilities.SessionCapabilities.Fork = &acp.SessionForkCapabilities{}
+		capabilities.SessionCapabilities.Archive = &acp.SessionArchiveCapabilities{}
 	}
 	if mcp := a.supports.MCP; mcp != nil {
 		// The ACP transport for MCP is not implemented, whatever the
@@ -256,12 +258,15 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 	s := newSession(acp.SessionId(id.String()), p.Cwd)
 	s.dirs, s.systemPrompt, s.mcpServers = p.AdditionalDirectories, p.SystemPrompt, p.McpServers
 	s.values, s.perTurn = values, perTurn
+	s.overrides = overrides(p.Meta)
 	if a.store != nil {
 		// Created here and not by the first turn, so that a session with
 		// no turn yet can be listed, titled and loaded.
 		now := time.Now()
 		s.meta = store.Meta{ID: id, Cwd: s.cwd, Created: now, Updated: now}
-		a.fillMeta(s, &s.meta)
+		if err := a.fillMeta(s, &s.meta); err != nil {
+			return acp.NewSessionResponse{}, err
+		}
 		if err := a.store.Create(ctx, s.meta); err != nil {
 			return acp.NewSessionResponse{}, fmt.Errorf("session: storing session %s: %w", s.id, err)
 		}
@@ -322,7 +327,11 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 		if values[id] != value {
 			continue
 		}
-		if err := a.registry.option(id).check(value); err != nil {
+		option := a.registry.option(id)
+		if option == nil {
+			return nil, nil, invalid("stored config option %q is not supported here", id)
+		}
+		if err := option.check(value); err != nil {
 			return nil, nil, invalid("the session was stored with a value that cannot be used here, set another in configOptions: %v", err)
 		}
 	}
@@ -712,7 +721,11 @@ func (a *Agent) UnstableSessionOptions(ctx context.Context, p acp.UnstableSessio
 		if meta.Cwd != p.Cwd {
 			return acp.UnstableSessionOptionsResponse{}, cwdMismatch(p.Cwd, meta.Cwd)
 		}
-		stored = a.storedValues(meta)
+		state, _, _, err := a.restore(meta, nil, nil)
+		if err != nil {
+			return acp.UnstableSessionOptionsResponse{}, err
+		}
+		stored = state.Values
 	}
 	values, _, err := a.startValues(nil, nil, stored)
 	if err != nil {
