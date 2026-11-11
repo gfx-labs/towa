@@ -314,31 +314,51 @@ The prompt is built from named sections in a fixed order: the dialect's upstream
 
 ## Sessions and storage
 
-Store interface:
+Store contract (`src/store/store.go`):
 
 ```go
 type Store interface {
-    Create(ctx context.Context, meta SessionMeta) error
-    Append(ctx context.Context, id SessionID, events []Event) error
-    Load(ctx context.Context, id SessionID) (SessionMeta, EventIter, error)
-    History(ctx context.Context, id SessionID, r EntryRange) (EventIter, error)
-    Snapshot(ctx context.Context, id SessionID, s Snapshot) error
-    List(ctx context.Context, filter Filter) ([]SessionMeta, error)
-    Delete(ctx context.Context, id SessionID) error
+    Create(ctx context.Context, meta Meta) error
+    Append(ctx context.Context, id uuid.UUID, entries []transcript.Entry) error
+    Load(ctx context.Context, id uuid.UUID) (Meta, iter.Seq2[transcript.Entry, error], error)
+    History(ctx context.Context, id uuid.UUID, r Range) (iter.Seq2[transcript.Entry, error], error)
+    Repair(ctx context.Context, id uuid.UUID) (setAside int64, err error)
+    Fork(ctx context.Context, source uuid.UUID, meta Meta) error
+    SetMeta(ctx context.Context, meta Meta) error
+    List(ctx context.Context, filter Filter) ([]Meta, error)
+    Delete(ctx context.Context, id uuid.UUID) error
+    PutBlob(ctx context.Context, id uuid.UUID, mimeType string, content io.Reader) (transcript.Stored, error)
+    OpenBlob(ctx context.Context, id uuid.UUID, hash string) (io.ReadCloser, error)
 }
 ```
 
-- Events are the canonical transcript: messages, tool calls and results, provider-native items, model switches, compaction summaries.
-- One internal message format for every provider. Items only one provider understands (thinking signatures, encrypted reasoning) are stored as opaque blobs tagged with that provider, and are sent back only to it.
-- Session and entry ids are UUIDv7 from the Go 1.27 standard library `uuid` package (`uuid.NewV7`). No dependency.
-- Session metadata records the parent session id for a subagent session.
-- Every entry has an `id` and a `parent_id`. `parent_id` is written and nothing reads it yet: it is there so forking later needs no format migration.
-- `Snapshot` stores the compacted state so `Load` reads the latest snapshot plus events after it, not the whole history. `History` reads any range of the full log, including entries before a compaction. Conversation search and `session/load` replay use it.
-- The store benchmark also measures a keyword scan over a long session's full history.
-- Backends to evaluate with a benchmark harness (write amplification, fsyncs per turn, load time, size): JSONL with zstd frames, a length-prefixed binary log with periodic snapshots, SQLite in WAL mode, and Postgres for hosts that already run it. The first backend chosen by measurement becomes the default.
-- Large tool outputs are stored by content hash outside the event log and referenced.
-- Session state can move between machines. Everything a session needs is under one directory per session, it is flushed at the end of every turn, and `session/load` in a new process with the same working directory continues the conversation. A runner can upload the directory, delete the pod and start another.
-- `session/load` replays history to the client as `session/update` notifications, per ACP.
+- `transcript.Entry` is the append-only canonical transcript: messages, tool calls and results, provider-native items, model switches, compaction summaries. Provider-only content is in `Item.Opaque`, tagged with `Item.Provider`.
+- Session and entry ids are caller-supplied UUIDv7 from the Go standard library. Times also come from the caller. Each entry keeps its `ParentID`, including when a fork copies it.
+- `Meta` records cwd, additional directories, title, model, mode, parent session id, created time and archived state. `State` is opaque caller-owned bytes for session configuration the load request cannot carry. The store returns those bytes unchanged and never interprets them. `SetMeta` replaces Title, Model, Mode, Dirs, Archived and State, leaving identity, cwd, parent and created time unchanged.
+- `Append` returns only after the entries are durable, all together. In either format, a crash leaves a complete append or an explicitly torn one, never a silently accepted prefix. `Updated` is the time of the last entry, read from the log rather than rewriting metadata each turn.
+- `Load` yields the latest `Compaction` entry and everything after it, without reading the history before it. There is no separate snapshot method. `History` selects entry positions from the full log, including entries before compaction.
+- A torn log yields its complete entries followed by an error matching `store.ErrTorn`. `Append` refuses the same log. The session layer calls `Repair`, which durably sets the torn bytes aside under a unique name before cutting back the log, then reloads. Repair does not delete any set-aside bytes.
+- The first backend is `src/store/dir`: one directory per session, metadata plus an append-only JSON-lines log and `blobs/`. `store.compression` defaults to `zstd`, one frame per append, and `none` is available. The plain log closes each append with a commit line. Both are one write and one fsync per append. Files and their directories are synced when created. Existing sessions keep their format when the setting changes.
+- Large outputs are stored by SHA-256 beside the log and referenced by `Part.Stored`. `PutBlob` is durable, deduplicates within a session, and `OpenBlob` checks the digest as the content is read. The model gets the preview part, not the stored reference.
+- Everything a session needs is under its directory. Copy that directory under a new root, and a new process loads it, opens its blobs and continues. The backend test does exactly that. `Fork` copies the entire source history (ACP 1.31.0 has no point-in-history parameter), preserves entry ids, and uses the caller's new `Meta`. Blobs are hard linked because they are immutable, or copied across filesystems. Deleting either session leaves the other complete.
+- `List` is ordered by id, oldest first. `Filter` combines Cwd, ParentID and archived state before applying its exclusive `After` cursor and caller-supplied `Limit` (zero is unlimited). ACP's omitted archive filter maps to `ArchivedExclude`; the store's zero filter matches all sessions. Parent lookup uses a rebuildable root-level children index, invalidated by root directory changes, not a scan of every session on every descendant lookup. The index is not session state and is rebuilt after directory copies.
+- `dir.Store.Sweep` is called on demand at startup, not from `New`. It removes abandoned `.creating` and `.deleting` directories. Namespace changes take the root directory lock, and per-session operations take the log lock. No caller acquires the root lock while holding a log lock.
+- `session/load` replays full history as `session/update` notifications. SQLite, Postgres, blob garbage collection and a plain-log offset index are not implemented.
+
+Measured on Linux/btrfs/NVMe, 2000 turns and 36000 entries (58.9 MiB of JSON). One append per turn, reads on a fresh store value. The benchmark harness accepts any `store.Store` and measures appends, fsyncs, bytes written, disk size, load, history ranges and keyword scans. Full commands and limitations are in [the store note](notes/2026-11-11-store.md).
+
+| measurement | plain | zstd |
+|---|---|---|
+| fsyncs per turn | 1 | 1 |
+| disk size | 59.0 MiB | 20.6 MiB |
+| p50 append per turn, compacted workload | 1.85 ms | 2.08 ms |
+| load with no compaction | 444 ms | 360 ms |
+| load after latest compaction (19 entries) | 371 µs | 409 µs |
+| keyword scan, full history | 306 ms | 452 ms |
+
+The final run had substantial fsync variance from concurrent system activity. Its first plain append pass averaged 11.8 ms, versus 2.78 ms for its compacted pass. The note reports both rather than treating that difference as a compression speedup.
+
+At 10000 sessions, unfiltered `List` took 258 ms warm / 316 ms file-data-cold before paging. After the change its first 50 results take 4.71 / 5.46 ms. Full child lookup (100 matches) went from 243 / 314 ms to 2.52 / 3.89 ms. Initial children-index construction is separate: 126 ms with warm files. File-data-cold means `POSIX_FADV_DONTNEED` on the files, not evicted directory or inode caches.
 
 ## ACP mapping
 
