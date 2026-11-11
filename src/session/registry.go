@@ -54,6 +54,9 @@ type ConfigOption struct {
 	Choices []Choice
 	// Default is the value a new session starts with.
 	Default Value
+	// Validate refuses a value that is one of the choices and still cannot
+	// be used. It may be nil.
+	Validate func(value Value) error
 	// Apply writes the session's value into each turn before it runs. It is
 	// nil for an option the session package acts on itself.
 	Apply func(turn *loop.Turn, value Value)
@@ -69,6 +72,9 @@ func (o *ConfigOption) check(v Value) error {
 	}
 	if !slices.ContainsFunc(o.Choices, func(c Choice) bool { return c.Value == v.ID }) {
 		return fmt.Errorf("config option %q has no value %q", o.ID, v.ID)
+	}
+	if o.Validate != nil {
+		return o.Validate(v)
 	}
 	return nil
 }
