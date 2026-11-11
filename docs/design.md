@@ -198,6 +198,8 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 - Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
 - Todo: maps to ACP `plan` updates. Uses TodoWrite or update_plan shapes in their dialects.
 - Web: webfetch with HTML to Markdown. Web search uses the provider's built-in server tool (Anthropic web search, OpenAI Responses web search, OpenRouter web plugin). Users who want an external backend add a tool or an MCP server.
+- Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. Keyword matching first. Result and snippet limits come from config.
+- Argument repair: before validation, a tool input is repaired when a list or object argument arrives as a JSON string, a single object arrives where a list is declared, or a number or boolean arrives as a string. Each repair is counted in telemetry and logged, never silent. Anything else that fails the schema is returned to the model as an error.
 - Subagent: see below.
 
 Not in v1: background shell tasks.
@@ -236,7 +238,9 @@ Ported from jcode:
 - `off`: stop the turn with a context-full reason.
 - OpenAI native: `auto` (server-side compaction at a token threshold), `explicit` (call the compact endpoint at the threshold), `off`.
 - `max_context_tokens` caps the budget below the model window.
-- `/compact` triggers manually. Compaction events go to the client in `_meta`.
+- `/compact` triggers manually. Compaction is reported with `compaction_update` when the client advertises `session.compaction`, and as an ordinary agent message otherwise.
+- Compaction appends an entry holding the summary and the id of the first kept entry. It never rewrites or deletes earlier entries, so conversation search can still read them.
+- The summary prompt may tell the model it can search earlier history only when `conversation_search` is enabled.
 
 ## Embeddings
 
@@ -267,6 +271,10 @@ model = "typesafe/jev-1.13"
 account = "main"
 ```
 
+## System prompt
+
+The prompt is built from named sections in a fixed order: the dialect's upstream prompt, tools, rules, project context, skills, working directory, and any sections added by config. ACP `systemPrompt` on `session/new` maps onto them: `append` adds a section, and `override` replaces the default instruction sections and leaves tools, MCP servers and permissions alone. An unsupported mode is an error. Appending a changed section mid-session to keep the prompt cache is deferred until a measurement shows sections change mid-session.
+
 ## Context loading
 
 - AGENTS.md (and CLAUDE.md for Claude dialect) from the working directory up to the repository root, plus the global file.
@@ -282,6 +290,7 @@ type Store interface {
     Create(ctx context.Context, meta SessionMeta) error
     Append(ctx context.Context, id SessionID, events []Event) error
     Load(ctx context.Context, id SessionID) (SessionMeta, EventIter, error)
+    History(ctx context.Context, id SessionID, r EntryRange) (EventIter, error)
     Snapshot(ctx context.Context, id SessionID, s Snapshot) error
     List(ctx context.Context, filter Filter) ([]SessionMeta, error)
     Delete(ctx context.Context, id SessionID) error
@@ -289,7 +298,9 @@ type Store interface {
 ```
 
 - Events are the canonical transcript: messages, tool calls and results, provider-native items, model switches, compaction summaries.
-- `Snapshot` stores the compacted state so `Load` reads the latest snapshot plus events after it, not the whole history.
+- Every entry has an `id` and a `parent_id`. `parent_id` is written and nothing reads it yet: it is there so forking later needs no format migration.
+- `Snapshot` stores the compacted state so `Load` reads the latest snapshot plus events after it, not the whole history. `History` reads any range of the full log, including entries before a compaction. Conversation search and `session/load` replay use it.
+- The store benchmark also measures a keyword scan over a long session's full history.
 - Backends to evaluate with a benchmark harness (write amplification, fsyncs per turn, load time, size): JSONL with zstd frames, a length-prefixed binary log with periodic snapshots, SQLite in WAL mode, and Postgres for hosts that already run it. The first backend chosen by measurement becomes the default.
 - Large tool outputs are stored by content hash outside the event log and referenced.
 - `session/load` replays history to the client as `session/update` notifications, per ACP.
@@ -322,20 +333,25 @@ acpharness implements ACP itself and does not import `coder/acp-go-sdk`.
 - The schema version is pinned in the repo. A bump is a reviewed regeneration.
 - ACP v2 is in alpha (schema 2.0.0-alpha.15) and drops `session/load`, `session/set_mode` and `fs/*`. Owning the layer lets one binary serve both versions later.
 
-## Ideas from Pi under consideration
+## Ideas from Pi
 
-From `earendil-works/pi` (MIT) at commit 4839e41, read 2026-11-11. None of these are decided.
+From `earendil-works/pi` (MIT) at commit 4839e41, read 2026-11-11. Decided with the user on 2026-11-11.
 
-- System prompt as named sections (`preamble`, `tools`, `rules`, `project_context`, `skills`, `cwd`). A changed section is appended to the conversation as a patch, so earlier messages stay cached.
-- Each tool contributes its own one-line snippet and guideline bullets to the prompt, so the prompt lists only the tools that are enabled.
-- Compaction: a structured checkpoint summary (Goal, Constraints, Progress, Key Decisions, Next Steps, Critical Context), an update prompt that merges into the previous summary, cumulative lists of files read and modified, a cut point that never separates a tool result from its call, and a second summary when one user turn alone exceeds the kept budget.
-- Steering and follow-up queues: a message sent during a turn is delivered after the current tool finishes, or after the turn ends.
-- Session entries with `id` and `parentId`, so one file holds a tree and forking needs no copy.
-- Virtual models: a selectable model that routes each request to a physical model and records both.
-- MCP exposure levels per server and per tool: direct, deferred until a tool search loads it, script-only, hidden.
-- Edit tool input repair for models that send the edits array as a JSON string or as a single object.
-- Cache warming: refresh the provider prompt cache before its TTL expires when the expected saving exceeds the cost.
-- Prompt templates: Markdown files that become slash commands with arguments.
+Adopted:
+
+- System prompt as named sections (see System prompt). Patching a changed section into the conversation is deferred.
+- Tool input repair (see Extras), widened from Pi's edit tool to every tool.
+- Entries with `id` and `parent_id` (see Sessions and storage). The parent field is written and unused.
+
+Dropped:
+
+- Steering and follow-up queues. jobshop already holds a message for a busy session until its turn ends, and its interrupt option cancels the turn first. The ACP prompt request has no steering field.
+
+Open:
+
+- Compaction summary prompt. Pi's is a structured checkpoint (Goal, Constraints, Progress, Key Decisions, Next Steps, Critical Context) with a second prompt that merges new messages into the previous summary, and cumulative lists of files read and modified. jcode's is shorter and relies on conversation search for exact details. No measurement compares them.
+
+Later, undecided: MCP exposure levels per tool, virtual models, cache warming, prompt templates.
 
 ## Telemetry
 
