@@ -1,0 +1,24 @@
+{
+  "name": "ProposeGoal",
+  "description": "Propose a completion condition for this session's work — a goal that keeps you working until a separate evaluator confirms it is met. Non-blocking: the proposal renders alongside your work, so keep working while it is handled.\n\nask_user true (the default) asks the user first, with a one-keypress approval dialog. If they decline you will not be notified — do not ask about the decision and do not re-propose the same or a reworded condition. Set ask_user false — which sets the goal directly, with no dialog — ONLY when the user's own words in this conversation stated this outcome as what they want; if you inferred it from their intent or the task's shape — or are in doubt — ask. Either path confirms a set goal with a kickoff message; until that message arrives, no new goal is active.\n\nPropose only when the user has asked for an outcome with a verifiable end state (\"make the tests pass\", \"migrate every call site\") and the work spans multiple turns. Not for one-off tasks, and never to widen scope: the condition must follow from their request.\n\nThe evaluator verifies the condition from the conversation alone — it cannot run commands or read files — so state one measurable end state with its check (e.g. \"bun test exits 0\"), in at most 500 characters. One goal is active at a time; a newly approved or directly set proposal replaces the current one.",
+  "input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "condition": {
+        "description": "The completion condition to propose, written so a separate evaluator can verify it from the conversation (e.g. \"all tests in test/auth pass (bun test exits 0)\"). At most 500 characters — the user must be able to read the whole condition in the approval dialog.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "ask_user": {
+        "description": "Whether to ask the user for approval before the goal is set. Defaults to true — an approval dialog is shown. Set false ONLY when the user's own words in this conversation stated this outcome as what they want; the goal is then set directly, with a visible notice in the transcript, and the user can clear it with /goal clear.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "condition"
+    ],
+    "additionalProperties": false
+  }
+}

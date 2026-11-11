@@ -1,0 +1,23 @@
+{
+  "name": "self_hosted_runner_requeue_session",
+  "description": "Requeue an assigned session onto a different runner. Appends the observed runner to the session's excluded_runner_ids so the queue pop doesn't immediately hand it back. Takes session_id + runner_id (the runner the caller observed failing). Only write operation in the doctor tool suite.\nThe result includes an `equivalent.ui` string with the Admin-UI path. Surface it to the operator so they can repeat the action without you.\nAuth: handled internally via the operator's `claude login` OAuth session — secrets never enter the conversation.",
+  "input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "session_id": {
+        "description": "Tagged session id (ccsess_…).",
+        "type": "string"
+      },
+      "runner_id": {
+        "description": "Tagged runner id (ccrunner_…) the caller observed failing. Server verifies this still matches the session assignment; mismatch returns Conflict. For a stuck session whose runner is gone, any value is accepted.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "session_id",
+      "runner_id"
+    ],
+    "additionalProperties": false
+  }
+}

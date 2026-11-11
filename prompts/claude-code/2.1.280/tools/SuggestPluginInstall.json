@@ -1,0 +1,80 @@
+{
+  "name": "SuggestPluginInstall",
+  "description": "Render an inline plugin install card. Call this after SearchPlugins returns relevant results — source pluginId, pluginName, description, and skills from those results. The card handles all UI; do not describe the plugins in text.\n\nDo NOT call this if the suggestion is not relevant, you are unsure it would help, or you already rendered one this conversation and the user did not engage.",
+  "input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "contextLabel": {
+        "description": "Short header tying the suggestion to the user request.",
+        "type": "string",
+        "maxLength": 128
+      },
+      "plugins": {
+        "description": "Plugins sourced from SearchPlugins results.",
+        "minItems": 1,
+        "maxItems": 16,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "pluginId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "pluginName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "skills": {
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "pluginId",
+            "pluginName",
+            "description"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "trigger": {
+        "description": "How this suggestion started: 'user_asked' or 'proactive'.",
+        "type": "string",
+        "enum": [
+          "user_asked",
+          "proactive"
+        ]
+      }
+    },
+    "required": [
+      "contextLabel",
+      "plugins"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "SearchMcpRegistry",
+  "description": "Search the MCP connector registry by keyword. Call this when connecting to an MCP server might help complete the task — whether or not the user named a specific product.\n\nNamed-product examples:\n- \"check my Asana tasks\" → keywords [\"asana\", \"tasks\", \"todo\"]\n- \"find issues in Jira\" → keywords [\"jira\", \"issues\"]\n\nIntent-based examples (no product named):\n- \"help me manage my tasks\" → keywords [\"tasks\", \"todo\", \"project management\"]\n- \"pull up the design mockups\" → keywords [\"design\", \"figma\", \"mockup\"]\n\nReturns a ranked list with directoryUuid, name, description, sample tool names, installState (org-level), and enabledInChat (this session). Results include the org's custom connectors (ones the org configured that are not in the public directory) when they match the keywords. enabledInChat: false with installState: \"connected\" means the connector is authenticated but toggled off for this chat — its tools are not in your tool list; tell the user to enable it in this chat's connector settings. If a result looks relevant and is not installed, tell the user they could connect it via claude.ai; this tool does not itself connect anything.",
+  "input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "keywords": {
+        "description": "Keyword phrases describing the user's intent or a named product.",
+        "minItems": 1,
+        "maxItems": 8,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "required": [
+      "keywords"
+    ],
+    "additionalProperties": false
+  }
+}
