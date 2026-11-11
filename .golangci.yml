@@ -3,12 +3,34 @@ version: "2"
 linters:
   default: standard
   enable:
+    - depguard
     - errorlint
+    - forbidigo
     - gocritic
     - misspell
     - revive
     - unconvert
   settings:
+    depguard:
+      rules:
+        json:
+          # pkg/acp and its generator still use v1. The rule covers them
+          # once they have moved.
+          files:
+            - "!**/pkg/acp/**"
+          deny:
+            - pkg: "encoding/json$"
+              desc: use encoding/json/v2 and encoding/json/jsontext
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # A transport built by hand has no proxy and ignores HTTPS_PROXY.
+        # The rule also flags the Transport key of an http.Client literal.
+        # To wrap the transport, take a client from httpclient.New and
+        # assign its Transport field.
+        - pattern: ^http\.(Transport|DefaultTransport|DefaultClient|Get|Head|Post|PostForm)$
+          pkg: ^net/http$
+          msg: build HTTP clients with src/httpclient, which sets the proxy and trust settings
     revive:
       # Setting rules replaces the defaults unless this is on.
       enable-default-rules: true
@@ -16,6 +38,12 @@ linters:
         # Every exported name needs a doc comment (#4).
         - name: exported
         - name: package-comments
+
+  exclusions:
+    rules:
+      - path: src/httpclient/
+        linters:
+          - forbidigo
 
 formatters:
   enable:

@@ -14,7 +14,8 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
 ## Non-goals (v1)
 
-- TUI, macOS, sandboxing or isolation (wrappers such as acphost do that), swarm (leave room), self-learning or memory.
+- TUI, sandboxing or isolation (wrappers such as acphost do that), swarm (leave room), self-learning or memory.
+- macOS as a tested platform. It is a headless build target only: the tree must cross-build for `darwin/arm64`, because iOS captures run on a Mac.
 
 ## First milestone
 
@@ -44,7 +45,11 @@ Packages:
 
 | package | role |
 |---|---|
-| `cmd/acpharness` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models` |
+| `cmd/acpharness` | a shim that calls `src/cli` |
+| `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
+| `pkg/acp/harness` | what acpharness adds to ACP messages under `_meta.acpharness`, as types a client imports |
+| `src/transcript` | the one conversation format shared by providers, tools and the store |
+| `src/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
 | `src/config` | koanf loading and the typed config |
 | `pkg/acp` | our ACP layer: JSON-RPC connection, types generated from the pinned schema, transports, update mapping |
 | `src/session` | session lifecycle, modes, model switching, cancel |
@@ -61,7 +66,7 @@ Packages:
 | `src/telemetry` | OTel traces and metrics, slog handlers |
 | `prompts/` | pinned upstream prompts and tool schemas, embedded |
 
-`src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them.
+`src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. `pkg/acp` moved on 2026-11-11: protocol7's worker imports it as the client side, so both ends share schema 1.31.0.
 
 ## Process and transports
 
@@ -107,6 +112,11 @@ id = "main"
 provider = "openrouter"
 kind = "api_key"
 api_key_env = "OPENROUTER_API_KEY"
+
+[[accounts]]
+id = "pod"
+provider = "claude"
+kind = "proxied_oauth"   # oauth | api_key | proxied_oauth | proxied_api_key
 
 [[providers]]
 id = "zai"
@@ -166,6 +176,9 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 ### Accounts and fallback
 
 - Accounts live in the auth store, `$XDG_STATE_HOME/acpharness/auth/<account>.json`, mode 0600.
+- Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no file in the auth store, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
+- Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
+- `acpharness hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
 - `acpharness login claude --account work` and `acpharness login codex --account work` run the upstream OAuth flows: browser with a local callback, or a device or manual code paste for headless hosts.
 - Refresh: take an `flock` on the account file, re-read it, refresh only if the token is still expired, write atomically (temp file and rename), release. Hundreds of processes share one refresh.
 - Model chains: each named model is an ordered list of `provider:account/model`. The router tries the next entry on rate limit, quota exhaustion, auth failure or overload, after retries on the current entry are exhausted. Fallback moves are reported to the client.
@@ -217,6 +230,7 @@ Same model as jcode: the tool runs a child agent loop in the same process. The c
 - Transports: stdio, streamable HTTP, legacy HTTP+SSE. OAuth for remote servers with tokens in the auth store.
 - Servers come from config and from `session/new` `mcpServers`, merged by name with the session winning.
 - One `mcp` meta-tool with `list`, `search` (names and descriptions) and `call`. Schemas are returned on search, not loaded into the prompt.
+- Direct tools: a server marked `direct` has its tools put in the prompt under their own names, not behind the meta-tool. A server named in `session/new` `mcpServers` is direct by default, since the client added it for this session and its tools (`submit_result`, `ask_human`) are used every turn. A config server is behind the meta-tool by default. A direct tool whose name collides with another tool is an error at session start.
 - Connections start lazily on first use and close after an idle period from config.
 
 ### Permissions and modes
@@ -316,6 +330,7 @@ type Store interface {
 - The store benchmark also measures a keyword scan over a long session's full history.
 - Backends to evaluate with a benchmark harness (write amplification, fsyncs per turn, load time, size): JSONL with zstd frames, a length-prefixed binary log with periodic snapshots, SQLite in WAL mode, and Postgres for hosts that already run it. The first backend chosen by measurement becomes the default.
 - Large tool outputs are stored by content hash outside the event log and referenced.
+- Session state can move between machines. Everything a session needs is under one directory per session, it is flushed at the end of every turn, and `session/load` in a new process with the same working directory continues the conversation. A runner can upload the directory, delete the pod and start another.
 - `session/load` replays history to the client as `session/update` notifications, per ACP.
 
 ## ACP mapping
@@ -333,6 +348,10 @@ type Store interface {
 | active account, fallback, compaction, limit hit | `_meta.acpharness` on the relevant update, and the prompt response `_meta` |
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
+
+ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `acpharness` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral.
+
+A chain with one entry does not wait out a rate limit: it reports it. In a pod, the workflow that owns account choice decides whether to wait or move.
 
 ## ACP layer
 
@@ -373,6 +392,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Code conventions
 
 - Go 1.27.3 with `CGO_ENABLED=0`. Packages start in `src/`, with deliberate promotion to `pkg/` for external callers.
+- JSON is `encoding/json/v2` with `jsontext`, enforced by lint. Per-message buffers come from `valyala/bytebufferpool` where a benchmark shows it saves memory. The measured behaviour is in `docs/notes/2026-11-11-contracts-and-conventions.md`.
 - urfave/cli v3 plus koanf `cliflagv3` is the selected CLI and configuration integration.
 - golangci-lint v2.15 with acphost's configuration and gofumpt.
 - Plain Go concurrency: contexts for cancellation, one owner for session state, channels for coordination, and small scoped mutexes for shared state where needed. No blanket lock-free rule.
@@ -390,7 +410,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 - Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`.
 - release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
-- Dependencies: koanf with `cliflagv3`, `urfave/cli/v3`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
+- Dependencies: koanf with `cliflagv3`, `urfave/cli/v3`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
 ## Validation
 

@@ -2,11 +2,13 @@ package session_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
+	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/session"
 )
@@ -80,16 +83,16 @@ func start(t *testing.T, w *acptest.Wire) string {
 // untilCancelled is a turn that runs until it is cancelled. The channel gets
 // each turn's prompt text as the turn starts.
 func untilCancelled(started chan<- string) session.TurnFunc {
-	return func(ctx context.Context, turn loop.Turn) (acp.StopReason, error) {
+	return func(ctx context.Context, turn loop.Turn) (loop.Result, error) {
 		started <- turn.Prompt[0].Text.Text
 		<-ctx.Done()
-		return "", ctx.Err()
+		return loop.Result{}, ctx.Err()
 	}
 }
 
 func TestPromptRunsATurnInTheSessionsDirectory(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := serve(t, func(ctx context.Context, turn loop.Turn) (acp.StopReason, error) {
+		w := serve(t, func(ctx context.Context, turn loop.Turn) (loop.Result, error) {
 			require.Equal(t, "/work", turn.Cwd)
 			return loop.Stub(ctx, turn)
 		})
@@ -131,16 +134,16 @@ func TestNewPromptCancelsTheRunningTurn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var running atomic.Int32
 		started := make(chan string, 2)
-		w := serve(t, func(ctx context.Context, turn loop.Turn) (acp.StopReason, error) {
+		w := serve(t, func(ctx context.Context, turn loop.Turn) (loop.Result, error) {
 			require.Equal(t, int32(1), running.Add(1), "two turns ran in one session at once")
 			defer running.Add(-1)
 			text := turn.Prompt[0].Text.Text
 			started <- text
 			if text == "second" {
-				return acp.StopReasonEndTurn, nil
+				return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
 			}
 			<-ctx.Done()
-			return "", ctx.Err()
+			return loop.Result{}, ctx.Err()
 		})
 		id := start(t, w)
 
@@ -160,12 +163,12 @@ func TestNewPromptCancelsTheRunningTurn(t *testing.T) {
 // the cancel is for the first prompt only.
 func TestCancelAppliesOnlyToPromptsBeforeIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := serve(t, func(ctx context.Context, turn loop.Turn) (acp.StopReason, error) {
+		w := serve(t, func(ctx context.Context, turn loop.Turn) (loop.Result, error) {
 			if turn.Prompt[0].Text.Text == "second" {
-				return acp.StopReasonEndTurn, nil
+				return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
 			}
 			<-ctx.Done()
-			return "", ctx.Err()
+			return loop.Result{}, ctx.Err()
 		})
 		id := start(t, w)
 
@@ -241,4 +244,63 @@ func TestRejectedRequests(t *testing.T) {
 			})
 		})
 	}
+}
+
+// A client decides what to do about a stopped turn from a typed field. It
+// must get the same value back that the loop reported, through real JSON.
+func TestStoppedTurnCarriesATypedReason(t *testing.T) {
+	reset := time.Date(2026, 11, 11, 18, 0, 0, 0, time.UTC)
+
+	t.Run("a failed turn carries it in the error data", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			want := harness.Stop{Kind: harness.StopRateLimit, ResetAt: reset, RetryAfterSeconds: 90, Account: "work", Model: "opus"}
+			w := serve(t, func(context.Context, loop.Turn) (loop.Result, error) {
+				return loop.Result{}, &loop.StopError{Stop: want, Err: errors.New("HTTP 429")}
+			})
+			id := start(t, w)
+
+			w.Send(prompt(`1`, id, "hi"))
+			got, _ := w.Await(`1`)
+			require.NotNil(t, got[`1`].Error)
+			addition, ok, err := harness.FromError(got[`1`].Error)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, &want, addition.Stop)
+		})
+	})
+
+	t.Run("a turn that hit a limit carries it in the response _meta", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			want := harness.Stop{Kind: harness.StopLimit, Limit: "limits.max_tool_calls"}
+			w := serve(t, func(context.Context, loop.Turn) (loop.Result, error) {
+				return loop.Result{StopReason: acp.StopReasonMaxTurnRequests, Stop: &want}, nil
+			})
+			id := start(t, w)
+
+			w.Send(prompt(`1`, id, "hi"))
+			got, _ := w.Await(`1`)
+			require.Nil(t, got[`1`].Error)
+			var resp acp.PromptResponse
+			require.NoError(t, json.Unmarshal(got[`1`].Result, &resp))
+			require.Equal(t, acp.StopReasonMaxTurnRequests, resp.StopReason)
+			addition, ok, err := harness.FromMeta(resp.Meta)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, &want, addition.Stop)
+		})
+	})
+
+	t.Run("a rejected credential answers as authentication required", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			w := serve(t, func(context.Context, loop.Turn) (loop.Result, error) {
+				return loop.Result{}, &loop.StopError{Stop: harness.Stop{Kind: harness.StopAuth}}
+			})
+			id := start(t, w)
+
+			w.Send(prompt(`1`, id, "hi"))
+			got, _ := w.Await(`1`)
+			require.NotNil(t, got[`1`].Error)
+			require.Equal(t, acp.NewAuthRequired(nil).Code, got[`1`].Error.Code)
+		})
+	})
 }

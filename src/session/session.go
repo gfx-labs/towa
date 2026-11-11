@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/src/loop"
 )
 
 // session is one conversation. At most one turn runs at a time.
@@ -37,7 +38,8 @@ func newSession(id acp.SessionId, cwd string) *session {
 // run runs turn for the prompt with the given arrival, once the turns of
 // earlier prompts have stopped. It answers with the cancelled stop reason
 // when a later cancel or prompt supersedes it, or when ctx ends.
-func (s *session) run(ctx context.Context, arrival uint64, turn func(context.Context) (acp.StopReason, error)) (acp.StopReason, error) {
+func (s *session) run(ctx context.Context, arrival uint64, turn func(context.Context) (loop.Result, error)) (loop.Result, error) {
+	cancelled := loop.Result{StopReason: acp.StopReasonCancelled}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -45,10 +47,10 @@ func (s *session) run(ctx context.Context, arrival uint64, turn func(context.Con
 	switch {
 	case s.closed:
 		s.mu.Unlock()
-		return "", unknownSession(s.id)
+		return loop.Result{}, unknownSession(s.id)
 	case arrival < s.cancelBefore:
 		s.mu.Unlock()
-		return acp.StopReasonCancelled, nil
+		return cancelled, nil
 	}
 	s.cancelBefore = arrival
 	// Every prompt still here arrived earlier: a later one would have
@@ -67,21 +69,21 @@ func (s *session) run(ctx context.Context, arrival uint64, turn func(context.Con
 	select {
 	case s.slot <- struct{}{}:
 	case <-ctx.Done():
-		return acp.StopReasonCancelled, nil
+		return cancelled, nil
 	}
 	defer func() { <-s.slot }()
 	// The select can take the slot although ctx has ended.
 	if ctx.Err() != nil {
-		return acp.StopReasonCancelled, nil
+		return cancelled, nil
 	}
 
-	reason, err := turn(ctx)
+	result, err := turn(ctx)
 	if err != nil && ctx.Err() != nil {
 		// A cancelled model request or tool surfaces as an error. The
 		// protocol wants the cancelled stop reason, not an error.
-		return acp.StopReasonCancelled, nil
+		return cancelled, nil
 	}
-	return reason, err
+	return result, err
 }
 
 // cancel cancels the prompts that arrived before arrival, including ones

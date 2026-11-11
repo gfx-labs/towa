@@ -16,13 +16,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/telemetry"
 )
 
-// TurnFunc runs one prompt turn and says why it stopped. It returns when ctx
-// is cancelled, with the cancelled stop reason or with an error.
-type TurnFunc func(ctx context.Context, turn loop.Turn) (acp.StopReason, error)
+// TurnFunc runs one prompt turn and says how it ended. It returns when ctx
+// is cancelled, with the cancelled stop reason or with an error. A failure
+// the client can act on is a *loop.StopError.
+type TurnFunc func(ctx context.Context, turn loop.Turn) (loop.Result, error)
 
 // Client is what the agent calls on the ACP client.
 type Client interface {
@@ -145,8 +147,8 @@ func (a *Agent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResp
 		trace.WithAttributes(attribute.String("acp.session.id", string(s.id))))
 	defer span.End()
 
-	reason, err := s.run(ctx, arrival, func(ctx context.Context) (acp.StopReason, error) {
-		reason, err := a.turn(ctx, loop.Turn{
+	result, err := s.run(ctx, arrival, func(ctx context.Context) (loop.Result, error) {
+		result, err := a.turn(ctx, loop.Turn{
 			SessionID: s.id,
 			Cwd:       s.cwd,
 			Prompt:    p.Prompt,
@@ -159,18 +161,37 @@ func (a *Agent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResp
 			// is kept here in case it was not the cancellation's.
 			a.logger.DebugContext(ctx, "cancelled turn returned an error", "session", s.id, "err", err)
 		}
-		return reason, err
+		return result, err
 	})
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		a.logger.ErrorContext(ctx, "turn failed", "session", s.id, "err", err)
-		return acp.PromptResponse{}, err
+		return acp.PromptResponse{}, stopError(err)
 	}
-	stop := attribute.String("acp.stop_reason", string(reason))
+	stop := attribute.String("acp.stop_reason", string(result.StopReason))
 	span.SetAttributes(stop)
 	a.turns.Add(ctx, 1, metric.WithAttributes(stop))
-	return acp.PromptResponse{StopReason: reason}, nil
+	resp := acp.PromptResponse{StopReason: result.StopReason, Usage: result.Usage}
+	if result.Stop != nil {
+		resp.Meta = harness.Meta(nil, harness.Addition{Stop: result.Stop})
+	}
+	return resp, nil
+}
+
+// stopError turns a turn's failure into the error the client gets. A
+// failure with a typed reason carries it in the error's data, so the client
+// does not have to read the message.
+func stopError(err error) error {
+	var stopped *loop.StopError
+	if !errors.As(err, &stopped) {
+		return err
+	}
+	data := harness.Meta(map[string]any{"error": err.Error()}, harness.Addition{Stop: &stopped.Stop})
+	if stopped.Stop.Kind == harness.StopAuth {
+		return acp.NewAuthRequired(data)
+	}
+	return acp.NewInternalError(data)
 }
 
 // Cancel cancels the session's prompts that arrived before it.

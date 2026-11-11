@@ -1,0 +1,109 @@
+// Package harness defines what acpharness adds to ACP messages under the
+// "acpharness" key of _meta, and under the same key in the data of an error
+// response. A client imports it to read those additions as types.
+package harness
+
+import (
+	"encoding/json/v2"
+	"fmt"
+	"time"
+
+	"github.com/gfx-labs/acpharness/pkg/acp"
+)
+
+// Key is the name acpharness uses in _meta and in error data.
+const Key = "acpharness"
+
+// StopKind says why a turn stopped, from a fixed list. A client decides what
+// to do from it and never from the text of an error.
+type StopKind string
+
+// Kinds of stop.
+const (
+	// StopRateLimit: the account is rate limited or out of quota, and every
+	// entry of the model's chain was tried.
+	StopRateLimit StopKind = "rate_limit"
+	// StopAuth: the provider rejected the account's credential.
+	StopAuth StopKind = "auth"
+	// StopOverload: the provider is overloaded or unavailable.
+	StopOverload StopKind = "overload"
+	// StopContextFull: the conversation does not fit the model's context
+	// and compaction is off or could not make room.
+	StopContextFull StopKind = "context_full"
+	// StopLimit: a configured limit was reached. Limit names it.
+	StopLimit StopKind = "limit"
+	// StopNetwork: the provider could not be reached.
+	StopNetwork StopKind = "network"
+	// StopRequest: the provider rejected the request as invalid.
+	StopRequest StopKind = "request"
+)
+
+// Stop is why a turn stopped short of the model ending it.
+//
+// A turn that ends with a stop reason carries it in the prompt response's
+// _meta. A turn that fails carries it in the data of the error response.
+type Stop struct {
+	Kind StopKind `json:"kind"`
+	// ResetAt is when the provider said the rate limit resets.
+	ResetAt time.Time `json:"resetAt,omitzero"`
+	// RetryAfterSeconds is how long the provider asked the caller to wait.
+	RetryAfterSeconds float64 `json:"retryAfterSeconds,omitzero"`
+	// Limit is the config key of the limit that was reached.
+	Limit string `json:"limit,omitzero"`
+	// Account and Model say which chain entry reported it.
+	Account string `json:"account,omitzero"`
+	Model   string `json:"model,omitzero"`
+	// Message is the provider's own text, for people.
+	Message string `json:"message,omitzero"`
+}
+
+// Addition is what acpharness puts under Key.
+type Addition struct {
+	Stop *Stop `json:"stop,omitzero"`
+}
+
+// Meta returns meta with a under Key. meta may be nil.
+func Meta(meta map[string]any, a Addition) map[string]any {
+	out := make(map[string]any, len(meta)+1)
+	for k, v := range meta {
+		out[k] = v
+	}
+	out[Key] = a
+	return out
+}
+
+// FromMeta reads the addition in a message's _meta. It reports false when
+// there is none.
+func FromMeta(meta map[string]any) (Addition, bool, error) {
+	return decode(meta)
+}
+
+// FromError reads the addition in the data of an error response. It reports
+// false when there is none.
+func FromError(e *acp.RequestError) (Addition, bool, error) {
+	data, ok := e.Data.(map[string]any)
+	if !ok {
+		return Addition{}, false, nil
+	}
+	return decode(data)
+}
+
+func decode(from map[string]any) (Addition, bool, error) {
+	value, ok := from[Key]
+	if !ok {
+		return Addition{}, false, nil
+	}
+	if a, ok := value.(Addition); ok {
+		return a, true, nil
+	}
+	// The value came off the wire as untyped JSON.
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return Addition{}, false, fmt.Errorf("harness: %w", err)
+	}
+	var a Addition
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return Addition{}, false, fmt.Errorf("harness: %w", err)
+	}
+	return a, true, nil
+}

@@ -26,6 +26,9 @@ jobs:
       # The release binaries are static. A cgo dependency fails here.
       - name: static build
         run: CGO_ENABLED=0 go build ./...
+      # macOS is a headless build target. Nothing runs there in CI.
+      - name: macOS build
+        run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./... && GOOS=darwin GOARCH=arm64 go vet ./...
       - run: go vet ./...
       # pkg/acp/*_gen.go must be what tools/acpgen writes for the schema
       # files in the repo.
