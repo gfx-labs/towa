@@ -32,6 +32,12 @@ type MCPTokens struct {
 	// dynamic registration may have made at login.
 	ClientID     string `json:"client_id,omitzero"`
 	ClientSecret string `json:"client_secret,omitzero"`
+	// RefreshRejectedAtUnixMs is when the token endpoint said the refresh
+	// token is dead, and RefreshRejection the code it gave. While they are
+	// set the MCP client sends no refresh. A new login writes the file
+	// without them.
+	RefreshRejectedAtUnixMs int64  `json:"refresh_rejected_at_unix_ms,omitzero"`
+	RefreshRejection        string `json:"refresh_rejection,omitzero"`
 }
 
 // mcpFile is the content of one MCP server's file.
