@@ -14,10 +14,6 @@ linters:
     depguard:
       rules:
         json:
-          # pkg/acp and its generator still use v1. The rule covers them
-          # once they have moved.
-          files:
-            - "!**/pkg/acp/**"
           deny:
             - pkg: "encoding/json$"
               desc: use encoding/json/v2 and encoding/json/jsontext
