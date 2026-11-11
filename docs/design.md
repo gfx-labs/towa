@@ -240,10 +240,18 @@ Ported from jcode:
 
 One client for the OpenAI `/v1/embeddings` shape, configured by base URL, model, account and dimensions. No in-process model. Local embeddings run as a sidecar that serves the same API: Ollama, llama.cpp `llama-server --embedding`, Hugging Face TEI, or Infinity. Hosted options use the same client: OpenAI, OpenRouter, Voyage, Jina, Mistral, Gemini through its OpenAI-compatible endpoint. Providers with a different wire shape get an adapter only when needed.
 
+Recommended sidecar: Hugging Face Text Embeddings Inference (TEI). It runs any supported Hub model by id and serves OpenAI-compatible `/v1/embeddings`:
+
+```sh
+docker run -d -p 8080:80 -v $HOME/.cache/tei:/data \
+  ghcr.io/huggingface/text-embeddings-inference:cpu-latest \
+  --model-id BAAI/bge-small-en-v1.5
+```
+
 ```toml
 [embeddings]
-base_url = "http://127.0.0.1:11434/v1"
-model = "nomic-embed-text"
+base_url = "http://127.0.0.1:8080/v1"
+model = "BAAI/bge-small-en-v1.5"
 ```
 
 ## Jev decisions
