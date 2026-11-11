@@ -315,9 +315,12 @@ func (c *Connection) handleNotification(ctx context.Context, msg *inbound) {
 }
 
 func (c *Connection) handleRequest(ctx context.Context, msg *inbound) {
+	after := &afterResponse{}
+	ctx = context.WithValue(ctx, afterResponseKey{}, after)
 	if c.inOrder != nil && c.inOrder(msg.Method) {
 		result, rerr := c.handler(context.WithValue(ctx, inOrderKey{}, true), msg.Method, msg.Params)
 		c.respond(msg.ID, result, rerr)
+		after.run()
 		return
 	}
 	key := string(msg.ID)
@@ -336,12 +339,13 @@ func (c *Connection) handleRequest(ctx context.Context, msg *inbound) {
 	}
 
 	c.handlers.Go(func() {
+		defer cancel()
 		result, rerr := c.handler(ctx, msg.Method, msg.Params)
 		c.mu.Lock()
 		delete(c.inflight, key)
 		c.mu.Unlock()
-		cancel()
 		c.respond(msg.ID, result, rerr)
+		after.run()
 	})
 }
 
