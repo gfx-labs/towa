@@ -60,7 +60,7 @@ func TestLookupCapturedCodex(t *testing.T) {
 		})
 	}
 	for _, input := range []struct{ dialect, model string }{
-		{"generic", "gpt-6.1-sol"},
+		{"generic", ""},
 		{"claude", "claude-opus-5-5"},
 		{"codex", ""},
 		{"codex", "unknown-model"},
@@ -72,5 +72,17 @@ func TestLookupCapturedCodex(t *testing.T) {
 		require.ErrorAs(t, err, &missing)
 		assert.Equal(t, input.dialect, missing.Dialect)
 		assert.Equal(t, input.model, missing.Model)
+	}
+}
+
+func TestLookupGenericWireModel(t *testing.T) {
+	// Composed names exercise generic policy, not upstream model metadata.
+	for _, model := range []string{"llama3.2:3b", "provider/model-not-in-captured-catalog"} {
+		got, err := prompts.Lookup("generic", model)
+		require.NoError(t, err)
+		assert.NotEmpty(t, got.System)
+		assert.NotEmpty(t, got.Tools)
+		assert.NotEmpty(t, got.Interruption)
+		assert.Equal(t, "user", got.InterruptionRole)
 	}
 }
