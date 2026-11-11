@@ -52,6 +52,13 @@ type ReadResult struct {
 
 // Read returns a range of a text file's lines, or an image whole.
 func Read(ctx context.Context, roots Roots, cfg config.ToolsFiles, in ReadInput) (ReadResult, error) {
+	return ReadWithImage(ctx, roots, cfg, in, nil)
+}
+
+// ReadWithImage normalizes image bytes before applying the output byte limit.
+// A non-nil normalize permits source images larger than that output limit.
+// Text reads and path access follow Read's rules.
+func ReadWithImage(ctx context.Context, roots Roots, cfg config.ToolsFiles, in ReadInput, normalize func(context.Context, transcript.Blob) (transcript.Blob, error)) (ReadResult, error) {
 	if in.Offset < 0 || in.Limit < 0 {
 		return ReadResult{}, &Error{Kind: KindInvalidRange, Path: in.Path}
 	}
@@ -92,14 +99,24 @@ func Read(ctx context.Context, roots Roots, cfg config.ToolsFiles, in ReadInput)
 	sniff = sniff[:n]
 	mimeType := http.DetectContentType(sniff)
 	if imageTypes[mimeType] {
-		if info.Size() > cfg.ImageMaxBytes {
+		if normalize == nil && info.Size() > cfg.ImageMaxBytes {
 			return ReadResult{}, &Error{Kind: KindTooLarge, Path: in.Path, Size: info.Size(), Limit: cfg.ImageMaxBytes}
 		}
 		data, err := io.ReadAll(io.MultiReader(bytes.NewReader(sniff), file))
 		if err != nil {
 			return ReadResult{}, classify(in.Path, err)
 		}
-		res.Image = &transcript.Blob{MimeType: mimeType, Data: data}
+		blob := transcript.Blob{MimeType: mimeType, Data: data}
+		if normalize != nil {
+			blob, err = normalize(ctx, blob)
+			if err != nil {
+				return ReadResult{}, err
+			}
+		}
+		if int64(len(blob.Data)) > cfg.ImageMaxBytes {
+			return ReadResult{}, &Error{Kind: KindTooLarge, Path: in.Path, Size: int64(len(blob.Data)), Limit: cfg.ImageMaxBytes}
+		}
+		res.Image = &blob
 		return res, nil
 	}
 	if bytes.IndexByte(sniff, 0) >= 0 {
