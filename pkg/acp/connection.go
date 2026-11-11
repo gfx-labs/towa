@@ -133,10 +133,12 @@ type Connection struct {
 	nextID atomic.Uint64
 	served atomic.Bool
 
-	mu       sync.Mutex
-	pending  map[uint64]chan response
-	inflight map[string]context.CancelFunc
-	closeErr error
+	mu                     sync.Mutex
+	pending                map[uint64]chan response
+	inflight               map[string]context.CancelFunc
+	closeErr               error
+	extensionRequests      map[string]MethodHandler
+	extensionNotifications map[string]MethodHandler
 
 	done     chan struct{}
 	handlers sync.WaitGroup
@@ -303,7 +305,7 @@ func (c *Connection) handleNotification(ctx context.Context, msg *inbound) {
 		}
 		return
 	}
-	_, rerr := c.handler(context.WithValue(ctx, inOrderKey{}, true), msg.Method, msg.Params)
+	_, rerr := c.invoke(context.WithValue(ctx, inOrderKey{}, true), msg, true)
 	switch {
 	case rerr == nil:
 	case rerr.Code == codeMethodNotFound:
@@ -318,7 +320,7 @@ func (c *Connection) handleRequest(ctx context.Context, msg *inbound) {
 	after := &afterResponse{}
 	ctx = context.WithValue(ctx, afterResponseKey{}, after)
 	if c.inOrder != nil && c.inOrder(msg.Method) {
-		result, rerr := c.handler(context.WithValue(ctx, inOrderKey{}, true), msg.Method, msg.Params)
+		result, rerr := c.invoke(context.WithValue(ctx, inOrderKey{}, true), msg, false)
 		c.respond(msg.ID, result, rerr)
 		after.run()
 		return
@@ -340,7 +342,7 @@ func (c *Connection) handleRequest(ctx context.Context, msg *inbound) {
 
 	c.handlers.Go(func() {
 		defer cancel()
-		result, rerr := c.handler(ctx, msg.Method, msg.Params)
+		result, rerr := c.invoke(ctx, msg, false)
 		c.mu.Lock()
 		delete(c.inflight, key)
 		c.mu.Unlock()
