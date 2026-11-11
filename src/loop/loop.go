@@ -8,6 +8,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
+	"github.com/gfx-labs/acpharness/src/tools"
 )
 
 // Result is how a turn ended.
@@ -48,6 +49,24 @@ type Turn struct {
 	// Update sends one session update to the client. Updates reach the
 	// client in the order the calls return.
 	Update func(ctx context.Context, update acp.SessionUpdate) error
+
+	// Dirs are the session's additional directories, absolute paths.
+	Dirs []string
+	// SystemPrompt is the client's system prompt from session/new, nil when
+	// there is none. The context builder reads it.
+	SystemPrompt *acp.SystemPrompt
+	// McpServers are the servers the client named on session/new.
+	McpServers []acp.McpServer
+	// Client is what the client advertised in initialize.
+	Client acp.ClientCapabilities
+	// Sendable reports whether Update will send this update. Update returns
+	// nil without sending an update of a type the client did not advertise.
+	Sendable func(update acp.SessionUpdate) bool
+	// Permit asks whether a tool call may run. It is called before every
+	// tool call. False means the call was rejected: the model is told so
+	// and the call does not run. An error means the turn was cancelled or
+	// the client failed, and stops the turn. A nil Permit allows every call.
+	Permit func(ctx context.Context, tool string, effect tools.Effect, call acp.ToolCallUpdate) (bool, error)
 }
 
 // Stub answers a prompt without a model: it says so and repeats the prompt's
