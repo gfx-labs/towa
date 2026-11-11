@@ -31,6 +31,7 @@ type shared struct {
 	logger   *slog.Logger
 	tracer   trace.Tracer
 	turns    metric.Int64Counter
+	repairs  metric.Int64Counter
 	registry *Registry
 	supports Supports
 	store    store.Store
@@ -60,6 +61,12 @@ func NewHost(o Options) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
+	repairs, err := o.Meter.Int64Counter("acpharness.session.repairs",
+		metric.WithDescription("Session logs whose torn tails were set aside."),
+		metric.WithUnit("{repair}"))
+	if err != nil {
+		return nil, err
+	}
 	registry := &Registry{}
 	if o.Registry != nil {
 		registry = o.Registry.clone()
@@ -85,6 +92,7 @@ func NewHost(o Options) (*Host, error) {
 		logger:   o.Logger,
 		tracer:   o.Tracer,
 		turns:    turns,
+		repairs:  repairs,
 		registry: registry,
 		supports: o.Supports,
 		store:    o.Store,

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 	"uuid"
@@ -417,4 +418,58 @@ func TestSessionMovesToANewProcess(t *testing.T) {
 	continued, _ := shown(t, sent)
 	require.Len(t, continued, 4)
 	fresh.exit()
+}
+
+func TestTornSessionMovesToANewProcess(t *testing.T) {
+	for _, method := range []string{"session/load", "session/resume"} {
+		t.Run(method, func(t *testing.T) {
+			root := t.TempDir()
+			old := startProcess(t, root)
+			old.call(`"init"`, initialize)
+			made, _ := old.call(`"new"`, newSession)
+			var created acp.NewSessionResponse
+			require.NoError(t, json.Unmarshal(made.Result, &created))
+			id := string(created.SessionId)
+			answer, sent := old.call(`1`, prompt(`1`, id, "first"))
+			require.JSONEq(t, endTurn, string(answer.Result))
+			live, _ := shown(t, sent)
+			path := filepath.Join(root, id, "log.jsonl.zst")
+			whole, err := os.Stat(path)
+			require.NoError(t, err)
+			old.call(`2`, prompt(`2`, id, "cut short"))
+			old.exit()
+			full, err := os.Stat(path)
+			require.NoError(t, err)
+			// Cut inside the real compressed append, not inside a hand-built
+			// log. The first turn's appends are left whole.
+			cut := whole.Size() + (full.Size()-whole.Size())/2
+			require.NoError(t, os.Truncate(path, cut))
+
+			fresh := startProcess(t, root)
+			fresh.call(`"init"`, initialize)
+			loaded, sent := fresh.call(`1`, request(`1`, method,
+				`{"sessionId":"`+id+`","cwd":"/work","mcpServers":[]}`))
+			require.Nil(t, loaded.Error)
+			var response struct {
+				Meta struct {
+					Harness struct {
+						Repair struct {
+							Bytes int64 `json:"setAsideBytes"`
+						} `json:"repair"`
+					} `json:"acpharness"`
+				} `json:"_meta"`
+			}
+			require.NoError(t, json.Unmarshal(loaded.Result, &response))
+			require.Equal(t, cut-whole.Size(), response.Meta.Harness.Repair.Bytes)
+			replayed, _ := shown(t, sent)
+			if method == "session/load" {
+				require.Equal(t, append([]string{userChunk(t, "first")}, live...), replayed)
+			} else {
+				require.Empty(t, replayed)
+			}
+			answer, _ = fresh.call(`2`, prompt(`2`, id, "after repair"))
+			require.JSONEq(t, endTurn, string(answer.Result))
+			fresh.exit()
+		})
+	}
 }

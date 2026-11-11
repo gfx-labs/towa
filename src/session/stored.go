@@ -9,6 +9,7 @@ import (
 	"uuid"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/store"
 )
 
@@ -24,6 +25,7 @@ type attachRequest struct {
 	systemPrompt *acp.SystemPrompt
 	initial      []acp.InitialSessionConfigOption
 	meta         map[string]any
+	repaired     *int64
 }
 
 // LoadSession brings a stored session into this process and replays its
@@ -32,11 +34,12 @@ func (a *Agent) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (acp.
 	if a.store == nil {
 		return acp.LoadSessionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionLoad)
 	}
+	var repaired int64
 	modes, options, err := a.attach(ctx, attachRequest{
 		id: p.SessionId, cwd: p.Cwd, dirs: p.AdditionalDirectories, mcpServers: p.McpServers,
-		systemPrompt: p.SystemPrompt, initial: p.ConfigOptions, meta: p.Meta,
+		systemPrompt: p.SystemPrompt, initial: p.ConfigOptions, meta: p.Meta, repaired: &repaired,
 	}, true)
-	return acp.LoadSessionResponse{Modes: modes, ConfigOptions: options}, err
+	return acp.LoadSessionResponse{Modes: modes, ConfigOptions: options, Meta: repairMeta(repaired)}, err
 }
 
 // ResumeSession brings a stored session into this process without
@@ -45,11 +48,32 @@ func (a *Agent) ResumeSession(ctx context.Context, p acp.ResumeSessionRequest) (
 	if a.store == nil {
 		return acp.ResumeSessionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionResume)
 	}
+	var repaired int64
 	modes, options, err := a.attach(ctx, attachRequest{
 		id: p.SessionId, cwd: p.Cwd, dirs: p.AdditionalDirectories, mcpServers: p.McpServers,
-		systemPrompt: p.SystemPrompt, initial: p.ConfigOptions, meta: p.Meta,
+		systemPrompt: p.SystemPrompt, initial: p.ConfigOptions, meta: p.Meta, repaired: &repaired,
 	}, false)
-	return acp.ResumeSessionResponse{Modes: modes, ConfigOptions: options}, err
+	return acp.ResumeSessionResponse{Modes: modes, ConfigOptions: options, Meta: repairMeta(repaired)}, err
+}
+
+func repairMeta(bytes int64) map[string]any {
+	if bytes == 0 {
+		return nil
+	}
+	return map[string]any{harness.Key: map[string]any{"repair": map[string]any{"setAsideBytes": bytes}}}
+}
+
+// repair checks even a resume's tail, which does not replay history.
+func (a *Agent) repair(ctx context.Context, id acp.SessionId, stored uuid.UUID) (int64, error) {
+	n, err := a.store.Repair(ctx, stored)
+	if err != nil {
+		return 0, storeError(id, err)
+	}
+	if n > 0 {
+		a.logger.WarnContext(ctx, "session torn tail set aside", "session", id, "set_aside_bytes", n)
+		a.repairs.Add(ctx, 1)
+	}
+	return n, nil
 }
 
 // attach makes a stored session live in this process.
@@ -108,6 +132,10 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 		}
 	}
 
+	*r.repaired, err = a.repair(ctx, r.id, meta.ID)
+	if err != nil {
+		return nil, nil, err
+	}
 	s := newSession(r.id, meta.Cwd)
 	// The request's list is the session's whole list from now on.
 	s.dirs, s.systemPrompt, s.mcpServers = r.dirs, r.systemPrompt, r.mcpServers
