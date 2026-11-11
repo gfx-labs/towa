@@ -17,6 +17,7 @@ import (
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
 	"github.com/gfx-labs/acpharness/pkg/acp/harness"
+	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/session"
 )
@@ -45,13 +46,24 @@ func closeSession(id, session string) string {
 // raw end of it.
 func serve(t *testing.T, turn session.TurnFunc) *acptest.Wire {
 	t.Helper()
-	agent, err := session.NewAgent(session.Options{
+	return serveWith(t, turn, nil)
+}
+
+// serveWith is serve with the options changed by adjust.
+func serveWith(t *testing.T, turn session.TurnFunc, adjust func(*session.Options)) *acptest.Wire {
+	t.Helper()
+	options := session.Options{
 		Version: "test",
 		Turn:    turn,
 		Logger:  slog.New(slog.DiscardHandler),
 		Tracer:  tracenoop.NewTracerProvider().Tracer("test"),
 		Meter:   metricnoop.NewMeterProvider().Meter("test"),
-	})
+		Session: config.Session{Mode: config.SessionModeAuto},
+	}
+	if adjust != nil {
+		adjust(&options)
+	}
+	agent, err := session.NewAgent(options)
 	require.NoError(t, err)
 	w, in, out := acptest.New(t)
 	conn := acp.NewAgentSideConnection(agent, out, in, nil)
@@ -77,6 +89,12 @@ func start(t *testing.T, w *acptest.Wire) string {
 	var resp acp.NewSessionResponse
 	require.NoError(t, json.Unmarshal(got[`"new"`].Result, &resp))
 	require.NotEmpty(t, resp.SessionId)
+	// The first request for a session is followed by its commands. /mode is
+	// answered without a turn, so this reads them here and leaves the tests
+	// their own turn's messages. The pipe has no buffer: a test that waits
+	// for its turn before it reads would otherwise wait forever.
+	w.Send(prompt(`"warm"`, string(resp.SessionId), "/mode"))
+	w.Await(`"warm"`)
 	return string(resp.SessionId)
 }
 
@@ -103,12 +121,10 @@ func TestPromptRunsATurnInTheSessionsDirectory(t *testing.T) {
 		require.JSONEq(t, endTurn, string(got[`1`].Result))
 
 		// The update was written before the response that ends the turn.
-		require.Len(t, others, 1)
-		require.Equal(t, acp.ClientMethodSessionUpdate, others[0].Method)
-		var update acp.SessionNotification
-		require.NoError(t, json.Unmarshal(others[0].Params, &update))
-		require.Equal(t, id, string(update.SessionId))
-		require.Contains(t, update.Update.AgentMessageChunk.Content.Text.Text, "fix the bug")
+		updates := updatesOf(t, others)
+		require.Len(t, updates, 1)
+		require.Equal(t, id, string(updates[0].SessionId))
+		require.Contains(t, updates[0].Update.AgentMessageChunk.Content.Text.Text, "fix the bug")
 	})
 }
 
@@ -303,4 +319,19 @@ func TestStoppedTurnCarriesATypedReason(t *testing.T) {
 			require.Equal(t, acp.NewAuthRequired(nil).Code, got[`1`].Error.Code)
 		})
 	})
+}
+
+// updatesOf decodes the session updates among the agent's messages.
+func updatesOf(t *testing.T, messages []acptest.Message) []acp.SessionNotification {
+	t.Helper()
+	var updates []acp.SessionNotification
+	for _, m := range messages {
+		if m.Method != acp.ClientMethodSessionUpdate {
+			continue
+		}
+		var update acp.SessionNotification
+		require.NoError(t, json.Unmarshal(m.Params, &update))
+		updates = append(updates, update)
+	}
+	return updates
 }

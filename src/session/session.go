@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"maps"
 	"sync"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
@@ -17,9 +18,19 @@ import (
 type session struct {
 	id  acp.SessionId
 	cwd string
+	// What session/new asked for. None of it changes afterwards.
+	dirs         []string
+	systemPrompt *acp.SystemPrompt
+	mcpServers   []acp.McpServer
+	// perTurn are the changes the session's _meta overrides make to each
+	// turn.
+	perTurn []func(*loop.Turn)
 
 	// slot holds a token while a turn runs.
 	slot chan struct{}
+
+	// setMu orders changes to config options with the updates about them.
+	setMu sync.Mutex
 
 	mu sync.Mutex
 	// cancelBefore is the highest arrival of a cancel or prompt seen so far.
@@ -29,10 +40,20 @@ type session struct {
 	// waiting to run, by arrival.
 	turns  map[uint64]context.CancelFunc
 	closed bool
+	// values holds the value of every config option, the mode among them.
+	values map[acp.SessionConfigId]Value
+	title  string
+	// allowed are the tools the client allowed for the rest of the session.
+	allowed map[string]bool
+	// announced is set once the client has been sent the commands.
+	announced bool
 }
 
 func newSession(id acp.SessionId, cwd string) *session {
-	return &session{id: id, cwd: cwd, slot: make(chan struct{}, 1), turns: map[uint64]context.CancelFunc{}}
+	return &session{
+		id: id, cwd: cwd, slot: make(chan struct{}, 1), turns: map[uint64]context.CancelFunc{},
+		allowed: map[string]bool{},
+	}
 }
 
 // run runs turn for the prompt with the given arrival, once the turns of
@@ -99,6 +120,31 @@ func (s *session) cancel(arrival uint64) {
 			cancelTurn()
 		}
 	}
+}
+
+// stop cancels the prompt with the given arrival, as a session/cancel for it
+// alone would.
+func (s *session) stop(arrival uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cancelTurn := s.turns[arrival]; cancelTurn != nil {
+		cancelTurn()
+	}
+}
+
+// option returns the value of a config option.
+func (s *session) option(id acp.SessionConfigId) (Value, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.values[id]
+	return v, ok
+}
+
+// options returns a copy of the value of every config option.
+func (s *session) options() map[acp.SessionConfigId]Value {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.values)
 }
 
 // close cancels every prompt and returns once the running turn has stopped.
