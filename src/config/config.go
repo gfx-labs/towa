@@ -22,6 +22,7 @@ type Config struct {
 	Session   Session    `koanf:"session"`
 	Context   Context    `koanf:"context"`
 	Listen    Listen     `koanf:"listen"`
+	Limits    Limits     `koanf:"limits"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -76,6 +77,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
+		limitsDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -97,7 +99,7 @@ func (c *Config) validate() error {
 	}
 	for _, section := range []func() error{
 		c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
-		c.Session.validate, c.Context.validate, c.Listen.validate,
+		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 	} {
 		if err := section(); err != nil {
 			return err
