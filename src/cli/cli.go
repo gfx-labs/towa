@@ -67,7 +67,7 @@ func Run(ctx context.Context, args []string, h Host) error {
 			&cli.StringFlag{Name: "log-level", Usage: "stderr log `level`: debug, info, warn or error"},
 			&cli.StringFlag{Name: "log-format", Usage: "stderr log `format`: " + config.FormatText + " or " + config.FormatJSON},
 		},
-		Commands: []*cli.Command{
+		Commands: append([]*cli.Command{
 			{
 				Name:  "serve",
 				Usage: "serve ACP on standard input and output (the default command)",
@@ -82,7 +82,7 @@ func Run(ctx context.Context, args []string, h Host) error {
 					return printConfig(cmd, h)
 				},
 			},
-		},
+		}, accountCommands(h)...),
 	}
 	return app.Run(ctx, args)
 }
