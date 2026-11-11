@@ -1,0 +1,468 @@
+package conformance
+
+import (
+	"context"
+	sdkjson "encoding/json" //nolint:depguard // the SDK's types are coded with the SDK's encoder
+	"encoding/json/jsontext"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	acp "github.com/coder/acp-go-sdk"
+	"github.com/stretchr/testify/require"
+)
+
+// timeout bounds one test's conversation. It is far above what the agent
+// needs, so that reaching it means a message was lost and not a slow host.
+const timeout = 60 * time.Second
+
+// unknownSession is a session id the agent never issued.
+const unknownSession = "no-such-session"
+
+// golden holds what the agent wrote in TestWire, normalized. envUpdate
+// makes TestWire write it from the binary under test.
+const (
+	golden    = "testdata/wire.golden"
+	envUpdate = "ACPHARNESS_CONFORMANCE_UPDATE"
+)
+
+func initialize(ctx context.Context, t *testing.T, conn *acp.ClientSideConnection) acp.InitializeResponse {
+	t.Helper()
+	resp, err := conn.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+		ClientInfo:      &acp.Implementation{Name: "acp-go-sdk conformance", Version: "0.13.5"},
+	})
+	require.NoError(t, err)
+	return resp
+}
+
+func newSession(ctx context.Context, t *testing.T, conn *acp.ClientSideConnection) acp.NewSessionResponse {
+	t.Helper()
+	resp, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.SessionId)
+	return resp
+}
+
+// requestError requires err to be a JSON-RPC error and returns it.
+func requestError(t *testing.T, err error) *acp.RequestError {
+	t.Helper()
+	var reqErr *acp.RequestError
+	require.ErrorAs(t, err, &reqErr)
+	return reqErr
+}
+
+// kinds names the variant of each update, in the order received.
+func kinds(updates []acp.SessionNotification) []string {
+	out := []string{}
+	for _, n := range updates {
+		u := n.Update
+		switch {
+		case u.AgentMessageChunk != nil:
+			out = append(out, "agent_message_chunk")
+		case u.AvailableCommandsUpdate != nil:
+			out = append(out, "available_commands_update")
+		case u.CurrentModeUpdate != nil:
+			out = append(out, "current_mode_update")
+		case u.ConfigOptionUpdate != nil:
+			out = append(out, "config_option_update")
+		default:
+			raw, _ := sdkjson.Marshal(u)
+			out = append(out, "other: "+string(raw))
+		}
+	}
+	return out
+}
+
+func TestInitialize(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, _ := a.connect()
+
+	resp := initialize(ctx, t, conn)
+	require.Equal(t, acp.ProtocolVersion(acp.ProtocolVersionNumber), resp.ProtocolVersion)
+	require.NotNil(t, resp.AgentInfo)
+	require.Equal(t, "acpharness", resp.AgentInfo.Name)
+	require.NotEmpty(t, resp.AgentInfo.Version)
+	require.Empty(t, resp.AuthMethods)
+
+	// With the stub turn nothing optional is on: no stored sessions, no
+	// prompt content beyond text and resource links, no MCP transport.
+	caps := resp.AgentCapabilities
+	require.False(t, caps.LoadSession)
+	require.Equal(t, acp.PromptCapabilities{}, caps.PromptCapabilities)
+	require.Equal(t, acp.McpCapabilities{}, caps.McpCapabilities)
+	require.Nil(t, caps.Auth.Logout)
+	require.NotNil(t, caps.SessionCapabilities.Close)
+	require.Nil(t, caps.SessionCapabilities.List)
+	require.Nil(t, caps.SessionCapabilities.Resume)
+	require.Nil(t, caps.SessionCapabilities.Fork)
+	require.Nil(t, caps.SessionCapabilities.Delete)
+	require.Nil(t, caps.SessionCapabilities.AdditionalDirectories)
+
+	// What the agent sent that SDK 0.13.5 has no field for: the
+	// capabilities of the unstable methods it implements.
+	raw := a.lastResult()
+	require.Equal(t, []string{
+		"agentCapabilities.sessionCapabilities.options",
+		"agentCapabilities.sessionCapabilities.status",
+		"agentCapabilities.sessionCapabilities.title",
+	}, notDecoded(t, raw, resp), "raw result: %s", raw)
+
+	// A version the agent does not have is answered with the one it has.
+	b := start(t)
+	connB, _ := b.connect()
+	older, err := connB.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: 9999})
+	require.NoError(t, err)
+	require.Equal(t, acp.ProtocolVersion(acp.ProtocolVersionNumber), older.ProtocolVersion)
+}
+
+func TestNewSession(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, c := a.connect()
+	initialize(ctx, t, conn)
+
+	resp := newSession(ctx, t, conn)
+	require.Empty(t, notDecoded(t, a.lastResult(), resp), "raw result: %s", a.lastResult())
+
+	require.NotNil(t, resp.Modes)
+	require.Equal(t, acp.SessionModeId("auto"), resp.Modes.CurrentModeId)
+	modes := []acp.SessionModeId{}
+	for _, m := range resp.Modes.AvailableModes {
+		require.NotEmpty(t, m.Name)
+		modes = append(modes, m.Id)
+	}
+	require.Equal(t, []acp.SessionModeId{"auto", "ask"}, modes)
+
+	// The mode is also a config option, a select over the same values.
+	var mode *acp.SessionConfigOptionSelect
+	for _, option := range resp.ConfigOptions {
+		require.NotNil(t, option.Select, "an option the SDK did not decode as a select")
+		if option.Select.Id == "mode" {
+			mode = option.Select
+		}
+	}
+	require.NotNil(t, mode)
+	require.Equal(t, acp.SessionConfigValueId("auto"), mode.CurrentValue)
+	require.NotNil(t, mode.Category)
+	require.Equal(t, acp.SessionConfigOptionCategory("mode"), *mode.Category)
+	require.NotNil(t, mode.Options.Ungrouped)
+	values := []acp.SessionConfigValueId{}
+	for _, o := range *mode.Options.Ungrouped {
+		values = append(values, o.Value)
+	}
+	require.Equal(t, []acp.SessionConfigValueId{"auto", "ask"}, values)
+
+	// Two sessions on one connection are two sessions.
+	second := newSession(ctx, t, conn)
+	require.NotEqual(t, resp.SessionId, second.SessionId)
+	require.Empty(t, c.take(), "session/new sends no update")
+}
+
+func TestPrompt(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, c := a.connect()
+	initialize(ctx, t, conn)
+	session := newSession(ctx, t, conn)
+
+	resp, err := conn.Prompt(ctx, acp.PromptRequest{
+		SessionId: session.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("conformance says hello")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, acp.StopReasonEndTurn, resp.StopReason)
+	require.Empty(t, notDecoded(t, a.lastResult(), resp), "raw result: %s", a.lastResult())
+
+	// The commands are announced before the first request that names the
+	// session is handled, and then the stub turn sends one message chunk.
+	updates := c.take()
+	require.Equal(t, []string{"available_commands_update", "agent_message_chunk"}, kinds(updates))
+	for _, n := range updates {
+		require.Equal(t, session.SessionId, n.SessionId)
+	}
+	commands := updates[0].Update.AvailableCommandsUpdate.AvailableCommands
+	names := []string{}
+	for _, command := range commands {
+		require.NotEmpty(t, command.Description)
+		names = append(names, command.Name)
+	}
+	require.Contains(t, names, "mode")
+	chunk := updates[1].Update.AgentMessageChunk
+	require.NotNil(t, chunk.Content.Text)
+	require.Contains(t, chunk.Content.Text.Text, "conformance says hello")
+
+	// Every update the agent sent decodes without loss.
+	sent := 0
+	for _, m := range a.messages() {
+		if m.Method != acp.ClientMethodSessionUpdate {
+			continue
+		}
+		var n acp.SessionNotification
+		require.NoError(t, sdkjson.Unmarshal(m.Params, &n), "raw params: %s", m.Params)
+		require.Empty(t, notDecoded(t, m.Params, n), "raw params: %s", m.Params)
+		sent++
+	}
+	require.Equal(t, len(updates), sent)
+
+	// A second prompt on the session: the commands are not sent again.
+	_, err = conn.Prompt(ctx, acp.PromptRequest{
+		SessionId: session.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("again")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"agent_message_chunk"}, kinds(c.take()))
+
+	// A session the agent does not have.
+	_, err = conn.Prompt(ctx, acp.PromptRequest{
+		SessionId: unknownSession,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},
+	})
+	require.Equal(t, -32002, requestError(t, err).Code)
+}
+
+// session/cancel is a notification. With the stub turn a prompt ends before
+// a cancel can reach it, so this covers only that the agent takes the SDK's
+// cancel for a session with no turn running and keeps serving.
+func TestCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, c := a.connect()
+	initialize(ctx, t, conn)
+	session := newSession(ctx, t, conn)
+
+	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: session.SessionId}))
+	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: unknownSession}))
+
+	resp, err := conn.Prompt(ctx, acp.PromptRequest{
+		SessionId: session.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("after the cancel")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, acp.StopReasonEndTurn, resp.StopReason)
+	require.Contains(t, kinds(c.take()), "agent_message_chunk")
+	// A notification has no answer, whatever its session.
+	for _, m := range a.messages() {
+		require.Empty(t, m.Error, "the agent answered with an error: %s", m.Error)
+	}
+}
+
+// session/close is advertised, so the SDK's call for it is answered, and
+// the session is gone afterwards.
+func TestClose(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, _ := a.connect()
+	initialize(ctx, t, conn)
+	session := newSession(ctx, t, conn)
+
+	_, err := conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: session.SessionId})
+	require.NoError(t, err)
+	_, err = conn.Prompt(ctx, acp.PromptRequest{
+		SessionId: session.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("after the close")},
+	})
+	require.Equal(t, -32002, requestError(t, err).Code)
+}
+
+func TestSetMode(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, c := a.connect()
+	initialize(ctx, t, conn)
+	session := newSession(ctx, t, conn)
+
+	_, err := conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "ask"})
+	require.NoError(t, err)
+	updates := c.take()
+	// The mode is one value with two names, so both updates are sent.
+	require.ElementsMatch(t,
+		[]string{"available_commands_update", "current_mode_update", "config_option_update"}, kinds(updates))
+	for _, n := range updates {
+		switch u := n.Update; {
+		case u.CurrentModeUpdate != nil:
+			require.Equal(t, acp.SessionModeId("ask"), u.CurrentModeUpdate.CurrentModeId)
+		case u.ConfigOptionUpdate != nil:
+			require.NotEmpty(t, u.ConfigOptionUpdate.ConfigOptions)
+			for _, option := range u.ConfigOptionUpdate.ConfigOptions {
+				require.NotNil(t, option.Select)
+				if option.Select.Id == "mode" {
+					require.Equal(t, acp.SessionConfigValueId("ask"), option.Select.CurrentValue)
+				}
+			}
+		}
+	}
+
+	// Setting the mode the session already has sends nothing.
+	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "ask"})
+	require.NoError(t, err)
+	require.Empty(t, kinds(c.take()))
+
+	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "no-such-mode"})
+	require.Equal(t, -32602, requestError(t, err).Code)
+	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: unknownSession, ModeId: "ask"})
+	require.Equal(t, -32002, requestError(t, err).Code)
+}
+
+func TestSetConfigOption(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, c := a.connect()
+	initialize(ctx, t, conn)
+	session := newSession(ctx, t, conn)
+
+	set := func(configID, value string) (acp.SetSessionConfigOptionResponse, error) {
+		return conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+			ValueId: &acp.SetSessionConfigOptionValueId{
+				SessionId: session.SessionId,
+				ConfigId:  acp.SessionConfigId(configID),
+				Value:     acp.SessionConfigValueId(value),
+			},
+		})
+	}
+
+	resp, err := set("mode", "ask")
+	require.NoError(t, err)
+	require.Empty(t, notDecoded(t, a.lastResult(), resp), "raw result: %s", a.lastResult())
+	// The response carries every option with its new value.
+	found := false
+	for _, option := range resp.ConfigOptions {
+		require.NotNil(t, option.Select)
+		if option.Select.Id == "mode" {
+			found = true
+			require.Equal(t, acp.SessionConfigValueId("ask"), option.Select.CurrentValue)
+		}
+	}
+	require.True(t, found)
+	// The mode changed, so its own update is sent. The options are in the
+	// response and are not sent a second time.
+	require.ElementsMatch(t, []string{"available_commands_update", "current_mode_update"}, kinds(c.take()))
+
+	_, err = set("mode", "no-such-value")
+	require.Equal(t, -32602, requestError(t, err).Code)
+	_, err = set("no-such-option", "ask")
+	require.Equal(t, -32602, requestError(t, err).Code)
+}
+
+// Methods the agent does not implement answer Method not found: one of the
+// protocol's own that needs the store, one that is unstable, and an
+// extension method nobody registered.
+func TestMethodNotFound(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, _ := a.connect()
+	initialize(ctx, t, conn)
+
+	_, err := conn.ListSessions(ctx, acp.ListSessionsRequest{})
+	require.Equal(t, -32601, requestError(t, err).Code)
+
+	_, err = conn.UnstableListProviders(ctx, acp.UnstableListProvidersRequest{})
+	require.Equal(t, -32601, requestError(t, err).Code)
+
+	_, err = conn.CallExtension(ctx, "_conformance/no_such_method", map[string]any{})
+	require.Equal(t, -32601, requestError(t, err).Code)
+
+	// An extension notification nobody registered is ignored, and the
+	// connection goes on.
+	require.NoError(t, conn.NotifyExtension(ctx, "_conformance/no_such_notification", map[string]any{}))
+	newSession(ctx, t, conn)
+	// Four requests were answered, and the notification was not.
+	answers := 0
+	for _, m := range a.messages() {
+		if m.Method == "" {
+			answers++
+		}
+	}
+	require.Equal(t, 5, answers, "initialize, three unknown methods and session/new")
+}
+
+// Params that are not what the method takes answer Invalid params.
+func TestInvalidParams(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, _ := a.connect()
+	initialize(ctx, t, conn)
+
+	// What the SDK sends for a request it was given without its required
+	// members: {"cwd":"","mcpServers":null}.
+	_, err := conn.NewSession(ctx, acp.NewSessionRequest{})
+	require.Equal(t, -32602, requestError(t, err).Code)
+
+	// A member of the wrong JSON type, and params that are not an object.
+	// The SDK's typed calls cannot send these, so they go through its
+	// connection as an extension call would, under the real method name.
+	b := start(t)
+	raw := acp.NewConnection(nil, b.writer(), b.stdout)
+	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodInitialize,
+		map[string]any{"protocolVersion": acp.ProtocolVersionNumber})
+	require.NoError(t, err)
+	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodSessionNew,
+		map[string]any{"cwd": 5, "mcpServers": []any{}})
+	require.Equal(t, -32602, requestError(t, err).Code)
+	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodSessionNew, []any{"not", "an", "object"})
+	require.Equal(t, -32602, requestError(t, err).Code)
+	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodSessionPrompt,
+		map[string]any{"sessionId": "x", "prompt": "not a list"})
+	require.Equal(t, -32602, requestError(t, err).Code)
+}
+
+// TestWire compares everything the agent writes in one conversation with
+// the file recorded from it. It is the check for a change of encoder: v1
+// and v2 differ in which empty members are left out and in how a nil list
+// is written, and a client sees both. A line is compared as JSON, so the
+// order of members and the spacing do not count.
+//
+// When the agent's output changes on purpose, run the tests once with
+// ACPHARNESS_CONFORMANCE_UPDATE=1 and review the diff of the file.
+func TestWire(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	a := start(t)
+	conn, _ := a.connect()
+	initialize(ctx, t, conn)
+	session := newSession(ctx, t, conn)
+	_, err := conn.Prompt(ctx, acp.PromptRequest{
+		SessionId: session.SessionId,
+		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},
+	})
+	require.NoError(t, err)
+	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "ask"})
+	require.NoError(t, err)
+	_, err = conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{SessionId: session.SessionId, ConfigId: "mode", Value: "auto"},
+	})
+	require.NoError(t, err)
+	_, err = conn.ListSessions(ctx, acp.ListSessionsRequest{})
+	require.Error(t, err)
+	_, err = conn.NewSession(ctx, acp.NewSessionRequest{})
+	require.Error(t, err)
+	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: unknownSession, ModeId: "ask"})
+	require.Error(t, err)
+	_, err = conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: session.SessionId})
+	require.NoError(t, err)
+
+	got := a.normalized()
+	if os.Getenv(envUpdate) != "" {
+		require.NoError(t, os.MkdirAll("testdata", 0o755))
+		require.NoError(t, os.WriteFile(golden, []byte(strings.Join(got, "\n")+"\n"), 0o644))
+		return
+	}
+	recorded, err := os.ReadFile(golden)
+	require.NoError(t, err)
+	want := strings.Split(strings.TrimSuffix(string(recorded), "\n"), "\n")
+	require.Len(t, got, len(want), "the agent wrote:\n%s", strings.Join(got, "\n"))
+	for i := range want {
+		require.JSONEq(t, want[i], got[i], "line %d", i+1)
+	}
+}

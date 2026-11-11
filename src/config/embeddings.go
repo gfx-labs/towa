@@ -31,9 +31,9 @@ var embeddingsDefaults = map[string]any{
 	"embeddings.model":      "",
 	"embeddings.account":    "",
 	"embeddings.dimensions": 0,
-	// Meant to match the default client batch limit of Text Embeddings
-	// Inference, the sidecar the design recommends. Not checked against
-	// TEI: see docs/notes/2026-11-11-auth-2.md.
+	// The default of --max-client-batch-size in Text Embeddings Inference,
+	// the sidecar the design recommends, from the README of
+	// https://github.com/huggingface/text-embeddings-inference.
 	"embeddings.batch_size": 32,
 	// Not measured. It has to cover a sidecar loading its model on the
 	// first request.
