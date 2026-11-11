@@ -43,6 +43,15 @@ The remaining design steps are built by swarm workers in parallel. Each lane own
 - A provider client takes its `*http.Client` from the caller. Nothing but `src/httpclient` builds one.
 - `auth` implements `auth.Source`. Providers only read `auth.Credential`.
 
+## Follow-on lanes
+
+A worker that finishes early takes work that needs nothing from the lanes still running. The same rules apply.
+
+| lane | owns | builds |
+|---|---|---|
+| `agentctx` (second task) | `src/hooks/**`, `src/config/hooks.go` | Hooks: config maps an event (`pre_tool`, `post_tool`, `prompt`, `stop`) and a tool set to a command. The command gets the event as JSON on stdin and answers allow, deny with a reason, or a changed input |
+| `auth` (second task) | `src/auth/**`, `src/embed/**`, `src/config/embeddings.go` | Token storage for MCP OAuth in the auth store, agreed with the `mcp` lane. A record that a refresh token is dead. The client for the OpenAI `/v1/embeddings` shape |
+
 ## After wave 1
 
 The coordinator integrates the lanes, wires `src/cli`, runs the whole check and pushes. Wave 2 then builds what needs wave 1: the dialect adapters, todo and plan, webfetch, conversation search, subagents, compaction, embeddings, Jev, hooks, model chains and the model config option, `session/load` and the other stored-session methods, the `hosts` command, the turn-through-a-proxy test, the conformance suite and the benchmarks.
