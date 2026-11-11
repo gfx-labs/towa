@@ -11,9 +11,11 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"uuid"
@@ -311,7 +313,10 @@ func TestLoadStartsAtTheLatestCompaction(t *testing.T) {
 	}
 }
 
-func TestTornTailIsReported(t *testing.T) {
+// A crash can leave any prefix of the bytes of an append. Whatever the
+// prefix, the session holds the entries of the appends that returned and
+// none of the one that did not, and says that it is torn.
+func TestTornAppendIsAbsentAndReported(t *testing.T) {
 	for _, c := range compressions {
 		t.Run(string(c), func(t *testing.T) {
 			s := open(t, t.TempDir(), c)
@@ -322,64 +327,202 @@ func TestTornTailIsReported(t *testing.T) {
 			path := logFile(t, s, id)
 			intact, err := os.ReadFile(path)
 			require.NoError(t, err)
-			require.NoError(t, s.Append(t.Context(), id, []transcript.Entry{sess.user("three"), sess.text("four")}))
+			require.NoError(t, s.Append(t.Context(), id, []transcript.Entry{
+				sess.user("three"), sess.text("four"), sess.compaction("five"), sess.user("six"),
+			}))
 			full, err := os.ReadFile(path)
 			require.NoError(t, err)
 
-			// A crash can leave any prefix of the last append.
 			for cut := len(intact) + 1; cut < len(full); cut++ {
 				require.NoError(t, os.WriteFile(path, full[:cut], 0o600))
-				_, seq, err := s.Load(t.Context(), id)
+				meta, seq, err := s.Load(t.Context(), id)
 				require.NoError(t, err)
+				assert.Equal(t, whole[1].Time, meta.Updated, "cut at %d", cut)
 				entries, err := collect(t, seq)
-				if c == dir.CompressionNone && full[cut-1] == '\n' {
-					// The plain log has no record around an append, so a
-					// tear between two lines leaves a log that is whole: it
-					// holds the first entries of an append that never
-					// returned.
-					require.NoError(t, err)
-					same(t, append(whole[:2:2], history(t, s, id, store.Range{From: 2})...), entries)
-					require.Len(t, entries, 3)
-					continue
-				}
+				require.ErrorIs(t, err, store.ErrTorn, "cut at %d", cut)
 				var torn *dir.TornError
-				require.ErrorAs(t, err, &torn, "cut at %d", cut)
+				require.ErrorAs(t, err, &torn)
+				assert.Equal(t, int64(len(intact)), torn.Offset, "cut at %d", cut)
 				assert.Equal(t, int64(cut), torn.Size)
-				// The plain log keeps a whole line of a torn append.
-				require.GreaterOrEqual(t, len(entries), len(whole), "cut at %d", cut)
-				same(t, whole, entries[:len(whole)])
-				assert.Less(t, len(entries), 4)
+				same(t, whole, entries)
 
+				seq, err = s.History(t.Context(), id, store.Range{})
+				require.NoError(t, err)
+				entries, err = collect(t, seq)
+				require.ErrorIs(t, err, store.ErrTorn, "cut at %d", cut)
+				same(t, whole, entries)
 				// A range that ends before the tail does not reach it.
 				same(t, whole, history(t, s, id, store.Range{To: 2}))
 			}
 
 			// Nothing is appended after a torn record until it is set aside.
-			next := sess.user("five")
-			var torn *dir.TornError
-			require.ErrorAs(t, s.Append(t.Context(), id, []transcript.Entry{next}), &torn)
+			next := sess.user("seven")
+			require.ErrorIs(t, s.Append(t.Context(), id, []transcript.Entry{next}), store.ErrTorn)
+			require.ErrorIs(t, s.Fork(t.Context(), id, store.Meta{ID: uuid.NewV7(), Cwd: "/work/repo"}), store.ErrTorn)
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
 			require.Equal(t, full[:len(full)-1], after)
 
-			set, err := s.Repair(t.Context(), id)
+			// Through the interface, as the session layer calls it.
+			var st store.Store = s
+			set, err := st.Repair(t.Context(), id)
 			require.NoError(t, err)
-			assert.Equal(t, torn.Size-torn.Offset, set)
+			assert.Equal(t, int64(len(full)-1-len(intact)), set)
 			aside, err := filepath.Glob(filepath.Join(s.SessionDir(id), "torn-*"))
 			require.NoError(t, err)
 			require.Len(t, aside, 1)
 			kept, err := os.ReadFile(aside[0])
 			require.NoError(t, err)
-			assert.Equal(t, full[torn.Offset:len(full)-1], kept)
+			assert.Equal(t, full[len(intact):len(full)-1], kept)
 
 			require.NoError(t, s.Append(t.Context(), id, []transcript.Entry{next}))
 			_, entries := load(t, s, id)
-			assert.Equal(t, next.ID, entries[len(entries)-1].ID)
-			set, err = s.Repair(t.Context(), id)
+			same(t, append(whole, next), entries)
+			set, err = st.Repair(t.Context(), id)
 			require.NoError(t, err)
 			assert.Zero(t, set)
+			_, err = st.Repair(t.Context(), uuid.NewV7())
+			require.ErrorIs(t, err, store.ErrNotFound)
 		})
 	}
+}
+
+// The write of an append is made to fail part way by the process's file
+// size limit, which is a real short write followed by a real error.
+func TestFailedAppendLeavesNoTornRecord(t *testing.T) {
+	// Without this the kernel's signal for the limit ends the process.
+	signal.Ignore(syscall.SIGXFSZ)
+	t.Cleanup(func() { signal.Reset(syscall.SIGXFSZ) })
+	for _, c := range compressions {
+		t.Run(string(c), func(t *testing.T) {
+			s := open(t, t.TempDir(), c)
+			sess := newSession(t, s)
+			id := sess.meta.ID
+			whole := []transcript.Entry{sess.user("one"), sess.text("two")}
+			require.NoError(t, s.Append(t.Context(), id, whole))
+			path := logFile(t, s, id)
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			var limit syscall.Rlimit
+			require.NoError(t, syscall.Getrlimit(syscall.RLIMIT_FSIZE, &limit))
+			short := limit
+			// Room for the start of the next record and no more.
+			short.Cur = uint64(len(before)) + 10
+			require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &short))
+			failed := s.Append(t.Context(), id, []transcript.Entry{sess.user("three"), sess.text("four")})
+			require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limit))
+			require.ErrorIs(t, failed, syscall.EFBIG)
+
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			next := sess.user("five")
+			require.NoError(t, s.Append(t.Context(), id, []transcript.Entry{next}))
+			_, entries := load(t, s, id)
+			same(t, append(whole, next), entries)
+		})
+	}
+}
+
+func TestForkCopiesHistoryAndContent(t *testing.T) {
+	for _, c := range compressions {
+		t.Run(string(c), func(t *testing.T) {
+			s := open(t, t.TempDir(), c)
+			sess := newSession(t, s)
+			source := sess.meta.ID
+			content := []byte("output the fork must still open")
+			stored, err := s.PutBlob(t.Context(), source, "text/plain", bytes.NewReader(content))
+			require.NoError(t, err)
+			shared := []transcript.Entry{sess.user("one"), sess.compaction("summary"), sess.text("two")}
+			require.NoError(t, s.Append(t.Context(), source, shared[:1]))
+			require.NoError(t, s.Append(t.Context(), source, shared[1:]))
+
+			// A store set to the other compression forks in the source's
+			// format, and a session with no content forks too.
+			other := compressions[0]
+			if c == other {
+				other = compressions[1]
+			}
+			forker := open(t, filepath.Dir(s.SessionDir(source)), other)
+			meta := store.Meta{
+				ID: uuid.NewV7(), Cwd: "/work/fork", Title: "forked", Created: sess.now, Updated: sess.now,
+				State: []byte("the fork's own state"),
+			}
+			require.NoError(t, forker.Fork(t.Context(), source, meta))
+			require.ErrorIs(t, forker.Fork(t.Context(), source, meta), fs.ErrExist)
+			require.ErrorIs(t, forker.Fork(t.Context(), uuid.NewV7(), store.Meta{ID: uuid.NewV7(), Cwd: "/w"}), store.ErrNotFound)
+			assert.Equal(t, filepath.Base(logFile(t, s, source)), filepath.Base(logFile(t, s, meta.ID)))
+
+			got, entries := load(t, s, meta.ID)
+			want := meta
+			want.Updated = shared[2].Time
+			assert.Equal(t, want, got)
+			same(t, shared[1:], entries)
+			same(t, shared, history(t, s, meta.ID, store.Range{}))
+
+			// The two diverge, and the source's end does not reach the fork.
+			mine, theirs := sess.user("in the source"), sess.user("in the fork")
+			require.NoError(t, s.Append(t.Context(), source, []transcript.Entry{mine}))
+			require.NoError(t, s.Append(t.Context(), meta.ID, []transcript.Entry{theirs}))
+			same(t, append(shared[:3:3], mine), history(t, s, source, store.Range{}))
+			same(t, append(shared[:3:3], theirs), history(t, s, meta.ID, store.Range{}))
+			require.NoError(t, s.Delete(t.Context(), source))
+			r, err := s.OpenBlob(t.Context(), meta.ID, stored.Hash)
+			require.NoError(t, err)
+			read, err := io.ReadAll(r)
+			require.NoError(t, err)
+			require.NoError(t, r.Close())
+			assert.Equal(t, content, read)
+
+			empty := store.Meta{ID: uuid.NewV7(), Cwd: "/work/fork", Created: sess.now, Updated: sess.now}
+			bare := newSession(t, s)
+			require.NoError(t, s.Fork(t.Context(), bare.meta.ID, empty))
+			_, entries = load(t, s, empty.ID)
+			assert.Empty(t, entries)
+		})
+	}
+}
+
+func TestSweepRemovesWhatACrashLeft(t *testing.T) {
+	root := t.TempDir()
+	s := open(t, root, dir.CompressionNone)
+	swept, err := open(t, filepath.Join(root, "missing"), dir.CompressionNone).Sweep(t.Context())
+	require.NoError(t, err)
+	assert.Zero(t, swept)
+
+	sess := newSession(t, s)
+	require.NoError(t, s.Append(t.Context(), sess.meta.ID, []transcript.Entry{sess.user("kept")}))
+	// What a crash leaves: Create before its rename, Delete after its own.
+	half := filepath.Join(root, "."+uuid.NewV7().String()+".creating")
+	require.NoError(t, os.Mkdir(half, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(half, "meta.json"), []byte("{"), 0o600))
+	gone := filepath.Join(root, "."+uuid.NewV7().String()+".deleting")
+	require.NoError(t, os.CopyFS(gone, os.DirFS(s.SessionDir(sess.meta.ID))))
+	// One that a running call holds, as build and Delete hold theirs.
+	busy := filepath.Join(root, "."+uuid.NewV7().String()+".creating")
+	require.NoError(t, os.Mkdir(busy, 0o700))
+	held, err := os.Open(busy)
+	require.NoError(t, err)
+	require.NoError(t, syscall.Flock(int(held.Fd()), syscall.LOCK_EX))
+
+	listed, err := s.List(t.Context(), store.Filter{})
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	swept, err = s.Sweep(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 2, swept)
+	assert.NoDirExists(t, half)
+	assert.NoDirExists(t, gone)
+	assert.DirExists(t, busy)
+	_, entries := load(t, s, sess.meta.ID)
+	assert.Len(t, entries, 1)
+
+	require.NoError(t, held.Close())
+	swept, err = s.Sweep(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 1, swept)
+	assert.NoDirExists(t, busy)
 }
 
 func TestCorruptLogIsReported(t *testing.T) {
@@ -509,12 +652,15 @@ func TestSessions(t *testing.T) {
 	require.NoError(t, s.Create(t.Context(), child))
 	require.ErrorIs(t, s.Create(t.Context(), child), fs.ErrExist)
 
-	// SetMeta changes only what the contract lets it change.
+	// SetMeta changes only what the contract lets it change. The state is
+	// not text and not JSON: the store returns the bytes it was given.
+	state := []byte{0x00, 0xff, '{', '"', '\n', 0x80}
 	change := parent.meta
 	change.Title, change.Cwd, change.Created = "second", "/somewhere/else", now.Add(time.Hour)
+	change.Archived, change.State = true, state
 	require.NoError(t, s.SetMeta(t.Context(), change))
 	want := parent.meta
-	want.Title = "second"
+	want.Title, want.Archived, want.State = "second", true, state
 	got, _ := load(t, s, parent.meta.ID)
 	assert.Equal(t, want, got)
 
@@ -527,6 +673,9 @@ func TestSessions(t *testing.T) {
 		{"cwd", store.Filter{Cwd: "/work/repo"}, []store.Meta{want}},
 		{"parent", store.Filter{ParentID: parent.meta.ID}, []store.Meta{child}},
 		{"both", store.Filter{Cwd: "/work/repo", ParentID: parent.meta.ID}, nil},
+		{"archived", store.Filter{Archived: store.ArchivedOnly}, []store.Meta{want}},
+		{"not archived", store.Filter{Archived: store.ArchivedExclude}, []store.Meta{child}},
+		{"archived in another cwd", store.Filter{Archived: store.ArchivedOnly, Cwd: "/work/elsewhere"}, nil},
 	} {
 		listed, err := s.List(t.Context(), tc.filter)
 		require.NoError(t, err, tc.name)

@@ -33,6 +33,10 @@ const (
 	metaName  = "meta.json"
 	logName   = "log.jsonl"
 	blobsName = "blobs"
+
+	// The names a session's directory has while it is built or removed.
+	creatingSuffix = ".creating"
+	deletingSuffix = ".deleting"
 )
 
 // Sessions hold conversations, so only the owner can read them.
@@ -133,6 +137,19 @@ func (s *Store) SessionDir(id uuid.UUID) string {
 // Create adds a session. Creating an id the store already holds is an error
 // that wraps fs.ErrExist.
 func (s *Store) Create(ctx context.Context, meta store.Meta) error {
+	return s.build(ctx, meta, func(building string) error {
+		log, err := os.OpenFile(logPath(building, s.create1), os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
+		if err != nil {
+			return err
+		}
+		return log.Close()
+	})
+}
+
+// build makes a session's directory under a hidden name, has fill put the
+// log in it, and renames it into place, so that a crash leaves a whole
+// session or none.
+func (s *Store) build(ctx context.Context, meta store.Meta, fill func(building string) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -151,47 +168,115 @@ func (s *Store) Create(ctx context.Context, meta store.Meta) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	// The directory is built under a hidden name and renamed, so that a
-	// crash leaves either a whole session or none. What a crashed Create of
-	// the same id left behind was never reported as created.
-	building := filepath.Join(s.root, "."+meta.ID.String()+".creating")
+	// What a crashed Create of the same id left behind was never reported
+	// as created.
+	building := filepath.Join(s.root, "."+meta.ID.String()+creatingSuffix)
 	if err := os.RemoveAll(building); err != nil {
 		return err
 	}
 	if err := os.Mkdir(building, dirMode); err != nil {
 		return err
 	}
-	if err := s.create(building, final, meta); err != nil {
+	// The lock tells Sweep that the directory is in use.
+	held, err := lockDir(building)
+	if err != nil {
+		return errors.Join(err, os.RemoveAll(building))
+	}
+	defer held.Close() //nolint:errcheck // Nothing is written through it: closing drops the lock.
+	err = func() error {
+		data, err := json.Marshal(meta)
+		if err != nil {
+			return err
+		}
+		if err := s.writeFile(filepath.Join(building, metaName), data); err != nil {
+			return err
+		}
+		if err := fill(building); err != nil {
+			return err
+		}
+		if err := s.syncDir(building); err != nil {
+			return err
+		}
+		if err := os.Rename(building, final); err != nil {
+			return err
+		}
+		return s.syncDir(s.root)
+	}()
+	if err != nil {
 		return errors.Join(err, os.RemoveAll(building))
 	}
 	return nil
 }
 
-func (s *Store) create(building, final string, meta store.Meta) error {
-	data, err := json.Marshal(meta)
+// lockDir takes an exclusive lock on a directory without waiting.
+func lockDir(path string) (*os.File, error) {
+	d, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := s.writeFile(filepath.Join(building, metaName), data); err != nil {
-		return err
+	if err := syscall.Flock(int(d.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return nil, errors.Join(err, d.Close())
 	}
-	log, err := os.OpenFile(logPath(building, s.create1), os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
-	if err != nil {
-		return err
-	}
-	if err := log.Close(); err != nil {
-		return err
-	}
-	if err := s.syncDir(building); err != nil {
-		return err
-	}
-	if err := os.Rename(building, final); err != nil {
-		return err
-	}
-	return s.syncDir(s.root)
+	return d, nil
 }
 
-// SetMeta replaces the Title, Model, Mode and Dirs of a session.
+// Sweep removes what a crash during Create, Fork or Delete left under the
+// root: a directory that never became a session, or one that had stopped
+// being one. It returns how many it removed. A directory that a running
+// call holds is left alone. Nothing calls Sweep on its own: New does no
+// I/O, so the program runs it when it starts.
+func (s *Store) Sweep(ctx context.Context) (int, error) {
+	names, err := os.ReadDir(s.root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
+		if !leftover(name.Name()) {
+			continue
+		}
+		path := filepath.Join(s.root, name.Name())
+		held, err := lockDir(path)
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, fs.ErrNotExist) {
+			// In use, or finished since the root was read.
+			continue
+		}
+		if err != nil {
+			return removed, err
+		}
+		err = os.RemoveAll(path)
+		if err = errors.Join(err, held.Close()); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
+// leftover reports whether name is one build or Delete gives a directory
+// while it works on it.
+func leftover(name string) bool {
+	rest, hidden := strings.CutPrefix(name, ".")
+	if !hidden {
+		return false
+	}
+	for _, suffix := range []string{creatingSuffix, deletingSuffix} {
+		if id, ok := strings.CutSuffix(rest, suffix); ok {
+			parsed, err := uuid.Parse(id)
+			return err == nil && parsed.String() == id
+		}
+	}
+	return false
+}
+
+// SetMeta replaces the Title, Model, Mode, Dirs, Archived and State of a
+// session.
 func (s *Store) SetMeta(ctx context.Context, meta store.Meta) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -206,6 +291,7 @@ func (s *Store) SetMeta(ctx context.Context, meta store.Meta) error {
 		return err
 	}
 	stored.Title, stored.Model, stored.Mode, stored.Dirs = meta.Title, meta.Model, meta.Mode, meta.Dirs
+	stored.Archived, stored.State = meta.Archived, meta.State
 	data, err := json.Marshal(stored)
 	if err != nil {
 		return err
@@ -229,8 +315,9 @@ func (s *Store) List(ctx context.Context, filter store.Filter) ([]store.Meta, er
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		// A hidden name is a session being created or deleted.
-		if strings.HasPrefix(name.Name(), ".") {
+		// A session being created or deleted. Sweep removes one that a
+		// crash left.
+		if leftover(name.Name()) {
 			continue
 		}
 		id, err := uuid.Parse(name.Name())
@@ -252,6 +339,19 @@ func (s *Store) List(ctx context.Context, filter store.Filter) ([]store.Meta, er
 		if filter.ParentID != uuid.Nil() && meta.ParentID != filter.ParentID {
 			continue
 		}
+		switch filter.Archived {
+		case store.ArchivedAny:
+		case store.ArchivedExclude:
+			if meta.Archived {
+				continue
+			}
+		case store.ArchivedOnly:
+			if !meta.Archived {
+				continue
+			}
+		default:
+			return nil, fmt.Errorf("store/dir: archived filter %d is not valid", filter.Archived)
+		}
 		metas = append(metas, meta)
 	}
 	return metas, nil
@@ -271,10 +371,17 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 	defer log.Close() //nolint:errcheck // Read only: closing drops the lock and cannot lose data.
 	// Renamed first, so that a crash cannot leave half a session under its
 	// id.
-	doomed := filepath.Join(s.root, "."+id.String()+".deleting")
+	doomed := filepath.Join(s.root, "."+id.String()+deletingSuffix)
 	if err := os.RemoveAll(doomed); err != nil {
 		return err
 	}
+	// Locked before it has its hidden name, so that Sweep never finds it
+	// without its lock.
+	held, err := lockDir(s.SessionDir(id))
+	if err != nil {
+		return err
+	}
+	defer held.Close() //nolint:errcheck // Nothing is written through it: closing drops the lock.
 	if err := os.Rename(s.SessionDir(id), doomed); err != nil {
 		return err
 	}

@@ -1,14 +1,12 @@
 package dir
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"iter"
 	"os"
@@ -31,7 +29,7 @@ const readChunk = 64 << 10
 // TornError reports a log that ends in a record that was not written whole,
 // which a crash during Append leaves behind. The entries before Offset are
 // intact. Nothing is appended to the session until Repair has set the torn
-// bytes aside.
+// bytes aside. It matches store.ErrTorn.
 type TornError struct {
 	Path string
 	// Offset is where the torn record starts, and Size is the log's size.
@@ -42,7 +40,11 @@ func (e *TornError) Error() string {
 	return fmt.Sprintf("store/dir: %s ends in a torn record: %d bytes from offset %d", e.Path, e.Size-e.Offset, e.Offset)
 }
 
-// logFormat is how entries are laid out in a log file.
+// Is makes errors.Is(err, store.ErrTorn) true.
+func (e *TornError) Is(target error) bool { return target == store.ErrTorn }
+
+// logFormat is how entries are laid out in a log file. In every format an
+// Append is one record, so that a crash leaves all of its entries or none.
 type logFormat interface {
 	fileName() string
 	// end returns where the last whole record of a log of the given size
@@ -304,7 +306,7 @@ func (s *Store) History(ctx context.Context, id uuid.UUID, r store.Range) (iter.
 // Repair sets the torn tail of a session's log aside, in a file named
 // torn-<offset> in the session's directory, and cuts the log back to its
 // last whole record. It returns the number of bytes set aside, which is
-// zero for a log that is not torn.
+// zero for a log that is not torn. The file is never removed by the store.
 func (s *Store) Repair(ctx context.Context, id uuid.UUID) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -338,187 +340,6 @@ func (s *Store) repair(f *os.File, format logFormat, dir string) (int64, error) 
 	}
 	s.syncs.Add(1)
 	return int64(len(torn)), f.Sync()
-}
-
-// plainFormat is one JSON value per line, with nothing else in the file.
-type plainFormat struct{}
-
-func (plainFormat) fileName() string { return logName }
-
-func (plainFormat) end(f *os.File, size int64) (int64, error) {
-	if size == 0 {
-		return 0, nil
-	}
-	// A whole record ends in a newline, so an intact log costs one byte.
-	var last [1]byte
-	if _, err := f.ReadAt(last[:], size-1); err != nil {
-		return 0, err
-	}
-	if last[0] == '\n' {
-		return size, nil
-	}
-	buf := make([]byte, readChunk)
-	for pos := size; pos > 0; {
-		n := min(int64(len(buf)), pos)
-		pos -= n
-		if _, err := f.ReadAt(buf[:n], pos); err != nil {
-			return 0, err
-		}
-		if i := bytes.LastIndexByte(buf[:n], '\n'); i >= 0 {
-			return pos + int64(i) + 1, nil
-		}
-	}
-	return 0, nil
-}
-
-func (plainFormat) frame(dst *bytebufferpool.ByteBuffer, lines []byte, _ int, _ bool) error {
-	_, err := dst.Write(lines)
-	return err
-}
-
-func (plainFormat) lastLine(f *os.File, end int64) ([]byte, error) {
-	var last []byte
-	err := linesBack(f, end, func(_ int64, line []byte) (bool, error) {
-		last = bytes.Clone(line)
-		return true, nil
-	})
-	return last, err
-}
-
-func (p plainFormat) context(f *os.File, end int64) iter.Seq2[transcript.Entry, error] {
-	return func(yield func(transcript.Entry, error) bool) {
-		// The latest compaction is found by reading back from the end, so
-		// what is before it is never read.
-		var from int64
-		err := linesBack(f, end, func(offset int64, line []byte) (bool, error) {
-			found, err := isCompaction(line)
-			if err != nil {
-				return false, &CorruptError{Offset: offset, Err: err}
-			}
-			from = offset
-			return found, nil
-		})
-		if err != nil {
-			yield(transcript.Entry{}, err)
-			return
-		}
-		// Without a compaction the scan stopped at the first line.
-		p.forward(f, from, end, store.Range{})(yield)
-	}
-}
-
-func (p plainFormat) history(f *os.File, end int64, r store.Range) iter.Seq2[transcript.Entry, error] {
-	return p.forward(f, 0, end, r)
-}
-
-// forward yields the entries at the positions in r, counting from the line
-// at offset from.
-func (plainFormat) forward(f *os.File, from, end int64, r store.Range) iter.Seq2[transcript.Entry, error] {
-	return func(yield func(transcript.Entry, error) bool) {
-		lines := lineReader{r: bufio.NewReaderSize(io.NewSectionReader(f, from, end-from), readChunk), offset: from}
-		for position := 0; r.To == 0 || position < r.To; position++ {
-			offset := lines.offset
-			line, err := lines.next()
-			if errors.Is(err, io.EOF) {
-				return
-			}
-			if err != nil {
-				yield(transcript.Entry{}, err)
-				return
-			}
-			if position < r.From {
-				continue
-			}
-			e, err := decodeLine(line)
-			if err != nil {
-				yield(transcript.Entry{}, &CorruptError{Offset: offset, Err: err})
-				return
-			}
-			if !yield(e, nil) {
-				return
-			}
-		}
-	}
-}
-
-// lineReader reads lines of any length. A line is valid until the next call.
-type lineReader struct {
-	r      *bufio.Reader
-	long   []byte
-	offset int64
-}
-
-func (l *lineReader) next() ([]byte, error) {
-	line, err := l.r.ReadSlice('\n')
-	if errors.Is(err, bufio.ErrBufferFull) {
-		l.long = append(l.long[:0], line...)
-		for errors.Is(err, bufio.ErrBufferFull) {
-			line, err = l.r.ReadSlice('\n')
-			l.long = append(l.long, line...)
-		}
-		line = l.long
-	}
-	if err != nil {
-		// The section ends in a newline, so the end comes with no bytes.
-		return nil, err
-	}
-	l.offset += int64(len(line))
-	return line[:len(line)-1], nil
-}
-
-// linesBack calls visit with each line before end and its offset, the last
-// line first, until visit returns true. The log before end ends in a
-// newline. A line is valid until visit returns.
-func linesBack(f io.ReaderAt, end int64, visit func(offset int64, line []byte) (bool, error)) error {
-	buf := make([]byte, readChunk)
-	// tail holds the start of the line being assembled, which is at pos.
-	// Its pieces are kept apart until the line's first byte is found, so
-	// that a long line is copied once.
-	var tail [][]byte
-	var line []byte
-	emit := func(offset int64, head []byte) (bool, error) {
-		if len(tail) == 0 {
-			return visit(offset, head[:len(head)-1])
-		}
-		line = append(line[:0], head...)
-		for i := len(tail) - 1; i >= 0; i-- {
-			line = append(line, tail[i]...)
-		}
-		tail = tail[:0]
-		return visit(offset, line[:len(line)-1])
-	}
-	for pos := end; pos > 0; {
-		n := min(int64(len(buf)), pos)
-		pos -= n
-		chunk := buf[:n]
-		if _, err := f.ReadAt(chunk, pos); err != nil {
-			return err
-		}
-		// hi is the end of the line being looked for. The newline that ends
-		// it is the last byte of the chunk on the first pass, or is in tail.
-		hi := len(chunk)
-		for {
-			search := hi
-			if len(tail) == 0 {
-				search = hi - 1
-			}
-			i := bytes.LastIndexByte(chunk[:search], '\n')
-			if i < 0 {
-				break
-			}
-			stop, err := emit(pos+int64(i)+1, chunk[i+1:hi])
-			if err != nil || stop {
-				return err
-			}
-			hi = i + 1
-		}
-		if pos == 0 {
-			_, err := emit(0, chunk[:hi])
-			return err
-		}
-		tail = append(tail, bytes.Clone(chunk[:hi]))
-	}
-	return nil
 }
 
 // logPath is where a format keeps a session's log.

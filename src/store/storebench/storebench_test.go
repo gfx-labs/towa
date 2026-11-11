@@ -134,9 +134,11 @@ func TestRunMeasuresTheDirectoryBackend(t *testing.T) {
 	// The backend's promise that a turn costs one fsync.
 	assert.Equal(t, int64(30), plain.Syncs)
 	assert.Equal(t, int64(30), compressed.Syncs)
-	// The plain log is the payload and the session's metadata.
-	assert.Equal(t, plain.PayloadBytes, plain.WrittenBytes)
-	assert.Greater(t, plain.DiskBytes, plain.PayloadBytes)
+	// The plain log is the payload, a commit line for each append and the
+	// session's metadata: nothing is written twice.
+	assert.Greater(t, plain.WrittenBytes, plain.PayloadBytes)
+	assert.Less(t, plain.WrittenBytes, plain.DiskBytes)
+	assert.Less(t, float64(plain.DiskBytes), 1.01*float64(plain.PayloadBytes))
 	assert.Less(t, compressed.DiskBytes, plain.DiskBytes)
 	// The last compaction starts turn 30, which has 13 entries with it.
 	assert.Equal(t, 13, plain.LoadEntries)
