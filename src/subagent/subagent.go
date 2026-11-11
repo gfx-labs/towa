@@ -227,8 +227,15 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 	child.Sendable = func(acp.SessionUpdate) bool { return true }
 
 	res, err := runner.Run(context.WithValue(ctx, depthKey{}, at+1), child)
+	charged := false
+	if res.Usage != nil {
+		charged = loop.Spend(ctx, usage(*res.Usage))
+	}
 	if err != nil {
-		failed := &Error{Kind: KindFailed, SessionID: child.SessionID, Err: err}
+		failed := &Error{
+			Kind: KindFailed, SessionID: child.SessionID, Err: err,
+			Usage: res.Usage, Charged: charged, StopReason: res.StopReason,
+		}
 		var stop *loop.StopError
 		switch {
 		case errors.As(err, &stop):
@@ -237,10 +244,6 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 			failed.Kind = KindCancelled
 		}
 		return Result{}, failed
-	}
-	charged := false
-	if res.Usage != nil {
-		charged = loop.Spend(ctx, usage(*res.Usage))
 	}
 	ended := &Error{SessionID: child.SessionID, StopReason: res.StopReason, Usage: res.Usage, Charged: charged}
 	switch {
