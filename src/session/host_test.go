@@ -109,13 +109,13 @@ func TestSessionMovesBetweenConnectionsOfOneProcess(t *testing.T) {
 	require.NoError(t, <-secondServed)
 
 	// It is still in the store, with both answered turns, and the first
-	// connection is untouched by the other's end.
-	first.Send(
-		request(`4`, "session/status", `{"sessionId":"`+id+`"}`),
-		request(`5`, "session/resume", `{"sessionId":"`+id+`","cwd":"/work"}`),
-	)
-	got, _ = first.Await(`4`, `5`)
+	// connection is untouched by the other's end. Requests run concurrently,
+	// so the status is read before the resume attaches the session.
+	first.Send(request(`4`, "session/status", `{"sessionId":"`+id+`"}`))
+	got, _ = first.Await(`4`)
 	require.JSONEq(t, `{"status":"saved"}`, string(got[`4`].Result))
+	first.Send(request(`5`, "session/resume", `{"sessionId":"`+id+`","cwd":"/work"}`))
+	got, _ = first.Await(`5`)
 	require.Nil(t, got[`5`].Error)
 	first.Send(prompt(`6`, id, "third"))
 	got, _ = first.Await(`6`)

@@ -290,7 +290,10 @@ func TestLoadStartsAtTheLatestCompaction(t *testing.T) {
 				require.NoError(t, s.Append(t.Context(), id, entries))
 				all = append(all, entries...)
 			}
+			before := s.Stats().Syncs
 			add(sess.user("one"), sess.text(long))
+			// An append costs one fsync, however many entries it holds.
+			assert.Equal(t, int64(1), s.Stats().Syncs-before)
 			_, entries = load(t, s, id)
 			same(t, all, entries)
 

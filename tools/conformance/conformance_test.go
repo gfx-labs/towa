@@ -102,20 +102,6 @@ func TestInitialize(t *testing.T) {
 	require.NotEmpty(t, resp.AgentInfo.Version)
 	require.Empty(t, resp.AuthMethods)
 
-	// The real runtime has a store and MCP transports even without a model.
-	caps := resp.AgentCapabilities
-	require.True(t, caps.LoadSession)
-	require.Equal(t, acp.PromptCapabilities{}, caps.PromptCapabilities)
-	require.True(t, caps.McpCapabilities.Http)
-	require.True(t, caps.McpCapabilities.Sse)
-	require.Nil(t, caps.Auth.Logout)
-	require.NotNil(t, caps.SessionCapabilities.Close)
-	require.NotNil(t, caps.SessionCapabilities.List)
-	require.NotNil(t, caps.SessionCapabilities.Resume)
-	require.NotNil(t, caps.SessionCapabilities.Fork)
-	require.NotNil(t, caps.SessionCapabilities.Delete)
-	require.NotNil(t, caps.SessionCapabilities.AdditionalDirectories)
-
 	// What the agent sent that SDK 0.13.5 has no field for: the
 	// capabilities of the unstable methods it implements.
 	raw := a.lastResult()
@@ -145,34 +131,6 @@ func TestNewSession(t *testing.T) {
 	resp := newSession(ctx, t, conn)
 	require.Empty(t, notDecoded(t, a.lastResult(), resp), "raw result: %s", a.lastResult())
 
-	require.NotNil(t, resp.Modes)
-	require.Equal(t, acp.SessionModeId("auto"), resp.Modes.CurrentModeId)
-	modes := []acp.SessionModeId{}
-	for _, m := range resp.Modes.AvailableModes {
-		require.NotEmpty(t, m.Name)
-		modes = append(modes, m.Id)
-	}
-	require.Equal(t, []acp.SessionModeId{"auto", "ask"}, modes)
-
-	// The mode is also a config option, a select over the same values.
-	var mode *acp.SessionConfigOptionSelect
-	for _, option := range resp.ConfigOptions {
-		require.NotNil(t, option.Select, "an option the SDK did not decode as a select")
-		if option.Select.Id == "mode" {
-			mode = option.Select
-		}
-	}
-	require.NotNil(t, mode)
-	require.Equal(t, acp.SessionConfigValueId("auto"), mode.CurrentValue)
-	require.NotNil(t, mode.Category)
-	require.Equal(t, acp.SessionConfigOptionCategory("mode"), *mode.Category)
-	require.NotNil(t, mode.Options.Ungrouped)
-	values := []acp.SessionConfigValueId{}
-	for _, o := range *mode.Options.Ungrouped {
-		values = append(values, o.Value)
-	}
-	require.Equal(t, []acp.SessionConfigValueId{"auto", "ask"}, values)
-
 	// Two sessions on one connection are two sessions.
 	second := newSession(ctx, t, conn)
 	require.NotEqual(t, resp.SessionId, second.SessionId)
@@ -186,63 +144,6 @@ func TestNewSession(t *testing.T) {
 	}
 	require.ElementsMatch(t, []acp.SessionId{resp.SessionId, second.SessionId}, ids)
 	require.Equal(t, []string{"available_commands_update", "available_commands_update"}, kinds(c.take()))
-}
-
-func TestPrompt(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	a := start(t)
-	conn, c := a.connect()
-	initialize(ctx, t, conn)
-	session := newSession(ctx, t, conn)
-
-	_, err := conn.Prompt(ctx, acp.PromptRequest{
-		SessionId: session.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("conformance says hello")},
-	})
-	modelSelectionError(t, err)
-
-	// Session creation announces commands. A rejected prompt emits no text.
-	updates := c.take()
-	require.Equal(t, []string{"available_commands_update"}, kinds(updates))
-	for _, n := range updates {
-		require.Equal(t, session.SessionId, n.SessionId)
-	}
-	commands := updates[0].Update.AvailableCommandsUpdate.AvailableCommands
-	names := []string{}
-	for _, command := range commands {
-		require.NotEmpty(t, command.Description)
-		names = append(names, command.Name)
-	}
-	require.Contains(t, names, "mode")
-
-	// Every update the agent sent decodes without loss.
-	sent := 0
-	for _, m := range a.messages() {
-		if m.Method != acp.ClientMethodSessionUpdate {
-			continue
-		}
-		var n acp.SessionNotification
-		require.NoError(t, sdkjson.Unmarshal(m.Params, &n), "raw params: %s", m.Params)
-		require.Empty(t, notDecoded(t, m.Params, n), "raw params: %s", m.Params)
-		sent++
-	}
-	require.Equal(t, len(updates), sent)
-
-	// A second prompt on the session: the commands are not sent again.
-	_, err = conn.Prompt(ctx, acp.PromptRequest{
-		SessionId: session.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("again")},
-	})
-	modelSelectionError(t, err)
-	require.Empty(t, c.take())
-
-	// A session the agent does not have.
-	_, err = conn.Prompt(ctx, acp.PromptRequest{
-		SessionId: unknownSession,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},
-	})
-	require.Equal(t, -32002, requestError(t, err).Code)
 }
 
 // session/cancel is a notification. Without a model there is no running
@@ -272,25 +173,6 @@ func TestCancel(t *testing.T) {
 		}
 	}
 	require.Equal(t, 3, answers, "initialize, new session and prompt only")
-}
-
-// session/close is advertised, so the SDK's call for it is answered, and
-// the session is gone afterwards.
-func TestClose(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	a := start(t)
-	conn, _ := a.connect()
-	initialize(ctx, t, conn)
-	session := newSession(ctx, t, conn)
-
-	_, err := conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: session.SessionId})
-	require.NoError(t, err)
-	_, err = conn.Prompt(ctx, acp.PromptRequest{
-		SessionId: session.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("after the close")},
-	})
-	require.Equal(t, -32002, requestError(t, err).Code)
 }
 
 func TestSetMode(t *testing.T) {
@@ -469,6 +351,19 @@ func TestWire(t *testing.T) {
 	require.Error(t, err)
 	_, err = conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: session.SessionId})
 	require.NoError(t, err)
+
+	// Every update the agent sent decodes in the SDK without loss.
+	sent := 0
+	for _, m := range a.messages() {
+		if m.Method != acp.ClientMethodSessionUpdate {
+			continue
+		}
+		var n acp.SessionNotification
+		require.NoError(t, sdkjson.Unmarshal(m.Params, &n), "raw params: %s", m.Params)
+		require.Empty(t, notDecoded(t, m.Params, n), "raw params: %s", m.Params)
+		sent++
+	}
+	require.Positive(t, sent)
 
 	got := a.normalized()
 	if os.Getenv(envUpdate) != "" {

@@ -168,8 +168,7 @@ func (s *Store) append(f *os.File, format logFormat, lines []byte, count int, co
 		return err
 	}
 	// One write, so that a crash tears at most the record being added.
-	n, err := f.WriteAt(out.B, size)
-	s.written.Add(int64(n))
+	_, err = f.WriteAt(out.B, size)
 	if err == nil {
 		s.syncs.Add(1)
 		err = f.Sync()

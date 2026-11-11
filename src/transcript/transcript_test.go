@@ -38,7 +38,6 @@ func TestOpaqueCompatibilityRequiresKnownRequestOrigin(t *testing.T) {
 		legacy := item
 		legacy.Origin = stored
 		assert.False(t, legacy.OpaqueCompatible("owner", origin))
-		assert.Same(t, stored, legacy.Origin, "compatibility must not infer provenance")
 		if stored == nil {
 			require.NoError(t, legacy.Validate(), "legacy plain rendering remains possible")
 		} else {

@@ -28,11 +28,6 @@ const (
 	SectionClient = "client"
 )
 
-// instructionSections are the default instructions, which a client's
-// override replaces. The other sections are context from the workspace and
-// from configuration, which the ACP schema allows an agent to keep.
-var instructionSections = []string{SectionPrompt, SectionTools, SectionRules}
-
 var builtinSections = []string{
 	SectionPrompt, SectionTools, SectionRules, SectionProjectContext, SectionSkills, SectionWorkDir, SectionClient,
 }
@@ -145,16 +140,6 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 		add(SectionClient, client)
 	}
 	return blocks, nil
-}
-
-// IsInstructionSection reports whether an override replaces the section.
-func IsInstructionSection(name string) bool {
-	for _, n := range instructionSections {
-		if n == name {
-			return true
-		}
-	}
-	return false
 }
 
 // clientText checks the client's systemPrompt and returns its text.

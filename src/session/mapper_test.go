@@ -17,7 +17,7 @@ import (
 )
 
 func TestRuntimeMapperReplaysForkedSourceHistory(t *testing.T) {
-	for _, kind := range []string{"runtime", "nil runtime mapper", "empty runtime mapper", "legacy"} {
+	for _, kind := range []string{"runtime", "nil runtime mapper", "empty runtime mapper"} {
 		t.Run(kind, func(t *testing.T) {
 			st, err := dir.New(dir.Options{Root: t.TempDir(), Compression: dir.CompressionZstd})
 			require.NoError(t, err)
@@ -25,18 +25,16 @@ func TestRuntimeMapperReplaysForkedSourceHistory(t *testing.T) {
 			options.Store = st
 			options.Mapper = loop.Mapper{ContextSize: func(string) (int, bool) { return 100, true }}
 			var opened atomic.Int32
-			if kind != "legacy" {
-				options.Open = func(context.Context, loop.Turn) (session.Runtime, error) {
-					opened.Add(1)
-					runtime := session.Runtime{Turn: storedTurn(st)}
-					switch kind {
-					case "runtime":
-						runtime.Mapper = &loop.Mapper{ContextSize: func(model string) (int, bool) { return 200, model == "session-model" }}
-					case "empty runtime mapper":
-						runtime.Mapper = &loop.Mapper{}
-					}
-					return runtime, nil
+			options.Open = func(context.Context, loop.Turn) (session.Runtime, error) {
+				opened.Add(1)
+				runtime := session.Runtime{Turn: storedTurn(st)}
+				switch kind {
+				case "runtime":
+					runtime.Mapper = &loop.Mapper{ContextSize: func(model string) (int, bool) { return 200, model == "session-model" }}
+				case "empty runtime mapper":
+					runtime.Mapper = &loop.Mapper{}
 				}
+				return runtime, nil
 			}
 			host, err := session.NewHost(options)
 			require.NoError(t, err)
@@ -86,9 +84,7 @@ func TestRuntimeMapperReplaysForkedSourceHistory(t *testing.T) {
 				require.Equal(t, size, usages[0].Size)
 			}
 			commandNotification(t, w, id)
-			if kind != "legacy" {
-				require.Equal(t, int32(3), opened.Load(), "new, fork and load each prepare once, replay does not reopen")
-			}
+			require.Equal(t, int32(3), opened.Load(), "new, fork and load each prepare once, replay does not reopen")
 		})
 	}
 }

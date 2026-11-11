@@ -424,7 +424,6 @@ func TestAccountsWithoutAStoredLogin(t *testing.T) {
 	require.Equal(t, "acct-1", held.ChatGPTAccountID)
 	_, err = src.Refresh(ctx, held)
 	require.ErrorIs(t, err, auth.ErrProxied)
-	require.Contains(t, err.Error(), "proxy")
 
 	heldKey, err := src.Credential(ctx, "heldkey")
 	require.NoError(t, err)

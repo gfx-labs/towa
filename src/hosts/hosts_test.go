@@ -130,16 +130,9 @@ command = "mcp-files"
 	}, addresses(report))
 	require.IsIncreasingf(t, hostLines(report), "hosts are sorted")
 
-	// What is left out is said: the server without a stored login, the
-	// stdio server, and webfetch, which no list can hold.
-	gaps := strings.Join(report.NotCovered, "\n")
-	require.Contains(t, gaps, `mcp.servers[1]: "tickets" has no stored login`)
-	require.NotContains(t, gaps, `"docs" has no stored login`)
-	require.Contains(t, gaps, `mcp.servers[2]: "files" is a stdio server`)
-	require.Contains(t, gaps, "webfetch: the tool fetches any URL the model names, so it reaches any host")
-	for _, h := range report.Hosts {
-		require.NotContains(t, h.Key, "webfetch")
-	}
+	// The stdio server is said to be left out. The CLI test owns the rest of
+	// this wording.
+	require.Contains(t, strings.Join(report.NotCovered, "\n"), `mcp.servers[2]: "files" is a stdio server`)
 }
 
 // What the configuration turns on and List was given no URL for is an

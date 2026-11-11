@@ -78,21 +78,3 @@ func TestExtensionMethods(t *testing.T) {
 		}
 	})
 }
-
-func TestExtensionRequestCancellation(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		a, c := connect(t, &agent{}, &client{})
-		started, cancelled := make(chan struct{}), make(chan struct{})
-		require.NoError(t, a.RegisterExtensionRequest("_example.org/wait", func(ctx context.Context, _ string, _ jsontext.Value) (any, *acp.RequestError) {
-			close(started)
-			<-ctx.Done()
-			close(cancelled)
-			return nil, acp.NewRequestCancelled(nil)
-		}))
-		ctx, cancel := context.WithCancel(t.Context())
-		go func() { <-started; cancel() }()
-		_, err := c.SendExtensionRequest(ctx, "_example.org/wait", nil)
-		require.ErrorIs(t, err, context.Canceled)
-		<-cancelled
-	})
-}

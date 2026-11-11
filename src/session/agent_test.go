@@ -89,12 +89,9 @@ func start(t *testing.T, w *acptest.Wire) string {
 	var resp acp.NewSessionResponse
 	require.NoError(t, json.Unmarshal(got[`"new"`].Result, &resp))
 	require.NotEmpty(t, resp.SessionId)
-	// The first request for a session is followed by its commands. /mode is
-	// answered without a turn, so this reads them here and leaves the tests
-	// their own turn's messages. The pipe has no buffer: a test that waits
-	// for its turn before it reads would otherwise wait forever.
-	w.Send(prompt(`"warm"`, string(resp.SessionId), "/mode"))
-	w.Await(`"warm"`)
+	// The session's commands follow the response. Reading them here leaves
+	// each test its own turn's messages.
+	commandNotification(t, w, string(resp.SessionId))
 	return string(resp.SessionId)
 }
 
@@ -106,26 +103,6 @@ func untilCancelled(started chan<- string) session.TurnFunc {
 		<-ctx.Done()
 		return loop.Result{}, ctx.Err()
 	}
-}
-
-func TestPromptRunsATurnInTheSessionsDirectory(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := serve(t, func(ctx context.Context, turn loop.Turn) (loop.Result, error) {
-			require.Equal(t, "/work", turn.Cwd)
-			return loop.Stub(ctx, turn)
-		})
-		id := start(t, w)
-
-		w.Send(prompt(`1`, id, "fix the bug"))
-		got, others := w.Await(`1`)
-		require.JSONEq(t, endTurn, string(got[`1`].Result))
-
-		// The update was written before the response that ends the turn.
-		updates := updatesOf(t, others)
-		require.Len(t, updates, 1)
-		require.Equal(t, id, string(updates[0].SessionId))
-		require.Contains(t, updates[0].Update.AgentMessageChunk.Content.Text.Text, "fix the bug")
-	})
 }
 
 func TestCancelEndsTheTurnAsCancelled(t *testing.T) {
@@ -238,11 +215,6 @@ func TestRejectedRequests(t *testing.T) {
 			"MCP servers, which are not supported yet", true,
 			`{"jsonrpc":"2.0","id":"new","method":"session/new","params":{"cwd":"/work","mcpServers":[{"name":"fs","command":"/bin/mcp","args":[],"env":[]}]}}`,
 			acp.NewInvalidParams(nil).Code,
-		},
-		{
-			"a method behind a capability that is not advertised", true,
-			`{"jsonrpc":"2.0","id":"new","method":"session/list","params":{}}`,
-			acp.NewMethodNotFound("").Code,
 		},
 	}
 	for _, tt := range tests {

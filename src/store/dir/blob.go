@@ -74,7 +74,6 @@ func (s *Store) PutBlob(ctx context.Context, id uuid.UUID, mimeType string, cont
 func (s *Store) putBlob(ctx context.Context, blobs string, tmp *os.File, content io.Reader) (transcript.Stored, error) {
 	sum := sha256.New()
 	size, err := io.Copy(io.MultiWriter(tmp, sum), &ctxReader{ctx: ctx, r: content})
-	s.written.Add(size)
 	if err != nil {
 		return transcript.Stored{}, errors.Join(err, tmp.Close())
 	}

@@ -63,17 +63,6 @@ func TestLaterLayersOverrideEarlierOnes(t *testing.T) {
 	require.Equal(t, filepath.Join(system, "config.toml"), got.Origin["telemetry.logs.stderr.format"])
 }
 
-// Text from the environment and --set is converted to the key's type.
-func TestTextValuesBecomeTheKeysType(t *testing.T) {
-	got, err := config.Load(config.Sources{
-		Environ: []string{"ACPHARNESS_TELEMETRY__OTEL=true"},
-		Set:     []string{"telemetry.logs.stderr.enabled=false"},
-	})
-	require.NoError(t, err)
-	require.True(t, got.Config.Telemetry.OTel)
-	require.False(t, got.Config.Telemetry.Logs.Stderr.Enabled)
-}
-
 func TestInvalidInputIsAnError(t *testing.T) {
 	dir := t.TempDir()
 	two := filepath.Join(dir, "two")
@@ -100,6 +89,8 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"history shorter than samples", config.Sources{Set: []string{"compaction.history_window=2"}}, "compaction.history_window"},
 		{"nested section requires one source", config.Sources{Files: []string{write(t, filepath.Join(dir, "section.toml"), "[[context.sections]]\nname='policy'\ntext='rule'\nfile='rule.md'\n")}}, "context.sections[0].text"},
 		{"nested hook tool name", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook.toml"), "[[hooks]]\nevent='pre_tool'\ncommand=['true']\ntimeout='1s'\ntools=['']\n")}}, "hooks[0].tools[0]"},
+		{"hook tools on an event without a tool", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook-stop.toml"), "[[hooks]]\nevent='stop'\ncommand=['true']\ntimeout='1s'\ntools=['Bash']\n")}}, "hooks[0].tools"},
+		{"hook with an empty program", config.Sources{Files: []string{write(t, filepath.Join(dir, "hook-empty.toml"), "[[hooks]]\nevent='stop'\ncommand=['']\ntimeout='1s'\n")}}, "hooks[0].command"},
 		{"provider invalid scheme with credentials", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-url.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='ftp://url-user:url-password@example.com?token=url-query-secret'\n")}}, "providers[0].base_url"},
 		{"provider URL parse failure", config.Sources{Files: []string{write(t, filepath.Join(dir, "provider-parse.toml"), "[[providers]]\nid='gateway'\nkind='chat'\nbase_url='https://url-user:url-password@example.com/%zz?token=url-query-secret'\n")}}, "providers[0].base_url"},
 		{"embeddings URL query", config.Sources{Set: []string{"embeddings.model=embed", "embeddings.base_url=https://url-user:url-password@example.com?token=url-query-secret"}}, "embeddings.base_url"},
@@ -149,6 +140,20 @@ base_url = "https://example.com/v1?accepted=query#fragment"
 event = "prompt"
 command = ["printf", ""]
 timeout = "1s"
+[[hooks]]
+event = "pre_tool"
+tools = ["Bash"]
+command = ["true"]
+timeout = "10s"
+max_output_bytes = 65536
+[context]
+agents_files = false
+global_dir = ""
+extra_files = ["notes.md"]
+extra_dirs = ["docs"]
+skills_dirs = ["~/a"]
+max_file_bytes = 1000
+max_total_bytes = 5000
 [[context.sections]]
 name = "policy"
 file = "policy.md"

@@ -85,8 +85,6 @@ const (
 type Stats struct {
 	// Syncs is the number of fsync calls, on files and on directories.
 	Syncs int64
-	// WrittenBytes is the number of bytes written to files.
-	WrittenBytes int64
 }
 
 // Store keeps sessions under a root directory. It is safe for concurrent
@@ -99,8 +97,7 @@ type Store struct {
 	create1 logFormat
 	codec   codec
 
-	syncs   atomic.Int64
-	written atomic.Int64
+	syncs atomic.Int64
 }
 
 var _ store.Store = (*Store)(nil)
@@ -126,7 +123,7 @@ func New(opts Options) (*Store, error) {
 
 // Stats returns the counters.
 func (s *Store) Stats() Stats {
-	return Stats{Syncs: s.syncs.Load(), WrittenBytes: s.written.Load()}
+	return Stats{Syncs: s.syncs.Load()}
 }
 
 // SessionDir returns the directory that holds everything of a session.
@@ -445,8 +442,7 @@ func (s *Store) writeFile(path string, data []byte) error {
 }
 
 func (s *Store) writeSync(f *os.File, data []byte) error {
-	n, err := f.Write(data)
-	s.written.Add(int64(n))
+	_, err := f.Write(data)
 	if err != nil {
 		return err
 	}

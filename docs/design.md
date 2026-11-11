@@ -479,6 +479,5 @@ jobshop (origin/master 2b42e5fd, 2026-11-11) uses `acp-go-sdk` v0.13.5 and calls
 
 ## Open questions
 
-- Store default, decided by the benchmark in step 6.
 - Claude Code's interruption message text, to be read from the pinned upstream version.
 - Web search for chat providers without a built-in tool: none by default, user-supplied tool or MCP.

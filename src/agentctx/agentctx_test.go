@@ -354,14 +354,7 @@ func TestClientSystemPromptAppendAndOverride(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, provider.SystemBlock{Name: agentctx.SectionClient, Text: "You are a reviewer."}, blocks[0])
 		// Everything that is not a default instruction is unchanged.
-		var kept []provider.SystemBlock
-		for _, b := range base {
-			if !agentctx.IsInstructionSection(b.Name) {
-				kept = append(kept, b)
-			}
-		}
-		require.Len(t, kept, len(base)-3)
-		require.Equal(t, kept, blocks[1:])
+		require.Equal(t, base[3:], blocks[1:])
 	})
 
 	t.Run("a mode that is not supported is an error", func(t *testing.T) {
