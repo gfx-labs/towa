@@ -31,8 +31,9 @@ var embeddingsDefaults = map[string]any{
 	"embeddings.model":      "",
 	"embeddings.account":    "",
 	"embeddings.dimensions": 0,
-	// The default --max-client-batch-size of Text Embeddings Inference,
-	// the sidecar the design recommends. OpenAI takes 2048.
+	// Meant to match the default client batch limit of Text Embeddings
+	// Inference, the sidecar the design recommends. Not checked against
+	// TEI: see docs/notes/2026-11-11-auth-2.md.
 	"embeddings.batch_size": 32,
 	// Not measured. It has to cover a sidecar loading its model on the
 	// first request.
