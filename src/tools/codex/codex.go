@@ -90,6 +90,7 @@ func definition(name string) (provider.Tool, error) {
 	tool := provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.Parameters}
 	if spec.Type == "custom" {
 		tool.Native = jsontext.Value(raw)
+		tool.NativeAPI = provider.NativeAPIResponses
 	}
 	return tool, nil
 }
