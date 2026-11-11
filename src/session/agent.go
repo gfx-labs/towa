@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -23,6 +24,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/agentctx"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/telemetry"
 	"github.com/gfx-labs/acpharness/src/tools"
 )
@@ -77,6 +79,14 @@ type Options struct {
 	// command are added to a copy of it.
 	Registry *Registry
 	Supports Supports
+	// Store keeps sessions, so that another process can load them. Nil
+	// means sessions live in this process only: the methods that need a
+	// store then answer Method not found and are not advertised.
+	Store store.Store
+	// Mapper turns stored items into the updates session/load replays. It
+	// is the mapper the turn shows them with, so a loaded session looks as
+	// it did live.
+	Mapper loop.Mapper
 }
 
 // Agent is the ACP agent for one connection. It advertises only what it
@@ -91,6 +101,13 @@ type Agent struct {
 	client   Client
 	registry *Registry
 	supports Supports
+	store    store.Store
+	mapper   loop.Mapper
+	// pageSize is session.list_page_size.
+	pageSize int
+	// attachMu makes loads, resumes and deletes of stored sessions happen
+	// one at a time.
+	attachMu sync.Mutex
 
 	mu          sync.Mutex
 	initialized bool
@@ -136,6 +153,9 @@ func NewAgent(o Options) (*Agent, error) {
 		turns:    turns,
 		registry: registry,
 		supports: o.Supports,
+		store:    o.Store,
+		mapper:   o.Mapper,
+		pageSize: o.Session.ListPageSize,
 		sessions: map[acp.SessionId]*session{},
 	}, nil
 }
@@ -174,6 +194,12 @@ func (a *Agent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.Init
 		sessions.SystemPrompt = agentctx.Capabilities()
 	}
 	capabilities := acp.AgentCapabilities{SessionCapabilities: sessions, PromptCapabilities: a.supports.Prompt}
+	if a.store != nil {
+		capabilities.LoadSession = true
+		capabilities.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
+		capabilities.SessionCapabilities.List = &acp.SessionListCapabilities{}
+		capabilities.SessionCapabilities.Delete = &acp.SessionDeleteCapabilities{}
+	}
 	if mcp := a.supports.MCP; mcp != nil {
 		// The ACP transport for MCP is not implemented, whatever the
 		// wiring says.
@@ -247,7 +273,7 @@ func (a *Agent) checkMCP(servers []acp.McpServer) error {
 }
 
 // NewSession creates a session in the request's working directory.
-func (a *Agent) NewSession(_ context.Context, p acp.NewSessionRequest) (acp.NewSessionResponse, error) {
+func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	if err := a.ready(); err != nil {
 		return acp.NewSessionResponse{}, err
 	}
@@ -259,42 +285,25 @@ func (a *Agent) NewSession(_ context.Context, p acp.NewSessionRequest) (acp.NewS
 		}
 		return acp.NewSessionResponse{}, err
 	}
-	gate := a.Gate()
-	values := a.registry.defaults()
-	perTurn, err := a.registry.applyMeta(p.Meta, values)
+	values, perTurn, err := a.startValues(p.Meta, p.ConfigOptions, nil)
 	if err != nil {
-		return acp.NewSessionResponse{}, invalid("%v", err)
-	}
-	// Initial values are applied in order. Unlike session/set_config_option,
-	// the protocol has an entry that does not apply ignored, and only a
-	// repeated id rejected.
-	seen := map[acp.SessionConfigId]bool{}
-	for _, initial := range p.ConfigOptions {
-		var id acp.SessionConfigId
-		var value Value
-		switch {
-		case initial.Boolean != nil:
-			id, value = initial.Boolean.ConfigId, Value{On: initial.Boolean.Value}
-		case initial.ValueId != nil:
-			id, value = initial.ValueId.ConfigId, Value{ID: initial.ValueId.Value}
-		default:
-			return acp.NewSessionResponse{}, invalid("configOptions: an entry has no value")
-		}
-		if seen[id] {
-			return acp.NewSessionResponse{}, invalid("configOptions: %q is set twice", id)
-		}
-		seen[id] = true
-		option := a.registry.option(id)
-		if option == nil || option.Boolean != (initial.Boolean != nil) || option.Boolean && !gate.BooleanOptions() || option.check(value) != nil {
-			a.logger.Debug("initial config option ignored", "option", id)
-			continue
-		}
-		values[id] = value
+		return acp.NewSessionResponse{}, err
 	}
 
-	s := newSession(acp.SessionId(uuid.NewV7().String()), p.Cwd)
+	id := uuid.NewV7()
+	s := newSession(acp.SessionId(id.String()), p.Cwd)
 	s.dirs, s.systemPrompt, s.mcpServers = p.AdditionalDirectories, p.SystemPrompt, p.McpServers
 	s.values, s.perTurn = values, perTurn
+	if a.store != nil {
+		// Created here and not by the first turn, so that a session with
+		// no turn yet can be listed, titled and loaded.
+		now := time.Now()
+		s.meta = store.Meta{ID: id, Cwd: s.cwd, Created: now, Updated: now}
+		a.fillMeta(s, &s.meta)
+		if err := a.store.Create(ctx, s.meta); err != nil {
+			return acp.NewSessionResponse{}, fmt.Errorf("session: storing session %s: %w", s.id, err)
+		}
+	}
 	a.mu.Lock()
 	a.sessions[s.id] = s
 	a.mu.Unlock()
@@ -302,8 +311,60 @@ func (a *Agent) NewSession(_ context.Context, p acp.NewSessionRequest) (acp.NewS
 	return acp.NewSessionResponse{
 		SessionId:     s.id,
 		Modes:         modeState(a.registry.option(ModeOption), values[ModeOption].ID),
-		ConfigOptions: a.registry.configOptions(values, gate.BooleanOptions()),
+		ConfigOptions: a.registry.configOptions(values, a.Gate().BooleanOptions()),
 	}, nil
+}
+
+// startValues returns the config option values a session starts with and
+// the changes its _meta overrides make to each turn. stored holds values
+// kept with a stored session. The order is: defaults, stored values, the
+// request's _meta.acpharness, the request's configOptions.
+func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionConfigOption, stored map[acp.SessionConfigId]Value) (map[acp.SessionConfigId]Value, []func(*loop.Turn), error) {
+	gate := a.Gate()
+	values := a.registry.defaults()
+	maps.Copy(values, stored)
+	perTurn, err := a.registry.applyMeta(meta, values)
+	if err != nil {
+		return nil, nil, invalid("%v", err)
+	}
+	// Initial values are applied in order. Unlike session/set_config_option,
+	// the protocol has an entry that does not apply ignored, and only a
+	// repeated id rejected.
+	seen := map[acp.SessionConfigId]bool{}
+	for _, entry := range initial {
+		var id acp.SessionConfigId
+		var value Value
+		switch {
+		case entry.Boolean != nil:
+			id, value = entry.Boolean.ConfigId, Value{On: entry.Boolean.Value}
+		case entry.ValueId != nil:
+			id, value = entry.ValueId.ConfigId, Value{ID: entry.ValueId.Value}
+		default:
+			return nil, nil, invalid("configOptions: an entry has no value")
+		}
+		if seen[id] {
+			return nil, nil, invalid("configOptions: %q is set twice", id)
+		}
+		seen[id] = true
+		option := a.registry.option(id)
+		if option == nil || option.Boolean != (entry.Boolean != nil) || option.Boolean && !gate.BooleanOptions() || option.check(value) != nil {
+			a.logger.Debug("initial config option ignored", "option", id)
+			continue
+		}
+		values[id] = value
+	}
+	// A stored value the request did not replace must still be usable
+	// here: this process may be configured differently from the one that
+	// stored it.
+	for id, value := range stored {
+		if values[id] != value {
+			continue
+		}
+		if err := a.registry.option(id).check(value); err != nil {
+			return nil, nil, invalid("the session was stored with a value that cannot be used here, set another in configOptions: %v", err)
+		}
+	}
+	return values, perTurn, nil
 }
 
 // modeState lists the choices of the mode option as session modes.
@@ -373,6 +434,9 @@ func (a *Agent) setOption(ctx context.Context, s *session, id acp.SessionConfigI
 	s.mu.Unlock()
 	if !changed {
 		return nil
+	}
+	if err := a.persist(ctx, s); err != nil {
+		return err
 	}
 	if id == ModeOption {
 		if err := a.send(ctx, s, acp.SessionUpdate{CurrentModeUpdate: &acp.SessionCurrentModeUpdate{
@@ -606,21 +670,6 @@ func (a *Agent) Logout(context.Context, acp.LogoutRequest) (acp.LogoutResponse, 
 	return acp.LogoutResponse{}, acp.NewMethodNotFound(acp.AgentMethodLogout)
 }
 
-// DeleteSession is not advertised.
-func (a *Agent) DeleteSession(context.Context, acp.DeleteSessionRequest) (acp.DeleteSessionResponse, error) {
-	return acp.DeleteSessionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionDelete)
-}
-
-// ListSessions is not advertised.
-func (a *Agent) ListSessions(context.Context, acp.ListSessionsRequest) (acp.ListSessionsResponse, error) {
-	return acp.ListSessionsResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionList)
-}
-
-// ResumeSession is not advertised.
-func (a *Agent) ResumeSession(context.Context, acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
-	return acp.ResumeSessionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionResume)
-}
-
 // SetSessionConfigOption changes one config option and answers with all of
 // them.
 func (a *Agent) SetSessionConfigOption(ctx context.Context, p acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
@@ -661,32 +710,51 @@ func (a *Agent) SetSessionMode(ctx context.Context, p acp.SetSessionModeRequest)
 	return acp.SetSessionModeResponse{}, a.setOption(ctx, s, ModeOption, Value{ID: acp.SessionConfigValueId(p.ModeId)}, false, false)
 }
 
-// UnstableSessionStatus says whether the session is in memory. It changes
-// nothing. Without a store a session is open or does not exist.
-func (a *Agent) UnstableSessionStatus(_ context.Context, p acp.UnstableSessionStatusRequest) (acp.UnstableSessionStatusResponse, error) {
-	if _, err := a.session(acp.SessionId(p.SessionId)); err != nil {
+// UnstableSessionStatus says whether the session is in memory or only in
+// the store. It changes nothing.
+func (a *Agent) UnstableSessionStatus(ctx context.Context, p acp.UnstableSessionStatusRequest) (acp.UnstableSessionStatusResponse, error) {
+	id := acp.SessionId(p.SessionId)
+	_, err := a.session(id)
+	if err == nil {
+		return acp.UnstableSessionStatusResponse{Status: acp.UnstableSessionStatusOpen}, nil
+	}
+	if !isUnknownSession(err) || a.store == nil {
 		return acp.UnstableSessionStatusResponse{}, err
 	}
-	return acp.UnstableSessionStatusResponse{Status: acp.UnstableSessionStatusOpen}, nil
+	if _, err := a.storedMeta(ctx, id); err != nil {
+		return acp.UnstableSessionStatusResponse{}, err
+	}
+	return acp.UnstableSessionStatusResponse{Status: acp.UnstableSessionStatusSaved}, nil
 }
 
 // UnstableSessionOptions answers with the modes and config options a new
 // session would start with. It creates nothing.
-func (a *Agent) UnstableSessionOptions(_ context.Context, p acp.UnstableSessionOptionsRequest) (acp.UnstableSessionOptionsResponse, error) {
+func (a *Agent) UnstableSessionOptions(ctx context.Context, p acp.UnstableSessionOptionsRequest) (acp.UnstableSessionOptionsResponse, error) {
 	if err := a.ready(); err != nil {
 		return acp.UnstableSessionOptionsResponse{}, err
 	}
 	if err := a.checkDirs(p.Cwd, p.AdditionalDirectories); err != nil {
 		return acp.UnstableSessionOptionsResponse{}, err
 	}
+	var stored map[acp.SessionConfigId]Value
 	if p.SessionId != nil {
-		// What load or resume would answer, and neither is implemented.
-		if _, err := a.session(acp.SessionId(*p.SessionId)); err != nil {
+		// What load or resume would answer, which needs the store.
+		if a.store == nil {
+			return acp.UnstableSessionOptionsResponse{}, invalid("sessionId needs session/load or session/resume, which are not supported")
+		}
+		meta, err := a.storedMeta(ctx, acp.SessionId(*p.SessionId))
+		if err != nil {
 			return acp.UnstableSessionOptionsResponse{}, err
 		}
-		return acp.UnstableSessionOptionsResponse{}, invalid("sessionId needs session/load or session/resume, which are not supported")
+		if meta.Cwd != p.Cwd {
+			return acp.UnstableSessionOptionsResponse{}, cwdMismatch(p.Cwd, meta.Cwd)
+		}
+		stored = a.storedValues(meta)
 	}
-	values := a.registry.defaults()
+	values, _, err := a.startValues(nil, nil, stored)
+	if err != nil {
+		return acp.UnstableSessionOptionsResponse{}, err
+	}
 	mode := a.registry.option(ModeOption)
 	modes := &acp.UnstableSessionModeState{CurrentModeId: acp.SessionModeId(values[ModeOption].ID)}
 	for _, c := range mode.Choices {
@@ -700,23 +768,45 @@ func (a *Agent) UnstableSessionOptions(_ context.Context, p acp.UnstableSessionO
 	}, nil
 }
 
-// UnstableSetSessionTitle sets the session's title and tells the client.
-// The title lives as long as the session does in this process.
+// UnstableSetSessionTitle sets a session's title. With a store the title
+// is written there before the answer, and a session that is in the store
+// and not in memory can be titled too. A session in memory has the client
+// told.
 func (a *Agent) UnstableSetSessionTitle(ctx context.Context, p acp.UnstableSetSessionTitleRequest) (acp.UnstableSetSessionTitleResponse, error) {
-	s, err := a.session(acp.SessionId(p.SessionId))
+	id := acp.SessionId(p.SessionId)
+	title := strings.TrimSpace(p.Title)
+	s, err := a.session(id)
+	if err != nil && isUnknownSession(err) && a.store != nil {
+		meta, err := a.storedMeta(ctx, id)
+		switch {
+		case err != nil:
+			return acp.UnstableSetSessionTitleResponse{}, err
+		case title == "":
+			return acp.UnstableSetSessionTitleResponse{}, invalid("title is empty")
+		}
+		meta.Title = title
+		if err := a.store.SetMeta(ctx, meta); err != nil {
+			return acp.UnstableSetSessionTitleResponse{}, storeError(id, err)
+		}
+		return acp.UnstableSetSessionTitleResponse{Title: title}, nil
+	}
 	if err != nil {
 		return acp.UnstableSetSessionTitleResponse{}, err
 	}
-	title := strings.TrimSpace(p.Title)
 	if title == "" {
 		return acp.UnstableSetSessionTitleResponse{}, invalid("title is empty")
 	}
 	if err := a.announce(ctx, s); err != nil {
 		return acp.UnstableSetSessionTitleResponse{}, err
 	}
+	s.setMu.Lock()
+	defer s.setMu.Unlock()
 	s.mu.Lock()
 	s.title = title
 	s.mu.Unlock()
+	if err := a.persist(ctx, s); err != nil {
+		return acp.UnstableSetSessionTitleResponse{}, err
+	}
 	err = a.send(ctx, s, acp.SessionUpdate{SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
 		SessionUpdate: "session_info_update", Title: &title,
 	}})

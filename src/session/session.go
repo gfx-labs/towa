@@ -7,6 +7,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/acpharness/src/store"
 )
 
 // session is one conversation. At most one turn runs at a time.
@@ -47,6 +48,9 @@ type session struct {
 	allowed map[string]bool
 	// announced is set once the client has been sent the commands.
 	announced bool
+	// meta is the session as the store last had it. It is the zero value
+	// without a store.
+	meta store.Meta
 }
 
 func newSession(id acp.SessionId, cwd string) *session {
