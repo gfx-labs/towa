@@ -14,6 +14,7 @@ import (
 // when the code that reads it exists.
 type Config struct {
 	Telemetry Telemetry  `koanf:"telemetry"`
+	Auth      Auth       `koanf:"auth"`
 	Accounts  []Account  `koanf:"accounts"`
 	Providers []Provider `koanf:"providers"`
 	Store     Store      `koanf:"store"`
@@ -77,7 +78,7 @@ func defaults() map[string]any {
 	all := map[string]any{}
 	for _, section := range []map[string]any{
 		telemetryDefaults, storeDefaults, toolsDefaults, mcpDefaults, sessionDefaults, contextDefaults, listenDefaults,
-		limitsDefaults,
+		limitsDefaults, authDefaults,
 	} {
 		maps.Copy(all, section)
 	}
@@ -98,7 +99,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("telemetry.logs.stderr.format: %q is not %q or %q", f, FormatText, FormatJSON)
 	}
 	for _, section := range []func() error{
-		c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
+		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 	} {
 		if err := section(); err != nil {
