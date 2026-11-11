@@ -19,7 +19,6 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/urfave/cli/v3"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/session"
@@ -30,6 +29,7 @@ import (
 type Host struct {
 	Stdin          io.Reader
 	Stdout, Stderr io.Writer
+	CloseStdio     func() error
 	// Environ is the environment, as os.Environ returns it.
 	Environ []string
 	// SystemDir is the directory of the system-wide config file. Empty
@@ -40,9 +40,12 @@ type Host struct {
 // OSHost is the Host of the running process.
 func OSHost() Host {
 	return Host{
-		Stdin:     os.Stdin,
-		Stdout:    os.Stdout,
-		Stderr:    os.Stderr,
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		CloseStdio: func() error {
+			return errors.Join(os.Stdin.Close(), os.Stdout.Close())
+		},
 		Environ:   os.Environ(),
 		SystemDir: "/etc/acpharness",
 	}
@@ -87,8 +90,6 @@ func Run(ctx context.Context, args []string, h Host) error {
 	return app.Run(ctx, args)
 }
 
-// serve runs the agent for the one client on standard input and output. It
-// returns when the client closes standard input or ctx is cancelled.
 func serve(ctx context.Context, cmd *cli.Command, h Host) error {
 	loaded, err := loadConfig(cmd, h)
 	if err != nil {
@@ -99,7 +100,7 @@ func serve(ctx context.Context, cmd *cli.Command, h Host) error {
 		return err
 	}
 
-	agent, err := session.NewAgent(session.Options{
+	host, err := session.NewHost(session.Options{
 		Version: version(),
 		Turn:    loop.Stub,
 		Logger:  tel.Logger,
@@ -110,15 +111,11 @@ func serve(ctx context.Context, cmd *cli.Command, h Host) error {
 	if err != nil {
 		return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
 	}
-	conn := acp.NewAgentSideConnection(agent, h.Stdout, h.Stdin, tel.Logger)
-	agent.SetClient(conn)
-
-	tel.Logger.Info("serving ACP on stdio", "version", version())
-	err = conn.Serve(ctx)
+	err = serveListeners(ctx, loaded.Config.Listen, host, h, tel.Logger, h.CloseStdio)
 	if ctx.Err() != nil && errors.Is(err, context.Cause(ctx)) {
-		// Stopped by a signal, which is a normal way to end.
 		err = nil
 	}
+	err = errors.Join(err, host.Close(context.WithoutCancel(ctx)))
 	tel.Logger.Info("stopped", "err", err)
 	// ctx may be cancelled already. The exporters' own timeouts bound this.
 	return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
