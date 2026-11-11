@@ -540,6 +540,12 @@ func (a *Agent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResp
 // failure with a typed reason carries it in the error's data, so the client
 // does not have to read the message.
 func stopError(err error) error {
+	// A hook refused the prompt and the turn did not start. That is the
+	// request being refused, not a failure inside the agent.
+	var denied *loop.DeniedError
+	if errors.As(err, &denied) {
+		return acp.NewInvalidRequest(map[string]any{"error": err.Error(), "deniedReason": denied.Reason})
+	}
 	var stopped *loop.StopError
 	if !errors.As(err, &stopped) {
 		return err

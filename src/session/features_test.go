@@ -544,3 +544,19 @@ func TestStoreAndAuthMethodsAreNotFound(t *testing.T) {
 		}
 	})
 }
+
+// A prompt a hook denied is the request refused, with the hook's reason as
+// data, and not an internal error.
+func TestDeniedPromptAnswersWithTheHooksReason(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := serve(t, func(context.Context, loop.Turn) (loop.Result, error) {
+			return loop.Result{}, &loop.DeniedError{Reason: "no secrets in prompts"}
+		})
+		id := start(t, w)
+		w.Send(prompt(`1`, id, "hi"))
+		got, _ := w.Await(`1`)
+		require.NotNil(t, got[`1`].Error)
+		require.Equal(t, acp.NewInvalidRequest(nil).Code, got[`1`].Error.Code)
+		require.Equal(t, "no secrets in prompts", got[`1`].Error.Data.(map[string]any)["deniedReason"])
+	})
+}
