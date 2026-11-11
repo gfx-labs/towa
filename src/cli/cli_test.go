@@ -1,4 +1,4 @@
-package main
+package cli_test
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/src/acp/acptest"
+	"github.com/gfx-labs/acpharness/src/cli"
 )
 
 // The whole program: flags and a config file reach the logger, and a client
@@ -25,11 +26,11 @@ func TestServeAnswersAClientOnStdio(t *testing.T) {
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), []string{"acpharness", "--log-level", "info"}, host{
-			stdin:   stdin,
-			stdout:  stdout,
-			stderr:  &stderr,
-			environ: []string{"XDG_CONFIG_HOME=" + dir},
+		done <- cli.Run(context.Background(), []string{"acpharness", "--log-level", "info"}, cli.Host{
+			Stdin:   stdin,
+			Stdout:  stdout,
+			Stderr:  &stderr,
+			Environ: []string{"XDG_CONFIG_HOME=" + dir},
 		})
 	}()
 
