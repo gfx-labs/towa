@@ -80,6 +80,7 @@ func TestRunReportsOutputAndExitStatus(t *testing.T) {
 	res, err = shell.Run(context.Background(), e, cfg, shell.Input{Command: "kill -TERM $$"})
 	require.NoError(t, err)
 	require.Equal(t, "terminated", res.Signal)
+	require.Equal(t, int(syscall.SIGTERM), res.SignalNumber)
 	require.Equal(t, transcript.OutcomeFailed, res.Outcome())
 
 	res, err = shell.Run(context.Background(), e, cfg, shell.Input{Command: "true"})

@@ -72,6 +72,9 @@ type Result struct {
 	ExitCode int
 	// Signal names the signal that ended the command, when one did.
 	Signal string
+	// SignalNumber is that signal's number on this system, and zero when
+	// no signal ended the command. A shell reports it as 128 plus this.
+	SignalNumber int
 	// StopSignal names the signal that stopped the command after a cancel
 	// or a timeout: "terminated" when it exited within the grace period
 	// after SIGTERM, whether it died of the signal or caught it and exited,
@@ -244,6 +247,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	}
 	if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 		res.Signal = status.Signal().String()
+		res.SignalNumber = int(status.Signal())
 	}
 	res.ExitCode = cmd.ProcessState.ExitCode()
 	if killErr != nil {
