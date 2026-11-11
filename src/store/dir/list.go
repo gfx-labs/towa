@@ -167,16 +167,24 @@ func (s *Store) children(ctx context.Context, root *os.File, parent uuid.UUID) (
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(path, childrenName))
+	file := filepath.Join(path, childrenName)
+	data, err := os.ReadFile(file)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	var index childrenIndex
 	if err == nil {
 		if err := json.Unmarshal(data, &index); err != nil {
-			return nil, &CorruptError{Path: filepath.Join(path, childrenName), Err: err}
+			return nil, &CorruptError{Path: file, Err: err}
 		}
-		if index.RootModified.Equal(info.ModTime()) {
+		written, err := os.Stat(file)
+		if err != nil {
+			return nil, err
+		}
+		// A change in the same timestamp tick as the build leaves the root's
+		// time as it was. Only an index written in a later tick proves that
+		// no such change followed it.
+		if index.RootModified.Equal(info.ModTime()) && written.ModTime().After(info.ModTime()) {
 			return index.Children[parent.String()], nil
 		}
 	}
