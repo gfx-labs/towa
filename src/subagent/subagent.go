@@ -241,6 +241,9 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 		ended.Kind, ended.Stop = KindStopped, res.Stop
 	case res.StopReason == acp.StopReasonCancelled:
 		ended.Kind = KindCancelled
+	case res.StopReason != acp.StopReasonEndTurn && res.StopReason != acp.StopReasonMaxTokens && res.StopReason != acp.StopReasonRefusal:
+		ended.Kind = KindFailed
+		ended.Err = fmt.Errorf("unexpected child stop reason %q", res.StopReason)
 	case res.Final == "":
 		ended.Kind = KindNoMessage
 	default:
