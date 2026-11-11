@@ -106,4 +106,62 @@ Observed ranges:
 
 Zero sampled CPU tick change is not proof of zero CPU use. Tick resolution, a short idle interval and sampling can hide small costs. No throughput, active-turn, tool execution, embeddings, compaction, MCP connection, transport pool or long-lived retention measurement was made.
 
-These are absolute observations of one fixed build and configuration on a shared host, not an optimization result or comparison with another harness. File caches, GC/runtime scheduling, btrfs storage and concurrent work can affect both memory and elapsed time. No zero-session or earlier-build baseline was measured, so the difference between rows is not an isolated per-session cost. RSS includes shared/file-backed mappings. PSS apportions shared mappings but is not total system memory consumption. No sum of RSS is reported as physical memory.
+These are absolute observations of one fixed build and configuration on a shared host, not an optimization result or comparison with another harness. File caches, GC/runtime scheduling, btrfs storage and concurrent work can affect both memory and elapsed time. In this first measurement no zero-session or earlier-build baseline was measured, so the difference between rows is not an isolated per-session cost. RSS includes shared/file-backed mappings. PSS apportions shared mappings but is not total system memory consumption. No sum of RSS is reported as physical memory.
+
+## Validator-migration build comparison
+
+Bounded follow-up at 16:05–16:06 UTC, same host and toolchain. The original measurements above remain unchanged. This comparison reuses their exact binary as `old`, and builds the committed validator migration **c9c09c4f29b6b63697dc260b535b493230578216** as `new`. The latter adds `github.com/go-playground/validator/v10 v10.30.6`. Its executable is 37504695 bytes, SHA-256 `e51e04eadb91a42658f4f4f006679ac6f33cb0cf4709e087eea2926c6c085742`. The whole-build file-size difference is +1769467 bytes.
+
+This is **not an isolated measurement of validator's cost**. Between these two source hashes, captured Claude Read/Bash adapters and generic tool descriptions changed, and the loop gained terminal compaction consumption. Source inspection identified these confounds before interpreting the measurements. No control build reverting only validator was made, and no application or module files were edited for the experiment.
+
+Scratch `validator-comparison/compare.py` (SHA-256 `d241a2c891dae9e8f440db94a6dcc6bc591e6a0c191c1255f38e238c1c732e96`) imports the unchanged `measure.py` above and calls its existing `run`. It changes only the artifact root and executable path. It runs five pairs for each session count and each build, twenty fresh processes total. Pair 0 runs old/new with 1 session, then old/new with 50. Pair 1 reverses the build order to new/old for both counts, alternating thereafter. The five-pair limit, sequential ACP calls, one-second settling, three-second idle sampling and EOF shutdown policy are unchanged. No extra traced workload was added.
+
+Exact commands, with fresh comparison directories and that scratch caller present:
+
+```sh
+scratch="$JCODE_SCRATCH_DIR/runtime-footprint"
+comparison="$scratch/validator-comparison"
+mkdir -p "$comparison/old" "$comparison/new" "$comparison/source"
+cp "$scratch/acpharness" "$comparison/old/acpharness"
+git archive c9c09c4f29b6b63697dc260b535b493230578216 | tar -x -C "$comparison/source"
+(cd "$comparison/source" && nice -n 10 env CGO_ENABLED=0 GOPROXY=off GOSUMDB=off go build -trimpath -o ../new/acpharness ./cmd/acpharness)
+cd "$comparison"
+uv run --offline python compare.py > output.jsonl
+```
+
+Both builds use the same CGO-disabled, unstripped `-trimpath` options. Offline module settings prevent dependency fetches during the candidate build. Both archived `go.mod`/`go.sum` files were verified unchanged after building. The copied baseline binary's SHA-256 still matches the original. Config content is identical after replacing the per-build store-directory component. Environment isolation, dummy credential, endpoint trap, generic model, extras/compaction/MCP-off settings and actual runtime/store checks are unchanged.
+
+All **510 sessions** were acknowledged and verified in the store before and after normal exit. All twenty processes exited zero on EOF, with no child processes at either sample. Every run had **zero trap connections and zero HTTP requests**, and user/system idle tick changes **0/0** at 100 Hz. No prompt, inference, module download or external endpoint call was made. Detailed ACP/config/environment/store/result artifacts remain under scratch `validator-comparison/{old,new}` and the combined data is `validator-comparison/results.json`.
+
+Raw paired observations, with startup in milliseconds and memory in KiB:
+
+| Pair | Sessions | Startup old | Startup new | RSS old | RSS new | PSS old | PSS new |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 1 | 6.735 | 8.195 | 22884 | 26236 | 22876 | 26228 |
+| 1 | 1 | 6.616 | 9.139 | 21580 | 24312 | 21572 | 24304 |
+| 2 | 1 | 6.528 | 7.665 | 23976 | 24276 | 23968 | 24268 |
+| 3 | 1 | 7.656 | 7.338 | 22792 | 24572 | 22784 | 24564 |
+| 4 | 1 | 6.694 | 8.101 | 25528 | 25972 | 25520 | 25964 |
+| 0 | 50 | 6.997 | 7.975 | 25788 | 27684 | 25780 | 27676 |
+| 1 | 50 | 6.679 | 7.859 | 25748 | 27788 | 25740 | 27780 |
+| 2 | 50 | 7.442 | 8.327 | 25996 | 28076 | 25988 | 28068 |
+| 3 | 50 | 7.584 | 7.475 | 25784 | 27972 | 25776 | 27964 |
+| 4 | 50 | 7.079 | 7.106 | 28256 | 28240 | 28248 | 28232 |
+
+Ranges and median of the five paired differences (`new - old`, not difference of medians):
+
+| Sessions | Build | Startup range ms | RSS range KiB | PSS range KiB |
+|---:|---|---:|---:|---:|
+| 1 | old | 6.528–7.656 | 21580–25528 | 21572–25520 |
+| 1 | new | 7.338–9.139 | 24276–26236 | 24268–26228 |
+| 50 | old | 6.679–7.584 | 25748–28256 | 25740–28248 |
+| 50 | new | 7.106–8.327 | 27684–28240 | 27676–28232 |
+
+| Sessions | Median paired startup delta ms | Median paired RSS delta KiB | Median paired PSS delta KiB |
+|---:|---:|---:|---:|
+| 1 | +1.407 | +1780 | +1780 |
+| 50 | +0.884 | +2040 | +2040 |
+
+The new whole build usually started later and retained more resident memory in these runs, but the observed ranges overlap. Each count has one negative startup difference. The final 50-session memory difference is -16 KiB, rather than an increase. Baseline one-session RSS itself varies by 3948 KiB here. The 50-session creation intervals also varied: old 328.941–755.990 ms, new 347.442–483.062 ms. These data do not establish a stable creation-time improvement or a deterministic memory increment.
+
+The paired medians describe this small sample, not a confidence interval, isolated dependency overhead or long-running CPU result. They support reporting the migration build's observed footprint, not assigning all of the difference to validator. No further runs, tuning or production changes were made to reduce noise or improve the result.
