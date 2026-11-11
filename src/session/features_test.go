@@ -327,13 +327,13 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 
 		// What the wiring did not turn on, or cannot be applied, is refused.
 		refused := map[string]string{
-			`2`: `{"cwd":"/work","mcpServers":[],"additionalDirectories":["lib"]}`,
-			`3`: `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"replace","content":[{"type":"text","text":"x"}]}}`,
-			`4`: `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[]}}`,
-			`5`: `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"image","data":"","mimeType":"image/png"}]}}`,
-			`6`: `{"cwd":"/work","mcpServers":[{"type":"sse","name":"docs","url":"https://mcp.example/","headers":[]}]}`,
-			`7`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"opus"}}}`,
-			`8`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"mode":"yolo"}}}`,
+			`2`:  `{"cwd":"/work","mcpServers":[],"additionalDirectories":["lib"]}`,
+			`3`:  `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"replace","content":[{"type":"text","text":"x"}]}}`,
+			`4`:  `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[]}}`,
+			`5`:  `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"image","data":"","mimeType":"image/png"}]}}`,
+			`6`:  `{"cwd":"/work","mcpServers":[{"type":"sse","name":"docs","url":"https://mcp.example/","headers":[]}]}`,
+			`7`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"opus"}}}`,
+			`8`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"mode":"yolo"}}}`,
 			`9`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"cwd_suffix":7}}}`,
 			`10`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"context_files":[""]}}}`,
 		}
