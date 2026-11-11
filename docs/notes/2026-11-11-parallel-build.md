@@ -64,6 +64,14 @@ A worker that finishes early takes work that needs nothing from the lanes still 
 | `mcp` (second task) | `src/mcp/**`, `src/cli/mcp.go` | The `mcp login` and `mcp logout` commands, a test of the unknown outcome, and a span per MCP call |
 | `session` (fourth task) | `src/session/**` | The stored-session methods over the store: `session/load` with replay through the loop's mapping, `resume`, `list`, `delete` and the `saved` status |
 | `tools` (third task) | `src/tools/**`, `src/config/tools.go` | A per-call TERM-then-KILL grace period and output limit in the shell capability, for the Codex dialect. The `skill` capability over the context package |
+| `store` (second task) | `src/store/**`, `src/config/store.go`, the storage section of `docs/design.md` | `Repair` and a torn-log sentinel on the store interface, an append that is whole or absent in the plain format too, `List` measured at 1,000 and 10,000 sessions and paged if the numbers justify it, an archived state, a fork, and one opaque `Meta` member for session state |
+| `session` (fifth task) | `src/session/**` | One process-wide session table with an agent per connection, repair of a torn log on load and resume, then `session/fork`, `archive` and `unarchive` over the store |
+| `auth` (fourth task) | `src/listen/**`, `src/config/listen.go` | The unix socket and TCP listeners with TLS and optional client certificates, an accept loop that hands each connection to a caller's function, tested on real sockets |
+| `mcp` (third task) | `src/mcp/**`, `src/hosts/**`, `src/cli/hosts.go` | MCP connections shared across sessions where config marks a server shared, with the saving measured. The unknown outcome over HTTP. The endpoints added since in the `hosts` command |
+| `agentctx` (fourth task) | `src/subagent/**`, `src/config/subagents.go` | The subagent capability: a child turn in the same process, stored as its own session with the parent's id |
+| `provider-openai` (fourth task) | `src/tools/extras/**`, `src/config/convsearch.go` | The extras as `tools.Tool` values with jcode's shapes: conversation search, webfetch, `jev_decision`, skill and batch |
+| `tools` (fourth task) | `src/toolset/**`, `src/tools/claude/**`, `src/tools/generic/**`, `src/config/tools.go` | The Claude Code figures behind the defaults checked against the unpacked 2.1.280 bundle. The assembly of one tool set from a dialect, the extras and MCP. The Claude and generic dialects over the captured schemas |
+| `capture` (second task) | `prompts/claude-code/**`, `tools/capture/**` | Tool outputs recorded from the pinned Claude Code binary, with a local server scripting the model's side |
 
 ## Recording without a key
 
