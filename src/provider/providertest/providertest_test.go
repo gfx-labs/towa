@@ -79,8 +79,40 @@ func record(t *testing.T, cutOff bool) (path, body string, readErr error) {
 	server := upstream(t, firstRead, cutOff)
 	path = filepath.Join(t.TempDir(), "exchange.json")
 	client := httpclient.New()
-	client.Transport = &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{testKey}}
-	body, readErr = send(t, client, server.URL, `{"model":"m","stream":true}`, func() { close(firstRead) })
+	recorder := &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{testKey}}
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := r.Clone(r.Context())
+		req.URL.Scheme = "http"
+		req.URL.Host = server.Listener.Addr().String()
+		req.RequestURI = ""
+		resp, err := recorder.RoundTrip(req)
+		if err != nil {
+			t.Errorf("record relay: %v", err)
+			http.Error(w, "record relay", http.StatusBadGateway)
+			return
+		}
+		defer func() { require.NoError(t, resp.Body.Close()) }()
+		for name, values := range resp.Header {
+			w.Header()[name] = values
+		}
+		w.WriteHeader(resp.StatusCode)
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				_, _ = w.Write(buf[:n])
+				_ = http.NewResponseController(w).Flush()
+			}
+			if readErr == io.EOF {
+				return
+			}
+			if readErr != nil {
+				panic(http.ErrAbortHandler)
+			}
+		}
+	}))
+	t.Cleanup(relay.Close)
+	body, readErr = send(t, client, relay.URL, `{"model":"m","stream":true}`, func() { close(firstRead) })
 	return path, body, readErr
 }
 

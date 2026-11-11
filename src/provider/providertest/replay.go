@@ -30,8 +30,8 @@ func IgnoreHeader(names ...string) Option {
 	}
 }
 
-// transportHeaders are added by net/http's transport after the recorder saw
-// the request, so a recording never has them.
+// transportHeaders describe framing owned by net/http rather than the application.
+// A relay recorder can observe them, so comparison excludes them on both sides.
 var transportHeaders = map[string]bool{
 	"Accept-Encoding":   true,
 	"Content-Length":    true,
@@ -156,7 +156,13 @@ func (r *replayer) compare(req *http.Request, body []byte) []string {
 		}
 		sent[name] = values
 	}
-	diffs = append(diffs, compareValues("header", sent, want.Header, r.ignore)...)
+	recordedHeaders := map[string][]string{}
+	for name, values := range want.Header {
+		if !transportHeaders[name] {
+			recordedHeaders[name] = values
+		}
+	}
+	diffs = append(diffs, compareValues("header", sent, recordedHeaders, r.ignore)...)
 	return append(diffs, compareBody(body, want.Body)...)
 }
 
