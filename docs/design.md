@@ -157,7 +157,7 @@ One streaming interface returning a normalized event stream: text deltas, thinki
 
 Wire clients:
 
-- `anthropic`: Messages API, streaming, OAuth or API key. OAuth identity follows jcode (`docs/ANTHROPIC_OAUTH_IDENTITY_PROBE_2026_11_05.md` in jcode): Claude CLI user agent, jcode's OAuth beta header set, `x-app: cli`, session id, and the `x-anthropic-billing-header` system block, which Anthropic strips server-side. Without the billing block or an SDK identity sentence, Opus and Sonnet OAuth requests get HTTP 429. The prompt names the agent as acpharness, not Claude Code or the Agent SDK. Constants track jcode's and are re-probed on change.
+- `anthropic`: Messages API, streaming, OAuth or API key. OAuth identity follows jcode's code and its probe (`docs/ANTHROPIC_OAUTH_IDENTITY_PROBE_2026_11_05.md` in jcode). The one required piece is the `x-anthropic-billing-header` text sent as the first system block (`cc_version=2.1.280; cc_entrypoint=...; cch=33f85;`), which Anthropic strips server-side, with jcode's OAuth beta header set. Without that block, Opus and Sonnet OAuth requests get HTTP 429. jcode sends its own user agent (`jcode/<version>`) and no `x-app`, `X-Stainless-*` or Claude Code session headers, because the probe found none of them are needed. acpharness sends `acpharness/<version>`, and the prompt names the agent as acpharness. jcode's branches differ on `cc_entrypoint` (`sdk-cli` on origin/master 8e11eb23e, `jcode` on build 037163c7b), so step 3 re-runs the probe before choosing.
 - `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with the Codex instructions. jcode's 2026-11-05 probe found the backend accepts any `originator`, so acpharness sends `acpharness`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
 - `chat`: Chat Completions, streaming, for OpenRouter, z.ai, DeepSeek, OpenCode Go and others. OpenRouter extras: provider routing preferences, reasoning parameters, `HTTP-Referer` and `X-Title`.
 
@@ -184,13 +184,15 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 
 | family | dialect | tools |
 |---|---|---|
-| Claude | `claude` | upstream Claude Code: Bash, Read, Write, Edit, MultiEdit, Glob, Grep, WebFetch, WebSearch, TodoWrite, Task, NotebookEdit |
-| GPT, Codex | `codex` | upstream Codex: shell, apply_patch, update_plan, view_image, web_search, spawn_agent |
+| Claude | `claude` | the tools captured from the pinned Claude Code version |
+| GPT, Codex | `codex` | the tools captured from the pinned Codex version |
 | other | resolved | the dialect of the family the model was distilled from when known, else `generic` |
 
 `generic` is the Claude Code shapes with neutral descriptions. Config can pin a dialect per model.
 
 Each capability (read, write, edit, shell, search) has one implementation. A dialect adapter supplies the upstream tool name, schema, output text and error text. An adapter must behave as the upstream tool does, and is checked against outputs recorded from that upstream tool. Upstream prompts and schemas are copied into `prompts/<upstream>/<version>/` with the source commit, and a script diffs them against new upstream releases.
+
+Upstream pins follow jcode: Claude Code 2.1.280, the version its billing block names, and openai/codex ce0323f2 (2026-10-17), the newest commit it cites for the OAuth contract. jcode sends its own tool names on the Claude OAuth path and carries no captured upstream tool schemas, so acpharness captures tool names, descriptions, schemas and system prompts from those two versions in steps 3 and 4. nanocode holds captures for Claude Code 2.1.304 and openai/codex c6e4438a with a verification script, usable as a cross-check.
 
 ### Extras (on by default, each can be disabled)
 
@@ -378,6 +380,12 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 - Limits come from caller configuration, protocol requirements or measurements. Configured provider fallback is intentional policy, not silent error recovery.
 - Short dated notes in `docs/notes/` record decisions and dependency rationale. Comments explain non-obvious constraints.
 
+## Workflow
+
+- Commits go straight to master until the first milestone. After that: PRs with conventional titles, and release-please.
+- CI runs on the `talos-metal-gfx` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
+- Parallel packages may be built by swarm workers once the core loop works: `claude-fable-5-2` at low effort on the `claude-panda` account.
+
 ## Release
 
 - Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`.
@@ -387,8 +395,10 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Validation
 
 - ACP compliance: a conformance suite driving the agent over each transport, with our own client and with `acp-go-sdk` v0.13.5 as the client jobshop uses today (initialize, new, prompt, cancel mid-tool, load and replay, set_config_option for model and mode, set_mode, permission in ask mode).
-- Providers: recorded real responses per provider for the stream parser, plus live smoke checks behind an env flag.
-- Task quality: a set of local coding tasks run against acpharness and jcode with the same model, comparing completion, turns, tokens and wall time.
+- Providers: recorded real responses per provider for the stream parser. Live checks against real subscriptions run by hand behind an env flag, not in CI. No tests against mocked providers.
+- Tools: each dialect adapter is checked against outputs recorded from the pinned upstream CLI.
+- Tests use testify, as acphost does.
+- Task quality: about 10 real closed issues from acphost and jobshop, run on acpharness and jcode with the same model, comparing completion, turns, tokens and wall time.
 - Footprint: RSS and CPU for 1, 10 and 200 idle and active sessions, compared with jcode, measured by a reproducible script.
 
 ## Implementation order
@@ -404,6 +414,10 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 9. Compaction modes, embeddings client, Jev decisions, hooks, modes, slash commands, context loading options.
 10. Unix and TCP listeners with mTLS, multi-session process mode.
 11. Conformance suite, task quality comparison, footprint benchmark, then jobcity trial.
+
+## Clients today
+
+jobshop (origin/master 2b42e5fd, 2026-11-11) uses `acp-go-sdk` v0.13.5 and calls `initialize`, `session/new` with an empty MCP server list, `session/load`, `session/prompt`, `session/cancel` and `session/set_config_option`. acphost and jobshop now live under `gfx-labs`.
 
 ## Open questions
 
