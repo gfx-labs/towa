@@ -11,6 +11,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
+	"github.com/gfx-labs/acpharness/pkg/acp/harness"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/session"
@@ -546,17 +547,27 @@ func TestStoreAndAuthMethodsAreNotFound(t *testing.T) {
 }
 
 // A prompt a hook denied is the request refused, with the hook's reason as
-// data, and not an internal error.
-func TestDeniedPromptAnswersWithTheHooksReason(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := serve(t, func(context.Context, loop.Turn) (loop.Result, error) {
-			return loop.Result{}, &loop.DeniedError{Reason: "no secrets in prompts"}
+// a typed stop, and not an internal error. The loop may report it as either
+// of its two error types.
+func TestDeniedPromptAnswersWithATypedStop(t *testing.T) {
+	want := harness.Stop{Kind: harness.StopDenied, Message: "no secrets in prompts"}
+	for name, turnErr := range map[string]error{
+		"a denied error": &loop.DeniedError{Reason: want.Message},
+		"a stop error":   &loop.StopError{Stop: want},
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := serve(t, func(context.Context, loop.Turn) (loop.Result, error) { return loop.Result{}, turnErr })
+				id := start(t, w)
+				w.Send(prompt(`1`, id, "hi"))
+				got, _ := w.Await(`1`)
+				require.NotNil(t, got[`1`].Error)
+				require.Equal(t, acp.NewInvalidRequest(nil).Code, got[`1`].Error.Code)
+				addition, ok, err := harness.FromError(got[`1`].Error)
+				require.NoError(t, err)
+				require.True(t, ok)
+				require.Equal(t, &want, addition.Stop)
+			})
 		})
-		id := start(t, w)
-		w.Send(prompt(`1`, id, "hi"))
-		got, _ := w.Await(`1`)
-		require.NotNil(t, got[`1`].Error)
-		require.Equal(t, acp.NewInvalidRequest(nil).Code, got[`1`].Error.Code)
-		require.Equal(t, "no secrets in prompts", got[`1`].Error.Data.(map[string]any)["deniedReason"])
-	})
+	}
 }

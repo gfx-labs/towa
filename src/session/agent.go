@@ -540,17 +540,22 @@ func (a *Agent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResp
 // failure with a typed reason carries it in the error's data, so the client
 // does not have to read the message.
 func stopError(err error) error {
-	// A hook refused the prompt and the turn did not start. That is the
-	// request being refused, not a failure inside the agent.
+	// The loop reports a prompt a hook refused as its own error type. It is
+	// carried to the client as a typed stop like the others.
 	var denied *loop.DeniedError
-	if errors.As(err, &denied) {
-		return acp.NewInvalidRequest(map[string]any{"error": err.Error(), "deniedReason": denied.Reason})
-	}
 	var stopped *loop.StopError
-	if !errors.As(err, &stopped) {
+	switch {
+	case errors.As(err, &denied):
+		stopped = &loop.StopError{Stop: harness.Stop{Kind: harness.StopDenied, Message: denied.Reason}}
+	case !errors.As(err, &stopped):
 		return err
 	}
 	data := harness.Meta(map[string]any{"error": err.Error()}, harness.Addition{Stop: &stopped.Stop})
+	// The turn did not start: the request was refused, the agent did not
+	// fail.
+	if stopped.Stop.Kind == harness.StopDenied {
+		return acp.NewInvalidRequest(data)
+	}
 	if stopped.Stop.Kind == harness.StopAuth {
 		return acp.NewAuthRequired(data)
 	}
