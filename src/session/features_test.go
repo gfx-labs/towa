@@ -30,6 +30,12 @@ func endsTurn(context.Context, loop.Turn) (loop.Result, error) {
 // session with the given extra members of session/new.
 func create(t *testing.T, w *acptest.Wire, clientCapabilities, extra string) acp.NewSessionResponse {
 	t.Helper()
+	response, _ := createWithCommands(t, w, clientCapabilities, extra)
+	return response
+}
+
+func createWithCommands(t *testing.T, w *acptest.Wire, clientCapabilities, extra string) (acp.NewSessionResponse, acp.SessionNotification) {
+	t.Helper()
 	w.Send(
 		request(`"init"`, "initialize", `{"protocolVersion":1,"clientCapabilities":`+clientCapabilities+`}`),
 		request(`"new"`, "session/new", `{"cwd":"/work","mcpServers":[]`+extra+`}`),
@@ -38,7 +44,7 @@ func create(t *testing.T, w *acptest.Wire, clientCapabilities, extra string) acp
 	require.Nil(t, got[`"new"`].Error)
 	var resp acp.NewSessionResponse
 	require.NoError(t, json.Unmarshal(got[`"new"`].Result, &resp))
-	return resp
+	return resp, commandNotification(t, w, string(resp.SessionId))
 }
 
 // An old client decodes an update type it does not know as another type,
@@ -72,7 +78,7 @@ func TestUpdatesBehindAClientCapabilityAreSentOnlyWhenAdvertised(t *testing.T) {
 
 				w.Send(prompt(`1`, id, "go"))
 				_, others := w.Await(`1`)
-				updates := updatesOf(t, others)[1:] // after the commands
+				updates := updatesOf(t, others)
 				if tt.wantNotice {
 					require.Len(t, updates, 2)
 					require.Equal(t, "fell back to another account", updates[0].Update.Notice.Title)
@@ -101,10 +107,9 @@ func TestModeIsSwitchedBySetModeAndBySetConfigOption(t *testing.T) {
 		got, others := w.Await(`1`)
 		require.Nil(t, got[`1`].Error)
 		updates := updatesOf(t, others)
-		require.Len(t, updates, 3)
-		require.NotNil(t, updates[0].Update.AvailableCommandsUpdate)
-		require.Equal(t, acp.SessionModeId("ask"), updates[1].Update.CurrentModeUpdate.CurrentModeId)
-		require.Equal(t, session.ModeAsk, updates[2].Update.ConfigOptionUpdate.ConfigOptions[0].Select.CurrentValue)
+		require.Len(t, updates, 2)
+		require.Equal(t, acp.SessionModeId("ask"), updates[0].Update.CurrentModeUpdate.CurrentModeId)
+		require.Equal(t, session.ModeAsk, updates[1].Update.ConfigOptionUpdate.ConfigOptions[0].Select.CurrentValue)
 
 		// set_config_option answers with the options, so only the mode
 		// update is sent.
@@ -455,23 +460,24 @@ func TestSlashCommands(t *testing.T) {
 			// A command the turn handles itself is listed and passed on.
 			require.NoError(t, o.Registry.AddCommand(session.Command{Name: "compact", Description: "Compact the conversation."}))
 		})
-		id := string(create(t, w, `{}`, "").SessionId)
+		created, commandNotice := createWithCommands(t, w, `{}`, "")
+		id := string(created.SessionId)
+		commands := commandNotice.Update.AvailableCommandsUpdate.AvailableCommands
+		require.Len(t, commands, 2)
+		require.Equal(t, "compact", commands[0].Name)
+		require.Nil(t, commands[0].Input)
+		require.Equal(t, "mode", commands[1].Name)
+		require.NotEmpty(t, commands[1].Input.Unstructured.Hint)
 
 		// /mode is answered by the session and never reaches the turn.
 		w.Send(prompt(`1`, id, "/mode ask"))
 		got, others := w.Await(`1`)
 		require.JSONEq(t, endTurn, string(got[`1`].Result))
 		updates := updatesOf(t, others)
-		require.Len(t, updates, 4)
-		commands := updates[0].Update.AvailableCommandsUpdate.AvailableCommands
-		require.Len(t, commands, 2)
-		require.Equal(t, "compact", commands[0].Name)
-		require.Nil(t, commands[0].Input)
-		require.Equal(t, "mode", commands[1].Name)
-		require.NotEmpty(t, commands[1].Input.Unstructured.Hint)
-		require.Equal(t, acp.SessionModeId("ask"), updates[1].Update.CurrentModeUpdate.CurrentModeId)
-		require.Equal(t, session.ModeAsk, updates[2].Update.ConfigOptionUpdate.ConfigOptions[0].Select.CurrentValue)
-		require.Contains(t, updates[3].Update.AgentMessageChunk.Content.Text.Text, "ask")
+		require.Len(t, updates, 3)
+		require.Equal(t, acp.SessionModeId("ask"), updates[0].Update.CurrentModeUpdate.CurrentModeId)
+		require.Equal(t, session.ModeAsk, updates[1].Update.ConfigOptionUpdate.ConfigOptions[0].Select.CurrentValue)
+		require.Contains(t, updates[2].Update.AgentMessageChunk.Content.Text.Text, "ask")
 
 		w.Send(prompt(`2`, id, "/mode yolo"))
 		got, _ = w.Await(`2`)

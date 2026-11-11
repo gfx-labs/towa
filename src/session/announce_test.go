@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func commandNotification(t *testing.T, w *acptest.Wire, id string) {
+func commandNotification(t *testing.T, w *acptest.Wire, id string) acp.SessionNotification {
 	t.Helper()
 	message := w.Recv()
 	require.Equal(t, "session/update", message.Method)
@@ -18,6 +18,7 @@ func commandNotification(t *testing.T, w *acptest.Wire, id string) {
 	require.Equal(t, id, string(notice.SessionId))
 	require.NotNil(t, notice.Update.AvailableCommandsUpdate)
 	require.NotEmpty(t, notice.Update.AvailableCommandsUpdate.AvailableCommands)
+	return notice
 }
 
 func TestCommandsFollowSessionResponseWithoutAnotherRequest(t *testing.T) {
