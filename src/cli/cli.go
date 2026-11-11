@@ -82,7 +82,7 @@ func Run(ctx context.Context, args []string, h Host) error {
 					return printConfig(cmd, h)
 				},
 			},
-		}, accountCommands(h)...),
+		}, append(accountCommands(h), hostsCommand(h))...),
 	}
 	return app.Run(ctx, args)
 }
