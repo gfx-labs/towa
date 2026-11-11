@@ -81,42 +81,54 @@ type ToolsBatch struct {
 	MaxCalls int `koanf:"max_calls"`
 }
 
-// toolsDefaults names where each default comes from. The upstream figures
-// were written from memory of those tools and have not been compared with
-// the captures under prompts/: see docs/notes/2026-11-11-tools.md.
+// toolsDefaults names where each default comes from. A Codex figure cites
+// its file and line in openai/codex at ce0323f2f2d3b25e82806cd555237da3db4e1897,
+// read on 2026-11-11. The Claude Code and jcode figures were written from
+// memory and are unchecked until the capture lane's files are in: see
+// docs/notes/2026-11-11-tools.md.
 var toolsDefaults = map[string]any{
-	// No upstream value was checked for this one. It is about ten times the
-	// gating budget in bytes, so gating always sees the whole of an output
-	// it would pass, and a runaway command cannot fill memory.
+	// Codex keeps the same amount: UNIFIED_EXEC_OUTPUT_MAX_BYTES, 1 MiB
+	// (codex-rs/core/src/unified_exec/mod.rs:75), which exec.rs:81 uses
+	// through DEFAULT_OUTPUT_BYTES_CAP (codex-rs/utils/pty/src/lib.rs:25).
+	// It also keeps half from the start and half from the end
+	// (codex-rs/core/src/unified_exec/head_tail_buffer.rs:18).
 	"tools.max_output_bytes": 1 << 20,
 	// Off, as upstream: the Read tool's description tells the model it can
 	// read any file on the machine, and the design leaves isolation to the
 	// host.
 	"tools.files.confine": false,
-	// Claude Code's Read: 256 KB per read and 2000 lines by default.
+	// Unchecked: Claude Code's Read, 256 KB per read and 2000 lines.
 	"tools.files.read_max_bytes":     256 << 10,
 	"tools.files.read_default_lines": 2000,
-	// The Anthropic Messages API takes an image of at most 5 MB.
+	// Unchecked: the Anthropic Messages API's limit on one image, 5 MB.
 	"tools.files.image_max_bytes": 5 << 20,
-	// No upstream value was checked. Sixteen maximal reads, so a file the
-	// model can page through in a few calls can be edited.
+	// No upstream source. Sixteen maximal reads, so a file the model can
+	// page through in a few calls can be edited.
 	"tools.files.edit_max_bytes": 4 << 20,
-	// Both upstream shell tools describe their command as bash.
+	// No upstream source for a fixed program. Codex runs the user's own
+	// shell and falls back to bash, then zsh, then /bin/sh on Linux
+	// (codex-rs/shell-command/src/shell_detect.rs:363). Unchecked: Claude
+	// Code's Bash tool.
 	"tools.shell.program": "bash",
-	// Claude Code's Bash: two minutes by default, ten at most.
+	// Unchecked: Claude Code's Bash, two minutes by default and ten at
+	// most. Codex's default is ten seconds, DEFAULT_EXEC_COMMAND_TIMEOUT_MS
+	// (codex-rs/core/src/exec.rs:63), and it has no maximum there.
 	"tools.shell.timeout":     "2m",
 	"tools.shell.max_timeout": "10m",
-	// Codex's exec drains output for two seconds after the process is gone.
+	// Codex: IO_DRAIN_TIMEOUT_MS, 2000 (codex-rs/core/src/exec.rs:94).
 	"tools.shell.pipe_wait": "2s",
 	"tools.search.ripgrep":  "rg",
 	"tools.repair.enabled":  true,
 	"tools.gate.enabled":    true,
-	// Claude Code's default limit on a tool result, MAX_MCP_OUTPUT_TOKENS.
+	// Unchecked: Claude Code's limit on a tool result,
+	// MAX_MCP_OUTPUT_TOKENS. Codex's nearest figure is lower:
+	// DEFAULT_MAX_OUTPUT_TOKENS, 10000, for one command's output
+	// (codex-rs/core/src/unified_exec/mod.rs:74).
 	"tools.gate.budget_tokens": 25000,
-	// OpenAI's rule of thumb for English text: one token is about four
-	// characters.
+	// Codex: APPROX_BYTES_PER_TOKEN, 4, rounded up as here
+	// (codex-rs/utils/string/src/truncate.rs:6 and :96).
 	"tools.gate.bytes_per_token": 4,
-	// jcode's batch takes one to ten calls.
+	// Unchecked: jcode's batch takes one to ten calls.
 	"tools.batch.max_calls": 10,
 }
 
