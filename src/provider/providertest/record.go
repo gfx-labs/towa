@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -36,6 +38,14 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	r.mu.Unlock()
 	if used {
 		return nil, fmt.Errorf("providertest: recorder for %s already recorded a request", r.Path)
+	}
+
+	if r.Path == "" {
+		return nil, errors.New("providertest: recording path is empty")
+	}
+	// Refuse an unusable parent before the endpoint can have an effect.
+	if err := os.MkdirAll(filepath.Dir(r.Path), 0o700); err != nil {
+		return nil, fmt.Errorf("providertest: recording directory: %w", err)
 	}
 
 	var body []byte

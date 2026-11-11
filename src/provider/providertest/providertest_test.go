@@ -1,6 +1,7 @@
 package providertest_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -93,6 +95,45 @@ func (f *failures) Helper() {}
 
 func (f *failures) Errorf(format string, args ...any) {
 	f.errors = append(f.errors, fmt.Sprintf(format, args...))
+}
+
+func TestRecorderPreflightsParentBeforeEndpoint(t *testing.T) {
+	var effects atomic.Int64
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		effects.Add(1)
+		_, _ = io.WriteString(w, "endpoint executed")
+	}))
+	defer endpoint.Close()
+	for _, valid := range []bool{true, false} {
+		t.Run(fmt.Sprint(valid), func(t *testing.T) {
+			parent := filepath.Join(t.TempDir(), "missing", "nested")
+			if !valid {
+				parent = filepath.Join(t.TempDir(), "not-a-directory")
+				require.NoError(t, os.WriteFile(parent, []byte("occupied"), 0o600))
+			}
+			path := filepath.Join(parent, "exchange.json")
+			client := httpclient.New()
+			client.Transport = &providertest.Recorder{Next: client.Transport, Path: path}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, endpoint.URL, nil)
+			require.NoError(t, err)
+			before := effects.Load()
+			response, err := client.Do(req)
+			if !valid {
+				var pathError *os.PathError
+				require.True(t, errors.As(err, &pathError), "parent failure must retain its filesystem cause: %v", err)
+				require.Equal(t, before, effects.Load(), "invalid output must be refused before the endpoint runs")
+				return
+			}
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			exchange, err := providertest.Load(path)
+			require.NoError(t, err)
+			require.Equal(t, body, exchange.Response.Body())
+			require.Equal(t, before+1, effects.Load())
+		})
+	}
 }
 
 func TestRecordingHoldsTheExchangeWithoutSecrets(t *testing.T) {
