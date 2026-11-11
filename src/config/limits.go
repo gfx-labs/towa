@@ -59,7 +59,8 @@ type Retry struct {
 // limit is a choice of whoever runs the harness. The retry defaults are the
 // ones the Anthropic and OpenAI SDKs ship with (their generated clients
 // share them): 2 retries, 0.5s first wait doubling to at most 8s, a wait
-// shortened by up to 25%, and a retry-after honoured up to 60s.
+// shortened by up to 25%, and a retry-after honoured up to 60s. These were
+// written from memory and not re-read from the SDK sources.
 // max_stop_denials is 3 by choice: no upstream harness bounds it and nothing
 // was measured. It is enough for a hook to ask for a fix and see it made.
 var limitsDefaults = map[string]any{
