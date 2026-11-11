@@ -69,7 +69,7 @@ func TestRequestBodyForAPlainEndpoint(t *testing.T) {
 		Items:  conversation("deepseek"),
 		Tools: []provider.Tool{
 			{Name: "shell", Description: "Run a command.", InputSchema: jsontext.Value(`{"type":"object","properties":{"command":{"type":"string"}}}`)},
-			{Native: jsontext.Value(`{"type":"web_search"}`)},
+			{NativeAPI: provider.NativeAPIChatCompletions, Native: jsontext.Value(`{"type":"web_search"}`)},
 		},
 		MaxOutputTokens: 4096,
 		Effort:          "high",

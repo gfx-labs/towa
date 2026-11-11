@@ -165,7 +165,13 @@ func (c *Client) buildRequest(req provider.Request) (*wireRequest, Thinking, *pr
 
 	var lastTool *toolDef
 	for _, tool := range req.Tools {
+		if tool.NativeAPI != "" && len(tool.Native) == 0 {
+			return nil, Thinking{}, invalidRequest(fmt.Sprintf("tool %q: native API is set without a native definition", tool.Name))
+		}
 		if len(tool.Native) > 0 {
+			if tool.NativeAPI != provider.NativeAPIMessages {
+				return nil, Thinking{}, invalidRequest(fmt.Sprintf("tool %q: native API %q is not %q", tool.Name, tool.NativeAPI, provider.NativeAPIMessages))
+			}
 			out.Tools = append(out.Tools, tool.Native)
 			continue
 		}

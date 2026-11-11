@@ -42,6 +42,20 @@ provider response. It checks role preservation/rejection, unknown scheme
 rejection without HTTP, and foreign-string rejection with own call-type
 preservation. This test does not establish successful live provider behavior.
 
+## Native tool definitions
+
+`provider.Tool.NativeAPI` is a typed API tag. Its values are `responses`,
+`messages` and `chat_completions`. A native definition requires the receiving
+client's tag. Untagged or foreign definitions fail before HTTP, as does a tag
+without a definition. There is no tool-name inference or JSON rewriting.
+
+The boundary test reads the actual captured Codex `apply_patch` definition in
+`src/tools/codex/specs/apply_patch.json`. It proves that Responses sends that
+definition unchanged with its tag, and that Messages/Chat reject the Responses
+tag before HTTP. It also exercises every other foreign tag and an absent tag.
+It does not claim that an incorrectly tagged definition is semantically valid
+for its named API. The producer owns accurate tagging.
+
 ## Checks
 
 Scoped provider build, vet, race tests and lint pass. Static Linux and

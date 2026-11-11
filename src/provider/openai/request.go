@@ -186,7 +186,13 @@ func buildInstructions(system []provider.SystemBlock) string {
 func buildTools(tools []provider.Tool) ([]any, *provider.Error) {
 	out := make([]any, 0, len(tools))
 	for _, t := range tools {
+		if t.NativeAPI != "" && len(t.Native) == 0 {
+			return nil, invalidRequest(fmt.Sprintf("tool %q: native API is set without a native definition", t.Name))
+		}
 		if len(t.Native) > 0 {
+			if t.NativeAPI != provider.NativeAPIResponses {
+				return nil, invalidRequest(fmt.Sprintf("tool %q: native API %q is not %q", t.Name, t.NativeAPI, provider.NativeAPIResponses))
+			}
 			if !t.Native.IsValid() {
 				return nil, invalidRequest(fmt.Sprintf("tool %q: its native definition is not valid JSON", t.Name))
 			}
@@ -307,6 +313,9 @@ func buildCall(call *transcript.ToolCall, op opaque) (any, bool, *provider.Error
 		return nil, false, invalidRequest(fmt.Sprintf("the input of tool call %q is not valid JSON", call.ID))
 	}
 	if call.Input.Kind() != '"' {
+		if op.Type == typeCustomCall {
+			return nil, false, invalidRequest(fmt.Sprintf("custom tool call %q does not have string input", call.ID))
+		}
 		var compact bytes.Buffer
 		enc := jsontext.NewEncoder(&compact)
 		if err := enc.WriteValue(call.Input); err != nil {

@@ -5,6 +5,8 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -101,7 +103,38 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 			require.Equal(t, provider.Fail, got.Class)
 			require.Equal(t, provider.ReasonRequest, got.Reason)
 			require.Equal(t, before, requests.Load())
+			req.Credential = cred
+			native, err := os.ReadFile(filepath.Join("..", "tools", "codex", "specs", "apply_patch.json"))
+			require.NoError(t, err)
+			ownAPI := map[string]provider.NativeAPI{"responses": provider.NativeAPIResponses, "messages": provider.NativeAPIMessages, "chat": provider.NativeAPIChatCompletions}[api]
+			for _, tag := range []provider.NativeAPI{"", provider.NativeAPIResponses, provider.NativeAPIMessages, provider.NativeAPIChatCompletions} {
+				if tag == ownAPI {
+					continue
+				}
+				req.Tools = []provider.Tool{{Name: "apply_patch", Native: native, NativeAPI: tag}}
+				got = streamError(req)
+				require.Equal(t, provider.Fail, got.Class)
+				require.Equal(t, provider.ReasonRequest, got.Reason)
+				require.Equal(t, before, requests.Load())
+			}
+			req.Tools = []provider.Tool{{NativeAPI: ownAPI}}
+			got = streamError(req)
+			require.Equal(t, provider.Fail, got.Class)
+			require.Equal(t, provider.ReasonRequest, got.Reason)
+			require.Equal(t, before, requests.Load())
+			req.Tools = nil
 			if api == "responses" {
+				req.Tools = []provider.Tool{{Name: "apply_patch", Native: native, NativeAPI: provider.NativeAPIResponses}}
+				got = streamError(req)
+				require.Equal(t, http.StatusServiceUnavailable, got.Status)
+				var body struct {
+					Tools []jsontext.Value `json:"tools"`
+				}
+				require.NoError(t, json.Unmarshal(<-bodies, &body))
+				require.Len(t, body.Tools, 1)
+				require.JSONEq(t, string(native), string(body.Tools[0]))
+				before = requests.Load()
+				req.Tools = nil
 				req.Credential = cred
 				call := transcript.Item{Provider: "foreign", ToolCall: &transcript.ToolCall{ID: "call", Name: "apply_patch", Input: jsontext.Value(`"patch text"`)}, Opaque: jsontext.Value(`{"type":"custom_tool_call"}`)}
 				req.Items = append(req.Items, call)
@@ -133,6 +166,12 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 						require.Equal(t, "patch text", body.Input[1].Input)
 					}
 				}
+				before = requests.Load()
+				req.Items[1].ToolCall.Input = jsontext.Value(`{"not":"text"}`)
+				got = streamError(req)
+				require.Equal(t, provider.Fail, got.Class)
+				require.Equal(t, provider.ReasonRequest, got.Reason)
+				require.Equal(t, before, requests.Load())
 			}
 		})
 	}

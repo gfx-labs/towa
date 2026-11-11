@@ -166,7 +166,13 @@ func (c *Client) body(req provider.Request) ([]byte, *provider.Error) {
 	}
 
 	for i, t := range req.Tools {
+		if t.NativeAPI != "" && len(t.Native) == 0 {
+			return nil, invalid("tool %q: native API is set without a native definition", t.Name)
+		}
 		if t.Native != nil {
+			if t.NativeAPI != provider.NativeAPIChatCompletions {
+				return nil, invalid("tool %q: native API %q is not %q", t.Name, t.NativeAPI, provider.NativeAPIChatCompletions)
+			}
 			w.Tools = append(w.Tools, t.Native)
 			continue
 		}

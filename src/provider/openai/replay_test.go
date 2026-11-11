@@ -65,7 +65,7 @@ var readTool = provider.Tool{
 }
 
 // patchTool is a free-text tool, which only the Responses API has.
-var patchTool = provider.Tool{Native: jsontext.Value(
+var patchTool = provider.Tool{NativeAPI: provider.NativeAPIResponses, Native: jsontext.Value(
 	`{"type":"custom","name":"apply_patch","description":"Apply a patch. The input is the patch text."}`)}
 
 func scenarios() []scenario {

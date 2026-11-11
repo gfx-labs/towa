@@ -61,6 +61,16 @@ type SystemBlock struct {
 	Text string
 }
 
+// NativeAPI identifies the API that understands a native tool definition.
+type NativeAPI string
+
+// Native tool definition APIs.
+const (
+	NativeAPIResponses       NativeAPI = "responses"
+	NativeAPIMessages        NativeAPI = "messages"
+	NativeAPIChatCompletions NativeAPI = "chat_completions"
+)
+
 // Tool describes a tool to the model.
 type Tool struct {
 	Name        string
@@ -72,6 +82,8 @@ type Tool struct {
 	// for tool types only one provider has, such as a free-text tool with a
 	// grammar.
 	Native jsontext.Value
+	// NativeAPI is required with Native and must match the receiving client.
+	NativeAPI NativeAPI
 }
 
 // Event is one step of a response. Exactly one field is set.
