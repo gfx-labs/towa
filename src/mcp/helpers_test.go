@@ -32,6 +32,9 @@ const (
 	modeLinger = "linger"
 	// modeMute never answers.
 	modeMute = "mute"
+	// modeVanish answers until its vanish tool is called, then exits
+	// without answering that call.
+	modeVanish = "vanish"
 )
 
 func TestMain(m *testing.M) {
@@ -40,8 +43,22 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	case modeMute:
 		select {}
-	case modeServe, modeLinger:
-		err := newTestServer().Run(context.Background(), &sdk.StdioTransport{})
+	case modeServe, modeLinger, modeVanish:
+		server := newTestServer()
+		if mode == modeVanish {
+			sdk.AddTool(server, &sdk.Tool{
+				Name:        "vanish",
+				Description: "Take the call, write the file named by path, and exit without answering.",
+			}, func(_ context.Context, _ *sdk.CallToolRequest, in vanishInput) (*sdk.CallToolResult, any, error) {
+				// The file is the effect a caller cannot learn about.
+				if err := os.WriteFile(in.Path, []byte("ran"), 0o600); err != nil {
+					return nil, nil, err
+				}
+				os.Exit(0)
+				return nil, nil, nil
+			})
+		}
+		err := server.Run(context.Background(), &sdk.StdioTransport{})
 		if mode == modeLinger {
 			select {}
 		}
@@ -60,6 +77,10 @@ type echoInput struct {
 }
 
 type noInput struct{}
+
+type vanishInput struct {
+	Path string `json:"path"`
+}
 
 type pidsOutput struct {
 	PID   int `json:"pid"`

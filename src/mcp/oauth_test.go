@@ -1,182 +1,51 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json/v2"
+	"errors"
+	"io"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"sync"
+	"strings"
 	"testing"
-	"time"
 
-	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
-	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/src/auth"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/acpharness/src/mcp/mcptest"
 )
 
-// protectedServer is an MCP server behind the SDK's bearer token check,
-// with an authorization server beside it. The MCP side and the token check
-// are the SDK's. The authorization server is written here, because the
-// SDK's own is in an internal package: it does metadata, dynamic
-// registration, the code grant with PKCE, and refresh tokens that work
-// once.
-type protectedServer struct {
-	URL string // the MCP endpoint
+// The server side of these tests is the SDK's MCP handler behind the SDK's
+// bearer token check. The authorization server beside it is hand-written
+// (see mcptest), so these tests show our client's side of the exchange and
+// say nothing about a real authorization server's metadata, registration
+// rules or error bodies.
 
-	mu sync.Mutex
-	// challenges maps a code to the PKCE challenge it was issued for.
-	challenges map[string]string
-	clients    map[string]string // client id to redirect URI
-	access     map[string]bool
-	refresh    map[string]bool
-	// tokenRequests counts requests to the token endpoint by grant type.
-	tokenRequests map[string]int
-}
-
-func startProtectedServer(t *testing.T, transport string) *protectedServer {
-	t.Helper()
-	p := &protectedServer{
-		challenges: map[string]string{}, clients: map[string]string{},
-		access: map[string]bool{}, refresh: map[string]bool{}, tokenRequests: map[string]int{},
+// browser follows the authorization server's redirect to the loopback
+// callback, as a browser does once the user has approved.
+func browser(client *http.Client) func(context.Context, string) error {
+	return func(ctx context.Context, page string) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, page, nil)
+		if err != nil {
+			return err
+		}
+		go func() {
+			if resp, err := client.Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		return nil
 	}
-	mux := http.NewServeMux()
-	ts := httptest.NewServer(mux)
-	t.Cleanup(func() {
-		ts.CloseClientConnections()
-		ts.Close()
-	})
-	issuer := ts.URL
-	p.URL = ts.URL + "/mcp"
-
-	server := newTestServer()
-	getServer := func(*http.Request) *sdk.Server { return server }
-	var handler http.Handler = sdk.NewStreamableHTTPHandler(getServer, nil)
-	if transport == config.MCPTransportSSE {
-		handler = sdk.NewSSEHandler(getServer, nil)
-	}
-	verify := func(_ context.Context, token string, _ *http.Request) (*sdkauth.TokenInfo, error) {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		if !p.access[token] {
-			return nil, sdkauth.ErrInvalidToken
-		}
-		return &sdkauth.TokenInfo{Expiration: time.Now().Add(time.Hour)}, nil
-	}
-	mux.Handle("/mcp", sdkauth.RequireBearerToken(verify, &sdkauth.RequireBearerTokenOptions{
-		ResourceMetadataURL: ts.URL + "/.well-known/oauth-protected-resource",
-	})(handler))
-	mux.Handle("/.well-known/oauth-protected-resource", sdkauth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
-		Resource: p.URL, AuthorizationServers: []string{issuer},
-	}))
-
-	writeJSON := func(w http.ResponseWriter, status int, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.MarshalWrite(w, v)
-	}
-	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"issuer":                                issuer,
-			"authorization_endpoint":                issuer + "/authorize",
-			"token_endpoint":                        issuer + "/token",
-			"registration_endpoint":                 issuer + "/register",
-			"response_types_supported":              []string{"code"},
-			"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-			"code_challenge_methods_supported":      []string{"S256"},
-			"token_endpoint_auth_methods_supported": []string{"none"},
-		})
-	})
-	mux.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
-		var in oauthex.ClientRegistrationMetadata
-		if err := json.UnmarshalRead(r.Body, &in); err != nil || len(in.RedirectURIs) != 1 {
-			http.Error(w, "bad registration", http.StatusBadRequest)
-			return
-		}
-		id := rand.Text()
-		p.mu.Lock()
-		p.clients[id] = in.RedirectURIs[0]
-		p.mu.Unlock()
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"client_id": id, "redirect_uris": in.RedirectURIs, "token_endpoint_auth_method": "none",
-		})
-	})
-	mux.HandleFunc("GET /authorize", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		p.mu.Lock()
-		redirect, known := p.clients[q.Get("client_id")]
-		p.mu.Unlock()
-		if !known || redirect != q.Get("redirect_uri") || q.Get("code_challenge_method") != "S256" ||
-			q.Get("code_challenge") == "" || q.Get("resource") != p.URL {
-			http.Error(w, "bad authorization request", http.StatusBadRequest)
-			return
-		}
-		code := rand.Text()
-		p.mu.Lock()
-		p.challenges[code] = q.Get("code_challenge")
-		p.mu.Unlock()
-		http.Redirect(w, r, redirect+"?"+url.Values{"code": {code}, "state": {q.Get("state")}}.Encode(), http.StatusFound)
-	})
-	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "bad form", http.StatusBadRequest)
-			return
-		}
-		grant := r.PostForm.Get("grant_type")
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		p.tokenRequests[grant]++
-		ok := false
-		switch grant {
-		case "authorization_code":
-			code := r.PostForm.Get("code")
-			sum := sha256.Sum256([]byte(r.PostForm.Get("code_verifier")))
-			ok = p.challenges[code] != "" && p.challenges[code] == base64.RawURLEncoding.EncodeToString(sum[:])
-			delete(p.challenges, code)
-		case "refresh_token":
-			token := r.PostForm.Get("refresh_token")
-			ok = p.refresh[token]
-			delete(p.refresh, token)
-		}
-		if _, known := p.clients[r.PostForm.Get("client_id")]; !ok || !known {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
-			return
-		}
-		access, refresh := rand.Text(), rand.Text()
-		p.access[access], p.refresh[refresh] = true, true
-		writeJSON(w, http.StatusOK, map[string]any{
-			"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 3600,
-		})
-	})
-	return p
-}
-
-// revokeAccess makes the server refuse every access token issued so far.
-func (p *protectedServer) revokeAccess() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	clear(p.access)
-}
-
-func (p *protectedServer) requests(grant string) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.tokenRequests[grant]
 }
 
 func TestOAuthLoginAndRefresh(t *testing.T) {
 	for _, transport := range []string{config.MCPTransportStreamableHTTP, config.MCPTransportSSE} {
 		t.Run(transport, func(t *testing.T) {
 			ctx := t.Context()
-			protected := startProtectedServer(t, transport)
+			sse := transport == config.MCPTransportSSE
+			protected := mcptest.StartProtected(t, newTestServer(), sse)
 			server := Server{Name: "team/tracker", Transport: transport, URL: protected.URL}
 			store := auth.NewStore(t.TempDir())
 			client := httpclient.New()
@@ -184,30 +53,19 @@ func TestOAuthLoginAndRefresh(t *testing.T) {
 			newManager := func() *Manager {
 				return newTestManager(t, Options{Config: cfg, Servers: []Server{server}, HTTPClient: client, Tokens: store})
 			}
+			login := func() error {
+				return Login(ctx, LoginOptions{
+					Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store, Out: io.Discard,
+					ClientName: "acpharness-test", ClientVersion: "0", OpenURL: browser(client),
+				})
+			}
 
 			// Without a login the server's refusal is reported as such.
 			_, err := newManager().ListTools(ctx, server.Name)
-			var login *LoginRequiredError
-			require.ErrorAs(t, err, &login)
+			var required *LoginRequiredError
+			require.ErrorAs(t, err, &required)
 
-			// The browser is a client that follows the authorization
-			// server's redirect to the loopback callback.
-			require.NoError(t, Login(ctx, LoginOptions{
-				Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store,
-				ClientName: "acpharness-test", ClientVersion: "0",
-				OpenURL: func(ctx context.Context, address string) error {
-					req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-					if err != nil {
-						return err
-					}
-					go func() {
-						if resp, err := client.Do(req); err == nil {
-							_ = resp.Body.Close()
-						}
-					}()
-					return nil
-				},
-			}))
+			require.NoError(t, login())
 			first, err := store.LoadMCP(server.Name)
 			require.NoError(t, err)
 			require.Equal(t, protected.URL, first.ServerURL)
@@ -220,15 +78,15 @@ func TestOAuthLoginAndRefresh(t *testing.T) {
 			list, err := m.ListTools(ctx, server.Name)
 			require.NoError(t, err)
 			require.NotEmpty(t, list)
-			require.Zero(t, protected.requests("refresh_token"))
+			require.Zero(t, protected.TokenRequests("refresh_token"))
 
 			// The server stops accepting the access token. The next call
 			// refreshes once, stores the new tokens and goes through.
-			protected.revokeAccess()
+			protected.RevokeAccess()
 			res, err := m.CallTool(ctx, server.Name, "echo", []byte(`{"text":"after refresh"}`))
 			require.NoError(t, err)
 			require.Equal(t, "after refresh", textOf(t, res))
-			require.Equal(t, 1, protected.requests("refresh_token"))
+			require.Equal(t, 1, protected.TokenRequests("refresh_token"))
 			second, err := store.LoadMCP(server.Name)
 			require.NoError(t, err)
 			require.NotEqual(t, first.AccessToken, second.AccessToken)
@@ -237,18 +95,106 @@ func TestOAuthLoginAndRefresh(t *testing.T) {
 
 			// A stored login is not sent to another URL under the same name.
 			moved := server
-			moved.URL = startProtectedServer(t, transport).URL
+			moved.URL = mcptest.StartProtected(t, newTestServer(), sse).URL
 			_, err = newTestManager(t, Options{Config: cfg, Servers: []Server{moved}, HTTPClient: client, Tokens: store}).
 				ListTools(ctx, server.Name)
-			require.ErrorAs(t, err, &login)
+			require.ErrorAs(t, err, &required)
 
-			// When the refresh token is refused too, a person has to log in.
-			protected.revokeAccess()
-			protected.mu.Lock()
-			clear(protected.refresh)
-			protected.mu.Unlock()
+			// The refresh token is refused too. That is recorded, and the
+			// error names the command that fixes it.
+			protected.RevokeAccess()
+			protected.RevokeRefresh()
 			_, err = m.CallTool(ctx, server.Name, "echo", []byte(`{"text":"x"}`))
-			require.ErrorAs(t, err, &login)
+			require.ErrorAs(t, err, &required)
+			require.Contains(t, required.Error(), "mcp login "+server.Name)
+			require.Equal(t, 2, protected.TokenRequests("refresh_token"))
+			dead, err := store.LoadMCP(server.Name)
+			require.NoError(t, err)
+			require.NotZero(t, dead.RefreshRejectedAtUnixMs)
+			require.Equal(t, "invalid_grant", dead.RefreshRejection)
+
+			// Neither this manager nor a new one sends the dead token again.
+			_, err = m.CallTool(ctx, server.Name, "echo", []byte(`{"text":"x"}`))
+			require.ErrorAs(t, err, &required)
+			_, err = newManager().ListTools(ctx, server.Name)
+			require.ErrorAs(t, err, &required)
+			require.Equal(t, 2, protected.TokenRequests("refresh_token"))
+
+			// A new login clears the record.
+			require.NoError(t, login())
+			again, err := store.LoadMCP(server.Name)
+			require.NoError(t, err)
+			require.Zero(t, again.RefreshRejectedAtUnixMs)
+			_, err = newManager().ListTools(ctx, server.Name)
+			require.NoError(t, err)
 		})
 	}
+}
+
+// A manual login: the page is printed, the user opens it elsewhere, and
+// pastes the address the browser could not open.
+func TestOAuthManualLogin(t *testing.T) {
+	ctx := t.Context()
+	protected := mcptest.StartProtected(t, newTestServer(), false)
+	server := Server{Name: "tracker", Transport: config.MCPTransportStreamableHTTP, URL: protected.URL}
+	store := auth.NewStore(t.TempDir())
+	client := httpclient.New()
+	cfg := defaultConfig(t)
+
+	// The user: reads the page from what Login prints, opens it without
+	// following the redirect, and types the address it was sent to.
+	printed, out := io.Pipe()
+	pasted, in := io.Pipe()
+	noFollow := *client
+	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	user := make(chan error, 1)
+	go func() {
+		user <- func() error {
+			lines := bufio.NewScanner(printed)
+			for lines.Scan() {
+				if !strings.Contains(lines.Text(), "/authorize?") {
+					continue
+				}
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(lines.Text()), nil)
+				if err != nil {
+					return err
+				}
+				resp, err := noFollow.Do(req)
+				if err != nil {
+					return err
+				}
+				_ = resp.Body.Close()
+				go func() { _, _ = io.Copy(io.Discard, printed) }()
+				_, err = io.WriteString(in, resp.Header.Get("Location")+"\n")
+				return err
+			}
+			return errors.New("no authorization page was printed")
+		}()
+	}()
+
+	err := Login(ctx, LoginOptions{
+		Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store, Manual: true, In: pasted, Out: out,
+		ClientName: "acpharness-test", ClientVersion: "0",
+	})
+	require.NoError(t, out.Close())
+	require.NoError(t, err)
+	require.NoError(t, <-user)
+
+	m := newTestManager(t, Options{Config: cfg, Servers: []Server{server}, HTTPClient: client, Tokens: store})
+	_, err = m.ListTools(ctx, server.Name)
+	require.NoError(t, err)
+
+	// An address from some other login is refused, and the stored login
+	// stays as it was.
+	before, err := store.LoadMCP(server.Name)
+	require.NoError(t, err)
+	err = Login(ctx, LoginOptions{
+		Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store, Manual: true,
+		In: strings.NewReader("http://127.0.0.1:1/callback?code=abc&state=not-this-login\n"), Out: io.Discard,
+		ClientName: "acpharness-test", ClientVersion: "0",
+	})
+	require.Error(t, err)
+	after, err := store.LoadMCP(server.Name)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 }

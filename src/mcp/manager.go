@@ -21,6 +21,10 @@ import (
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/gfx-labs/acpharness/src/config"
 )
@@ -50,6 +54,32 @@ func (e *CallError) Error() string {
 
 func (e *CallError) Unwrap() error { return e.Err }
 
+// Span names and attribute keys.
+const (
+	spanConnect   = "mcp.connect"
+	spanCall      = "mcp.call"
+	attrServer    = "mcp.server"
+	attrTransport = "mcp.transport"
+	attrTool      = "mcp.tool"
+	// attrToolError says the tool ran and reported an error of its own.
+	attrToolError = "mcp.tool.is_error"
+)
+
+// endSpan ends a span, marked as failed when err is set. The error's text
+// is left out: a server's refusal may quote the arguments it was given.
+func endSpan(span trace.Span, err error) {
+	if err != nil {
+		kind := "error"
+		var login *LoginRequiredError
+		if errors.As(err, &login) {
+			kind = "login_required"
+		}
+		span.SetAttributes(attribute.String("error.type", kind))
+		span.SetStatus(codes.Error, "")
+	}
+	span.End()
+}
+
 // Options configures a Manager.
 type Options struct {
 	Config config.MCP
@@ -68,6 +98,10 @@ type Options struct {
 	// Logger gets connection events and, at debug level, what a stdio
 	// server writes to its stderr. It may be nil.
 	Logger *slog.Logger
+	// Tracer gets one span per connect and one per tool call. They carry
+	// the server, the transport and the tool name, and nothing of a call's
+	// arguments or result. Nil means no spans.
+	Tracer trace.Tracer
 	// ClientName and ClientVersion are what a server is told about the
 	// harness in initialize.
 	ClientName    string
@@ -84,6 +118,7 @@ type Manager struct {
 	client  *http.Client
 	tokens  TokenStore
 	logger  *slog.Logger
+	tracer  trace.Tracer
 	impl    *sdk.Implementation
 	results int
 	dir     string
@@ -109,7 +144,12 @@ func NewManager(opts Options) (*Manager, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	tracer := opts.Tracer
+	if tracer == nil {
+		tracer = noop.NewTracerProvider().Tracer("")
+	}
 	m := &Manager{
+		tracer:         tracer,
 		servers:        opts.Servers,
 		conns:          make(map[string]*connection, len(opts.Servers)),
 		client:         opts.HTTPClient,
@@ -172,7 +212,18 @@ func (m *Manager) ListTools(ctx context.Context, server string) ([]*sdk.Tool, er
 // a JSON object, or empty for a tool that takes none. A failure before the
 // call was sent is a connect error. One after it is a *CallError, and the
 // call is never sent again.
-func (m *Manager) CallTool(ctx context.Context, server, tool string, arguments jsontext.Value) (*sdk.CallToolResult, error) {
+func (m *Manager) CallTool(ctx context.Context, server, tool string, arguments jsontext.Value) (res *sdk.CallToolResult, err error) {
+	attrs := []attribute.KeyValue{attribute.String(attrServer, server), attribute.String(attrTool, tool)}
+	if c, ok := m.conns[server]; ok {
+		attrs = append(attrs, attribute.String(attrTransport, c.server.Transport))
+	}
+	ctx, span := m.tracer.Start(ctx, spanCall, trace.WithAttributes(attrs...))
+	defer func() {
+		if res != nil {
+			span.SetAttributes(attribute.Bool(attrToolError, res.IsError))
+		}
+		endSpan(span, err)
+	}()
 	c, l, err := m.acquire(ctx, server)
 	if err != nil {
 		return nil, err
@@ -183,7 +234,7 @@ func (m *Manager) CallTool(ctx context.Context, server, tool string, arguments j
 		// The SDK encodes a jsontext.Value as it is.
 		params.Arguments = arguments
 	}
-	res, err := l.session.CallTool(ctx, params)
+	res, err = l.session.CallTool(ctx, params)
 	if err != nil {
 		return nil, &CallError{Server: server, Tool: tool, Err: l.http.loginRequired(server, err)}
 	}
@@ -383,7 +434,10 @@ func (l *live) listTools(ctx context.Context) ([]*sdk.Tool, error) {
 }
 
 // connect starts the server or connects to it, and runs initialize.
-func (m *Manager) connect(ctx context.Context, s Server) (*live, error) {
+func (m *Manager) connect(ctx context.Context, s Server) (_ *live, err error) {
+	ctx, span := m.tracer.Start(ctx, spanConnect, trace.WithAttributes(
+		attribute.String(attrServer, s.Name), attribute.String(attrTransport, s.Transport)))
+	defer func() { endSpan(span, err) }()
 	// An SSE connection reads its events on the request made with the
 	// context given to Connect, so that context has to live as long as the
 	// connection. The timeout and the caller's cancellation are applied by

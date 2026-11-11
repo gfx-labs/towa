@@ -1,9 +1,9 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -254,19 +254,31 @@ func TestDirectToolNameCollisionIsAnError(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A call the server took and never answered has an unknown outcome: the
+// server here writes a file and exits, so the call did take effect, and
+// nothing the client received says so.
 func TestCallThatGetsNoAnswerIsUnknown(t *testing.T) {
-	server := stdioServer(t, "s", modeServe)
+	server := stdioServer(t, "s", modeVanish)
 	server.Direct = true
 	m := newTestManager(t, Options{Servers: []Server{server}})
 	list, err := m.Tools(t.Context(), nil)
 	require.NoError(t, err)
 	set := tools.Set{Tools: list}
-	echo, _ := set.Lookup("echo")
+	vanish, ok := set.Lookup("vanish")
+	require.True(t, ok)
 
-	// The caller gives up before the call can be answered.
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	res, err := echo.Run(ctx, tools.Call{ID: "c1", Input: jsontext.Value(`{"text":"x"}`)})
+	marker := filepath.Join(t.TempDir(), "ran")
+	input, err := json.Marshal(vanishInput{Path: marker})
 	require.NoError(t, err)
-	require.NotEqual(t, transcript.OutcomeCompleted, res.Outcome)
+	res := run(t, vanish, string(input))
+	require.Equal(t, transcript.OutcomeUnknown, res.Outcome)
+	require.FileExists(t, marker)
+
+	// A call that could not be sent at all is a failure, not an unknown.
+	missing := Server{Name: "gone", Transport: config.MCPTransportStdio, Command: filepath.Join(t.TempDir(), "missing"), Direct: false}
+	m = newTestManager(t, Options{Servers: []Server{missing}})
+	list, err = m.Tools(t.Context(), nil)
+	require.NoError(t, err)
+	res = run(t, list[0], `{"action":"call","server":"gone","tool":"echo"}`)
+	require.Equal(t, transcript.OutcomeFailed, res.Outcome)
 }
