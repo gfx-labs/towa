@@ -195,7 +195,7 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 ### Runtime model selection
 
 - `session/new` uses `_meta` or the configured default.
-- `session/set_config_option` with the `model` category switches between turns. The session advertises its named models as a select option. A switch that changes tool dialect rewrites prior tool calls into the new dialect's neutral form only where the provider requires it; provider-native items that cannot transfer (thinking signatures, encrypted reasoning) are dropped with a recorded event, never sent to the wrong provider.
+- `session/set_config_option` with the `model` category switches between turns. The session advertises its named models as a select option. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
 - Subagent spawns may name a model or chain.
 
 ## Tools
@@ -208,7 +208,7 @@ Model metadata (context window, max output, reasoning support, family, tool dial
 | GPT, Codex | `codex` | the tools captured from the pinned Codex version |
 | other | resolved | the dialect of the family the model was distilled from when known, else `generic` |
 
-`generic` is the Claude Code shapes with neutral descriptions. Config can pin a dialect per model.
+`generic` uses captured Claude Code shapes with explicitly harness-authored neutral descriptions and system instructions. Config can pin a dialect per model. Generic instructions accept the exact configured wire model without aliasing it to an upstream model. Pinned upstream prompt lookup remains exact and refuses unavailable variants.
 
 Each capability (read, write, edit, shell, search) has one implementation. A dialect adapter supplies the upstream tool name, schema, output text and error text. An adapter must behave as the upstream tool does, and is checked against outputs recorded from that upstream tool. Upstream prompts and schemas are copied into `prompts/<upstream>/<version>/` with the source commit, and a script diffs them against new upstream releases.
 
@@ -230,7 +230,7 @@ Not in v1: background shell tasks.
 
 ### Subagents
 
-Same model as jcode: the tool runs a child agent loop in the same process. The child shares the tool registry, MCP connections, context and provider pool, and gets its own compaction state. Its transcript is stored as its own session, with the parent session id in its metadata, so the parent can read it with conversation search. It may use a different model or chain. The parent receives the child's final message. Depth and concurrency limits come from config. Child activity streams to the client as nested tool call updates under the parent's tool call. Swarm, with separate sessions, comes later on the same session manager.
+The tool runs a child agent loop in the same process. Each child opens its own runtime with a read-authorization tracker, frozen tool inventory, MCP manager and compaction state. It inherits the parent's turn settings, including MCP server declarations, and may select another model or chain. The process shares provider clients, auth and child admission. Only configured MCP servers explicitly marked shared reuse physical connections; session overrides do not. The child runtime closes after its turn and tool dispatch have stopped, without closing its parent's resources. Its transcript is stored as its own session with the parent id, so the parent can search it. The parent receives the child's final message and reported usage, including usage reported before a child failure. Depth and concurrency limits come from config. Child activity streams as nested tool call updates. Swarm with separate sessions comes later.
 
 ### MCP
 
