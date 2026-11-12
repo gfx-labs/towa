@@ -50,8 +50,23 @@ With the binary built from `830580f`, same question, one run each:
 - The probe build that sends the parameter to every model still gets the HTTP 400 from `claude-haiku-4-5`, so the table's mark is what lets the default work there.
 - `--claude.thinking=loud` is refused when the config loads: `claude.thinking: fails oneof validation (adaptive off)`.
 
+## On a real task
+
+`oku-trade/trade` PR 4672 on `830580f`, towa only, Opus 5.5 at effort medium, alternating the default with `--claude.thinking=off`:
+
+| Thinking | Requests | Tokens | Last request | Thought text | Committed | Merged PR's 2 tests |
+|---|---|---|---|---|---|---|
+| adaptive, summarized | 8 | 376k | 54.2k | 2,200 chars | yes | pass |
+| off | 6 | 251k | 47.9k | 0 | no | 1 fails |
+| adaptive, summarized | 6 | 274k | 53.8k | 1,513 chars | no | pass |
+| off | 6 | 257k | 48.8k | 0 | no | pass |
+
+- A client is shown thought text on a real task.
+- The request counts overlap (8 and 6 against 6 and 6), and the same agent has varied by two on this task with nothing changed. Two runs a side do not show that thinking adds requests, and do not rule out one.
+- The last request was about 5k tokens larger in both runs with thinking. Earlier runs with no parameter ended between 48k and 55k, so this is not established either.
+
 ## Limits
 
-- Whether a summary changes what the model does on a real task, or what a turn costs, is not measured.
+- Two runs a side on one task is all there is on what the summary costs.
 - The summary is the API's, not the model's full reasoning. No other display value was tried.
 - Every measurement used a subscription login. An API key was not tried.

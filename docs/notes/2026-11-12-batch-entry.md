@@ -73,3 +73,4 @@ pi itself took 6 requests (4 up to the edit, 2 after) and 238k in its one run on
 - The change itself was no better or worse in either pair: one run of each failed the same merged test, by leaving the Price chart's tooltip unformatted.
 - The gap closed with no thinking parameter in any run, while pi sends adaptive thinking. So the thinking parameter is not needed to explain it. Whether sending it changes towa's count is not measured here.
 - Two runs each, and the same agent has varied by two or three requests on one task. This points at the base instructions and does not establish them. The instructions were not changed.
+- Two later runs on towa's own instructions with no thinking parameter took 6 requests each (`docs/notes/2026-11-12-claude-thinking.md`). Five such runs on this task now read 6, 6, 7, 7 and 8, against 5 and 6 with pi's instructions and 6 for pi. The ranges overlap, so on this task the instructions account for about one request at most.
