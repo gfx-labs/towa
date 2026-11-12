@@ -31,7 +31,7 @@ Every Claude model in the built-in table was then sent the third form with a sho
 
 - `claude.thinking` (default `adaptive`) and `claude.thinking_display` (default `summarized`). `off` sends no thinking parameter, as before. An empty display sends none, and the thinking then arrives without text.
 - The display value is passed through as written. The API names the values and refuses one it does not know.
-- `models.Metadata.NoAdaptiveThinking` marks `claude-haiku-4-5`, the one model the probe found. A request to it carries no thinking parameter. A model the table does not have is sent the configured one. That case was not sent to the API: a session on a model with no metadata is refused before any request unless `model_context_window` and `model_max_output_tokens` are set.
+- `models.Metadata.NoAdaptiveThinking` marks `claude-haiku-4-5`, the one model the probe found. A request to it carries no thinking parameter. A model with no row is read from the row its name points to (`docs/notes/2026-11-12-model-guess.md`): `claude-haiku-4-5-20251001` got the HTTP 400 until it was. A model no row speaks for is sent the configured parameter. No such model was sent to the API.
 - Manual thinking with a token budget (`anthropic.ThinkingManual`) is not wired. Nothing here needs it: the one model without adaptive thinking is left without a parameter.
 
 ## Checked

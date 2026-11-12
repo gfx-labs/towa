@@ -24,10 +24,16 @@ type Metadata struct {
 }
 
 // AdaptiveThinking reports whether a model takes the adaptive thinking
-// parameter. A model the built-in table does not have is taken to: the API
-// refuses the request by name if it does not.
+// parameter. A model with no row is read from the row its name points to,
+// so claude-haiku-4-5-20251001 is refused it as claude-haiku-4-5 is. A model
+// no row speaks for is taken to: the API refuses the request by name if it
+// does not.
 func AdaptiveThinking(model string) bool {
-	return !builtin[model].NoAdaptiveThinking
+	meta, listed := builtin[model]
+	if !listed {
+		meta, _, _ = guess(model)
+	}
+	return !meta.NoAdaptiveThinking
 }
 
 // Entry is one parsed chain entry with its metadata.

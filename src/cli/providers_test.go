@@ -20,6 +20,7 @@ func TestClaudeThinkingIsLeftOffAModelThatRefusesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, anthropic.Thinking{Mode: anthropic.ThinkingAdaptive, Display: cfg.ThinkingDisplay}, thinking("claude-opus-5-5"))
 	require.Equal(t, anthropic.Thinking{}, thinking("claude-haiku-4-5"))
+	require.Equal(t, anthropic.Thinking{}, thinking("claude-haiku-4-5-20251001"))
 	require.Equal(t, anthropic.ThinkingAdaptive, thinking("a-model-the-table-does-not-have").Mode)
 
 	cfg.Thinking = config.ClaudeThinkingOff
