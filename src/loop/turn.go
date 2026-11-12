@@ -21,6 +21,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/tools"
 	"github.com/gfx-labs/acpharness/src/tools/repair"
+	"github.com/gfx-labs/acpharness/src/tools/todo"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
@@ -380,7 +381,23 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 			}
 			logHook(ctx, l.o.Logger, t.SessionID, hookErr)
 			if decision.Action == hooks.Allow {
-				return tn.result(reason), nil
+				// A turn that ends by itself with todo items unfinished
+				// is sent back to them, a bounded number of times.
+				if reason != acp.StopReasonEndTurn || tn.limits.MaxTodoPokes == 0 {
+					return tn.result(reason), nil
+				}
+				open, sent, err := todo.Open(tn.entries)
+				if err != nil {
+					return Result{}, err
+				}
+				if len(open) == 0 || int64(sent) >= tn.limits.MaxTodoPokes {
+					return tn.result(reason), nil
+				}
+				poke := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: todo.Poke(open)}}}}
+				if err := tn.append(ctx, poke); err != nil {
+					return Result{}, err
+				}
+				continue
 			}
 			// A hook that always denies must not run the turn forever.
 			if tn.stopDenials >= tn.limits.MaxStopDenials {

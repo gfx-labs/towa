@@ -1,7 +1,7 @@
 {
   "name": "todo",
-  "description": "Replace the session's task list. The client shows it as the plan. Send the whole list on every call, keep one item in_progress at a time, and mark an item completed when it is done.",
-  "guidance": ["For work with several steps, keep the plan in todo and update it as each step finishes."],
+  "description": "Use the todo tool very frequently. It replaces the session's task list, which the client shows as the plan. Send the whole list, the plan and the goals on every call, keep one item in_progress at a time, and mark an item completed when it is done. Assess the goals honestly from what you have observed.",
+  "guidance": ["Use todo very frequently: keep the plan and its goal assessments in it and update them as each step finishes."],
   "input_schema": {
     "type": "object",
     "properties": {
@@ -13,9 +13,43 @@
           "properties": {
             "content": {"type": "string", "minLength": 1, "description": "What is to be done."},
             "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
-            "activeForm": {"type": "string", "minLength": 1, "description": "Wording shown while the item is in progress, such as \"Running the tests\"."}
+            "activeForm": {"type": "string", "minLength": 1, "description": "Wording shown while the item is in progress, such as \"Running the tests\"."},
+            "confidence": {"type": "string", "enum": ["speculative", "plausible", "validated", "verified"], "description": "Evidence that the task can be completed correctly."},
+            "completion_confidence": {"type": "string", "enum": ["speculative", "plausible", "validated", "verified"], "description": "Evidence of completion; completed items only."}
           },
           "required": ["content", "status", "activeForm"],
+          "additionalProperties": false
+        }
+      },
+      "plan": {
+        "type": "object",
+        "description": "What the user wants and how well you understand it.",
+        "properties": {
+          "user_intention": {"type": "string"},
+          "understands_user_intent": {"type": "string", "enum": ["uncertain", "partial", "clear", "complete"]}
+        },
+        "required": ["user_intention", "understands_user_intent"],
+        "additionalProperties": false
+      },
+      "goals": {
+        "type": "array",
+        "description": "One honest assessment per goal of the work.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "group": {"type": "string", "description": "Which part of the work this goal covers. Omit when there is one goal."},
+            "closed_feedback_loop": {"type": "string", "enum": ["absent", "weak", "usable", "strong", "closed"], "description": "How much correctness the feedback loop can verify itself."},
+            "feedback_loop": {"type": "string", "description": "Concrete check for each requirement."},
+            "feedback_loop_relevance": {"type": "string", "enum": ["indirect", "synthetic", "representative", "acceptance_blocked", "acceptance_aligned"], "description": "indirect: inspection/proxy; synthetic: mocks/custom harness; representative: real interfaces, partial workflow; acceptance_blocked: real workflow attempted but externally blocked; acceptance_aligned: real build/test/user workflow passed, never substitutes only."},
+            "feedback_loop_coverage": {"type": "string", "enum": ["narrow", "main_paths", "edge_and_integration_paths"]},
+            "feedback_loop_traceability": {"type": "string", "enum": ["unmapped", "partial", "complete"], "description": "Requirements/outputs mapped to checks and observed results."},
+            "delivery_state": {"type": "string", "enum": ["change_made", "integrated", "workflow_validated", "outcome_delivered"]},
+            "difficulty": {"type": "string", "enum": ["trivial", "routine", "involved", "complex", "hard", "expert", "research", "open_ended"]},
+            "autonomy": {"type": "string", "enum": ["requested_only", "necessary_followthrough", "proactive", "stewardship"]},
+            "iteration_maturity": {"type": "string", "enum": ["not_started", "exploring", "improving", "plateau_unproven", "outcome_reached", "constraints_exhausted", "plateau_confirmed", "budget_exhausted"]},
+            "stopping_evidence": {"type": "string", "description": "Observed evidence supporting iteration_maturity."}
+          },
+          "required": ["closed_feedback_loop", "feedback_loop", "feedback_loop_relevance", "feedback_loop_coverage", "feedback_loop_traceability"],
           "additionalProperties": false
         }
       }

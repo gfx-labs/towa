@@ -152,6 +152,7 @@ limits:
   max_input_tokens: 0
   max_output_tokens: 0
   max_stop_denials: 3     # how often a stop hook may keep a turn going
+  max_todo_pokes: 3       # how often a turn ending with unfinished todos is sent back
 
 subagents:
   max_depth: 2
@@ -245,7 +246,7 @@ Names, descriptions and schemas are in `src/tools/core/specs`. The instructions 
 - `batch`: run several independent tool calls in one call, for models that do not emit parallel calls.
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
 - Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
-- Todo: the `todo` tool maps to ACP `plan` updates.
+- Todo: the `todo` tool maps to ACP `plan` updates. Its input is jcode's: the list, a `plan` (the user's intention and how well it is understood) and `goals` (the feedback loop for each goal, its coverage, relevance and traceability, delivery state and when to stop). The model fills the assessment in and nothing scores it. A turn that ends with unfinished items is sent back to them up to `limits.max_todo_pokes` times.
 - Web: webfetch with HTML to Markdown. Web search has two forms, chosen per chain entry (`docs/notes/2026-11-12-hosted-websearch.md`):
   - Hosted (`websearch.hosted`, on by default): an entry on the built-in `claude` or `codex` provider is sent the provider's own `web_search` tool in place of ours, and the provider runs the search. Its items are stored whole and go back only to the provider, model and account that made them. Any other request gets them as text. The client is shown each search as a tool call.
   - Local: every other entry gets `websearch`, where this process posts the query to DuckDuckGo's HTML page (`websearch.endpoint`) and returns titles, URLs and snippets. A bot challenge from the endpoint is reported to the model as a failed search (`docs/notes/2026-11-11-websearch.md`).

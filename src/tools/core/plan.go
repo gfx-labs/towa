@@ -23,7 +23,14 @@ func planTool(spec provider.Tool, deps Deps) tools.Tool {
 					Content    string      `json:"content"`
 					Status     todo.Status `json:"status"`
 					ActiveForm string      `json:"activeForm"`
+					// The confidences, the plan and the goals are the model's own
+					// record. The tool's schema has checked them and nothing
+					// here reads them.
+					Confidence           string `json:"confidence"`
+					CompletionConfidence string `json:"completion_confidence"`
 				} `json:"todos"`
+				Plan  jsontext.Value `json:"plan"`
+				Goals jsontext.Value `json:"goals"`
 			}
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
 				return textResult("Invalid todo input: "+err.Error(), true), nil

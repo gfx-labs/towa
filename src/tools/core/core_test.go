@@ -85,7 +85,14 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	result = run(t, set, env, "edit", edit)
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 
-	result = run(t, set, env, "todo", map[string]any{"todos": []map[string]any{{"content": "Check files", "status": "in_progress", "activeForm": "Checking files"}}})
+	result = run(t, set, env, "todo", map[string]any{
+		"todos": []map[string]any{{"content": "Check files", "status": "in_progress", "activeForm": "Checking files", "confidence": "plausible"}},
+		"plan":  map[string]any{"user_intention": "Check the files", "understands_user_intent": "clear"},
+		"goals": []map[string]any{{
+			"closed_feedback_loop": "usable", "feedback_loop": "read each file back", "feedback_loop_relevance": "representative",
+			"feedback_loop_coverage": "main_paths", "feedback_loop_traceability": "partial",
+		}},
+	})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 	require.Len(t, shown, 1)
 	require.Equal(t, "Checking files", shown[0].Content)
