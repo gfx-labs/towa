@@ -165,8 +165,5 @@ func (c *Config) validateCompaction() error {
 	if c.Compaction.Mode == CompactionSemantic && c.Embeddings.BaseURL == "" {
 		return fmt.Errorf("compaction.mode %q requires embeddings.base_url", CompactionSemantic)
 	}
-	if c.OpenAI.CompactThreshold != 0 {
-		return fmt.Errorf("openai.compact_threshold is no longer supported; use compaction.openai_native_threshold_tokens with compaction.openai_native")
-	}
 	return nil
 }
