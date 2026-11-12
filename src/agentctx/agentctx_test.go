@@ -1,6 +1,7 @@
 package agentctx_test
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -130,6 +131,27 @@ func TestAFileReachedTwiceIsReadOnce(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	require.Equal(t, []string{root}, paths(files))
+}
+
+func TestInstructionDirectoryRootMayBeASymlink(t *testing.T) {
+	for _, defaults := range []bool{false, true} {
+		t.Run(fmt.Sprintf("defaults=%t", defaults), func(t *testing.T) {
+			tr := newTree(t)
+			target := filepath.Join(tr.home, "instructions")
+			write(t, filepath.Join(target, "nested", "rule.md"), "a linked rule")
+			link := filepath.Join(tr.home, ".agents", "rules")
+			require.NoError(t, os.MkdirAll(filepath.Dir(link), 0o755))
+			require.NoError(t, os.Symlink(target, link))
+			cfg := config.Context{DefaultAgents: defaults}
+			if !defaults {
+				cfg.Agents = []string{link}
+			}
+			files, err := agentctx.LoadFiles(tr.request(cfg))
+			require.NoError(t, err)
+			require.Equal(t, []string{filepath.Join(link, "nested", "rule.md")}, paths(files))
+			require.Equal(t, "a linked rule", files[0].Text)
+		})
+	}
 }
 
 func TestAFileThatCannotBeReadIsAnErrorWithItsPath(t *testing.T) {

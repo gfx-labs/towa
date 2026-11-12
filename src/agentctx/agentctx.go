@@ -182,15 +182,14 @@ func (l *fileLoader) addPath(path string, optional bool) error {
 	if !info.IsDir() {
 		return l.add(path, optional)
 	}
-	// WalkDir visits in lexical order and does not follow symlinks below
-	// path, so a link cannot make the walk loop.
+	// DirFS follows a linked root. WalkDir does not follow links below it.
 	var paths []string
-	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(path), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && filepath.Ext(p) == ".md" {
-			paths = append(paths, p)
+			paths = append(paths, filepath.Join(path, p))
 		}
 		return nil
 	})
