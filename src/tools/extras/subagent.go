@@ -27,7 +27,8 @@ func Subagent(spawner *subagent.Spawner, runner subagent.Runner) (tools.Tool, er
 	if runner == nil {
 		return tools.Tool{}, errors.New("subagent: no child runtime runner")
 	}
-	t := newTool(NameSubagent, "Run a child agent with its own conversation and return its final message.", acp.ToolKindOther, []byte(`{"type":"object","required":["prompt"],"properties":{"intent":{"type":"string"},"prompt":{"type":"string","minLength":1},"model":{"type":"string","description":"A configured name allowed by subagents.models. Omit to inherit the current model."},"description":{"type":"string","description":"What the child is for."}}}`))
+	t := newTool(NameSubagent, "Run a child agent and wait for it to finish. The child starts with none of this conversation, so the prompt must hold everything it needs: the task, the paths and what to report back. It has this session's tools and working directory. Returns JSON with the child's last message in final, or an error.", acp.ToolKindOther, []byte(`{"type":"object","required":["prompt"],"properties":{"intent":{"type":"string"},"prompt":{"type":"string","minLength":1,"description":"The whole task for the child, written for a reader who has seen nothing else."},"model":{"type":"string","description":"A configured name allowed by subagents.models. Omit to inherit the current model."},"description":{"type":"string","description":"A few words saying what the child is for. The user sees this."}}}`))
+	t.Guidance = []string{"Give " + NameSubagent + " a task that stands on its own and whose working would fill your context, such as a wide search or an independent piece of work. Do small things yourself."}
 	t.Effect = tools.Executes
 	t.Describe = func(raw jsontext.Value) (tools.Description, error) {
 		var in struct {

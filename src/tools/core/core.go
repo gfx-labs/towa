@@ -55,32 +55,35 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		if b.name == "todo" && deps.ShowPlan == nil {
 			continue
 		}
-		spec, err := definition(b.name)
+		spec, guidance, err := definition(b.name)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, b.tool(spec))
+		t := b.tool(spec)
+		t.Guidance = guidance
+		result = append(result, t)
 	}
 	return result, nil
 }
 
-func definition(name string) (provider.Tool, error) {
+func definition(name string) (provider.Tool, []string, error) {
 	raw, err := specs.ReadFile("specs/" + name + ".json")
 	if err != nil {
-		return provider.Tool{}, err
+		return provider.Tool{}, nil, err
 	}
 	var spec struct {
 		Name        string         `json:"name"`
 		Description string         `json:"description"`
+		Guidance    []string       `json:"guidance"`
 		InputSchema jsontext.Value `json:"input_schema"`
 	}
 	if err := json.Unmarshal(raw, &spec); err != nil {
-		return provider.Tool{}, err
+		return provider.Tool{}, nil, err
 	}
 	if spec.Name != name || len(spec.InputSchema) == 0 {
-		return provider.Tool{}, fmt.Errorf("core: specs/%s.json does not define %s", name, name)
+		return provider.Tool{}, nil, fmt.Errorf("core: specs/%s.json does not define %s", name, name)
 	}
-	return provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema}, nil
+	return provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema}, spec.Guidance, nil
 }
 
 func textResult(text string, failed bool) tools.Result {

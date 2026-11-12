@@ -14,13 +14,16 @@ import (
 	"uuid"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/src/agentctx"
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/mcp"
 	"github.com/gfx-labs/acpharness/src/models"
+	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
 	"github.com/gfx-labs/acpharness/src/telemetry"
 	"github.com/gfx-labs/acpharness/src/tools"
 	"github.com/gfx-labs/acpharness/src/tools/core"
+	"github.com/gfx-labs/acpharness/src/tools/extras"
 	"github.com/gfx-labs/acpharness/src/tools/fsops"
 	"github.com/gfx-labs/acpharness/src/transcript"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -116,6 +119,58 @@ func runtimeToolNames(list []tools.Tool) []string {
 		names[i] = tool.Spec.Name
 	}
 	return names
+}
+
+// The tools section names only the tools a request is sent: a disabled tool
+// has no line, and an entry whose provider searches gets a line for that
+// provider's tool where another entry gets one for ours.
+func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
+	loaded, err := config.Load(config.Sources{})
+	require.NoError(t, err)
+	cfg := loaded.Config
+	cfg.ConversationSearch.Enabled = false
+	cfg.Providers = []config.Provider{{ID: "other", Kind: config.ProviderResponses, BaseURL: "http://127.0.0.1:1/v1"}}
+	cfg.Accounts = []config.Account{
+		{ID: "chat", Provider: config.ProviderCodex, Kind: config.AccountProxiedOAuth},
+		{ID: "local", Provider: "other", Kind: config.AccountAPIKey, APIKeyEnv: "RUNTIME_TEST_KEY"},
+	}
+	sizes := config.Model{ContextWindow: 100_000, MaxOutputTokens: 1024}
+	hostedModel, plainModel := sizes, sizes
+	hostedModel.Chain, plainModel.Chain = []string{"codex:chat/gpt-5.5"}, []string{"other:local/gpt-5.5"}
+	cfg.Models = map[string]config.Model{"hosted": hostedModel, "plain": plainModel}
+	cfg.DefaultModel = "plain"
+	home := t.TempDir()
+	host := Host{Stdout: io.Discard, Stderr: io.Discard, Environ: []string{"HOME=" + home, "XDG_STATE_HOME=" + filepath.Join(home, "state"), "RUNTIME_TEST_KEY=placeholder"}}
+	tel, err := telemetry.Start(t.Context(), cfg.Telemetry, version(), io.Discard)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tel.Shutdown(context.Background())) })
+	factory, err := newRuntimeFactory(t.Context(), cfg, host, tel)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, factory.Close()) })
+
+	section := func(model string) string {
+		turn := loop.Turn{
+			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
+			Update: func(context.Context, acp.SessionUpdate) error { return nil },
+		}
+		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{})
+		require.NoError(t, err)
+		for _, block := range prepared.system {
+			if block.Name == agentctx.SectionTools {
+				return block.Text
+			}
+		}
+		t.Fatal("the prompt has no tools section")
+		return ""
+	}
+	plain, hosted := section("plain"), section("hosted")
+	require.Contains(t, plain, "with "+extras.NameWebSearch+".")
+	require.Contains(t, hosted, "with "+hostedsearch.Name+".")
+	require.NotContains(t, hosted, extras.NameWebSearch)
+	for _, text := range []string{plain, hosted} {
+		require.Contains(t, text, "no terminal")
+		require.NotContains(t, text, extras.NameConversationSearch)
+	}
 }
 
 // runtimeMCP observes real SDK sessions, not replacement cleanup callbacks.

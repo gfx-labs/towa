@@ -16,8 +16,6 @@ const (
 	SectionPrompt = "prompt"
 	// SectionTools is the guidance about the tools.
 	SectionTools = "tools"
-	// SectionRules is the harness's own rules.
-	SectionRules = "rules"
 	// SectionProjectContext holds the context files.
 	SectionProjectContext = "project_context"
 	// SectionSkills lists the skills.
@@ -29,7 +27,7 @@ const (
 )
 
 var builtinSections = []string{
-	SectionPrompt, SectionTools, SectionRules, SectionProjectContext, SectionSkills, SectionWorkDir, SectionClient,
+	SectionPrompt, SectionTools, SectionProjectContext, SectionSkills, SectionWorkDir, SectionClient,
 }
 
 // Prompt is what the system prompt is built from. A section whose text is
@@ -37,10 +35,11 @@ var builtinSections = []string{
 type Prompt struct {
 	// Instructions is the text of the prompt section.
 	Instructions string
-	// Tools is the guidance about the tools.
+	// Tools is the guidance that holds for every tool.
 	Tools string
-	// Rules is the harness's own rules.
-	Rules string
+	// ToolLines are the guidance lines of the tools this request offers,
+	// in the tools' order.
+	ToolLines []string
 	// Loaded is what Load returned. It may be nil.
 	Loaded *Loaded
 	// WorkDir is the session's working directory.
@@ -92,11 +91,11 @@ func Capabilities() *acp.SessionSystemPromptCapabilities {
 }
 
 // Build returns the system prompt's sections in order: the instructions,
-// tools, rules, project context, skills, working directory, the sections
+// tools, project context, skills, working directory, the sections
 // added by configuration, and the client's appended prompt.
 //
 // A client prompt in append mode is the last section. In override mode it
-// takes the place of the prompt, tools and rules sections, and everything
+// takes the place of the prompt and tools sections, and everything
 // after them stays. Neither mode touches the tool definitions, the MCP
 // servers or the permissions, which are not part of the prompt.
 func Build(p Prompt) ([]provider.SystemBlock, error) {
@@ -117,8 +116,7 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 		add(SectionClient, client)
 	} else {
 		add(SectionPrompt, p.Instructions)
-		add(SectionTools, p.Tools)
-		add(SectionRules, p.Rules)
+		add(SectionTools, toolsText(p.Tools, p.ToolLines))
 	}
 	var loaded Loaded
 	if p.Loaded != nil {
@@ -181,6 +179,19 @@ func blockKind(b acp.ContentBlock) string {
 	default:
 		return "unknown"
 	}
+}
+
+// toolsText is the general guidance followed by one list item per line.
+func toolsText(general string, lines []string) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(general))
+	for _, line := range lines {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("- " + line)
+	}
+	return b.String()
 }
 
 // projectContext joins the context files, each under its path.

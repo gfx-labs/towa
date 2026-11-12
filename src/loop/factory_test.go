@@ -34,6 +34,14 @@ import (
 
 const recordFactoryWrite = "ACPHARNESS_RECORD_FACTORY_WRITE"
 
+// recordFactoryUpstream is the Chat Completions server a recording is made
+// from, such as http://127.0.0.1:1234. It must serve factoryModel.
+const recordFactoryUpstream = "ACPHARNESS_FACTORY_WRITE_UPSTREAM"
+
+// factoryModel is the model the recording was made with. A 3b model wrote
+// the wrong content or no file in three of five recordings.
+const factoryModel = "openai/gpt-oss-20b"
+
 type processStderr struct {
 	mu     sync.Mutex
 	buffer bytes.Buffer
@@ -72,18 +80,25 @@ func TestFactoryWriteProcess(t *testing.T) {
 	var handlers []http.Handler
 	var recorders []*providertest.Recorder
 	previousRoot := cwd
+	var upstream *url.URL
 	if recording {
 		require.NoError(t, os.MkdirAll(fixtures, 0o700))
+		var err error
+		upstream, err = url.Parse(os.Getenv(recordFactoryUpstream))
+		require.NoError(t, err)
+		require.NotEmpty(t, upstream.Host, "%s must be the server's address", recordFactoryUpstream)
 		client := httpclient.New()
 		for _, path := range paths {
-			recorders = append(recorders, &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{"factory-test-key"}})
+			// The server's address says whose machine recorded.
+			recorders = append(recorders, &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{"factory-test-key", upstream.Host}})
 		}
 	} else {
 		ex, err := providertest.Load(paths[0])
 		require.NoError(t, err)
-		match := regexp.MustCompile(`/[^"\\\s]+/factory-result\.txt`).Find(ex.Request.Body)
-		require.NotEmpty(t, match, "recorded prompt must identify the owned file path")
-		previousRoot = filepath.Dir(string(match))
+		// The prompt's working directory section names the recorded root.
+		match := regexp.MustCompile(`Working directory: ([^"\\\s]+)`).FindSubmatch(ex.Request.Body)
+		require.NotEmpty(t, match, "recorded prompt must name the working directory")
+		previousRoot = string(match[1])
 		for _, path := range paths {
 			handlers = append(handlers, providertest.Replay(t, path, providertest.IgnoreHeader("User-Agent")).Config.Handler)
 		}
@@ -118,11 +133,7 @@ func TestFactoryWriteProcess(t *testing.T) {
 			}
 			return
 		}
-		target, err := url.Parse("http://127.0.0.1:11434" + r.URL.RequestURI())
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		target := upstream.ResolveReference(&url.URL{Path: r.URL.Path, RawQuery: r.URL.RawQuery})
 		req := r.Clone(r.Context())
 		req.URL = target
 		req.Host = target.Host
@@ -151,19 +162,19 @@ func TestFactoryWriteProcess(t *testing.T) {
 	defer relay.Close()
 	configuration := fmt.Sprintf(`default_model: local
 providers:
-  - id: ollama
+  - id: local
     kind: chat
     base_url: %q
 accounts:
   - id: local
-    provider: ollama
+    provider: local
     kind: api_key
     api_key_env: FACTORY_TEST_KEY
 models:
   local:
-    chain: ["ollama:local/llama3.2:3b"]
+    chain: [%q]
     context_window: 131072
-    max_output_tokens: 256
+    max_output_tokens: 1024
 store:
   root: %q
   compression: none
@@ -196,7 +207,7 @@ telemetry:
   logs:
     stderr:
       level: error
-`, relay.URL+"/v1", filepath.Join(home, "store"))
+`, relay.URL+"/v1", "local:local/"+factoryModel, filepath.Join(home, "store"))
 	cfgDir := filepath.Join(home, "config", "acpharness")
 	require.NoError(t, os.MkdirAll(cfgDir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(configuration), 0o600))
@@ -235,7 +246,10 @@ telemetry:
 	require.Nil(t, responses["1"].Error, "stderr: %s", stderr.String())
 	var created acp.NewSessionResponse
 	require.NoError(t, json.Unmarshal(responses["1"].Result, &created))
-	prompt := fmt.Sprintf("Call the write tool exactly once to create the new file %s with content exactly factory acceptance 7421 and no trailing newline. The file does not exist. Do not call another tool. After the successful tool result, reply with a short plain-text acknowledgment. Never emit tool syntax in your final answer.", filepath.Join(cwd, "factory-result.txt"))
+	// The path is relative so that the model's reply holds no directory: a
+	// reply is streamed in pieces, and a directory split across pieces could
+	// not be replaced on replay.
+	prompt := "Call the write tool exactly once with file_path exactly factory-result.txt, a relative path, and content exactly factory acceptance 7421 with no trailing newline. The file does not exist. Do not call another tool. After the successful tool result, reply with a short plain-text acknowledgment. Never emit tool syntax in your final answer."
 	send(2, "session/prompt", map[string]any{"sessionId": created.SessionId, "prompt": []acp.ContentBlock{{Text: &acp.ContentBlockText{Type: "text", Text: prompt}}}})
 	responses, notifications := wire.Await("2")
 	if recording {

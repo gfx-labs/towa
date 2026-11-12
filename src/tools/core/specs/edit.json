@@ -1,6 +1,7 @@
 {
   "name": "edit",
   "description": "Replace exact text in a file. Read the file in this session first. old_string must occur once unless replace_all is true. An empty old_string creates a missing or empty file.",
+  "guidance": ["Change part of a file with edit, not with sed or a script in bash."],
   "input_schema": {
     "type": "object",
     "properties": {

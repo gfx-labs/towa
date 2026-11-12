@@ -16,6 +16,15 @@ import (
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
+// searchGuidance is the prompt's line about a web search tool.
+func searchGuidance(name string) string {
+	return "What you know stops at your training. Check a fact that may have changed since, such as a current version or API, with " + name + "."
+}
+
+// HostedSearchGuidance is the line for a provider's own search tool, which
+// takes the place of this package's tool in a request.
+func HostedSearchGuidance(name string) string { return searchGuidance(name) }
+
 // WebSearch searches the web with the supplied client, which comes from
 // src/httpclient.
 func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
@@ -26,7 +35,8 @@ func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
 		return tools.Tool{}, errors.New("websearch: no HTTP client")
 	}
 	t := newTool(NameWebSearch, "Search the web. Returns titles, URLs and snippets. Fetch a result's URL to read the page.", acp.ToolKindSearch,
-		[]byte(`{"type":"object","required":["query"],"properties":{"intent":{"type":"string"},"query":{"type":"string","description":"Search query."},"num_results":{"type":"integer","description":"Max results."}}}`))
+		[]byte(`{"type":"object","required":["query"],"properties":{"intent":{"type":"string"},"query":{"type":"string","description":"Search query."},"num_results":{"type":"integer","description":"How many results to return. Omit for the configured default."}}}`))
+	t.Guidance = []string{searchGuidance(NameWebSearch)}
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
 		var in struct {
 			Query      string `json:"query"`

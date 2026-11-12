@@ -25,7 +25,7 @@ func WebFetch(cfg config.WebFetch, client *http.Client) (tools.Tool, error) {
 	if client == nil {
 		return tools.Tool{}, errors.New("webfetch: no HTTP client")
 	}
-	t := newTool(NameWebFetch, "Fetch a URL as text or Markdown.", acp.ToolKindFetch, []byte(`{"type":"object","required":["url"],"properties":{"intent":{"type":"string"},"url":{"type":"string"}}}`))
+	t := newTool(NameWebFetch, "Fetch an http or https URL and return its content. An HTML page comes back as Markdown, and a text, JSON or XML body as it was served. Long content is cut, with a note saying how much was left out. Other content types fail.", acp.ToolKindFetch, []byte(`{"type":"object","required":["url"],"properties":{"intent":{"type":"string"},"url":{"type":"string","description":"The address, starting with http:// or https://."}}}`))
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
 		var in struct {
 			URL string `json:"url"`

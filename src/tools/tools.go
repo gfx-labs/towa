@@ -18,6 +18,10 @@ import (
 type Tool struct {
 	// Spec is what the model is told about the tool.
 	Spec provider.Tool
+	// Guidance is what the system prompt says about when to use the tool,
+	// one line each. It is in the prompt only while the tool is enabled,
+	// so the prompt never names a tool the model does not have.
+	Guidance []string
 	// Effect is the most the tool can do. Ask mode asks the client before
 	// running a tool that writes or executes.
 	Effect Effect

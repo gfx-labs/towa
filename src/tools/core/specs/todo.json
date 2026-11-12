@@ -1,6 +1,7 @@
 {
   "name": "todo",
   "description": "Replace the session's task list. The client shows it as the plan. Send the whole list on every call, keep one item in_progress at a time, and mark an item completed when it is done.",
+  "guidance": ["For work with several steps, keep the plan in todo and update it as each step finishes."],
   "input_schema": {
     "type": "object",
     "properties": {

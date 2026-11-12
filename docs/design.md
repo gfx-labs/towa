@@ -325,7 +325,7 @@ jev:
 
 ## System prompt
 
-The prompt is built from named sections in a fixed order: the instructions, tools, rules, project context, skills, working directory, and any sections added by config. ACP `systemPrompt` on `session/new` maps onto them: `append` adds a section, and `override` replaces the default instruction sections and leaves tools, MCP servers and permissions alone. An unsupported mode is an error. Appending a changed section mid-session to keep the prompt cache is deferred until a measurement shows sections change mid-session.
+The prompt is built from named sections in a fixed order: the instructions, tools, project context, skills, working directory, and any sections added by config. The instructions tell the model to work to the end of the task and to ask only for a decision that is the user's, because a session is often run with nobody reading it. The tools section is built for each chain entry from the tools that entry is sent: a paragraph that holds for every tool, then the guidance lines of each enabled tool (`tools.Tool.Guidance`), so the prompt never names a tool the model does not have. An entry with hosted search gets a line naming the provider's search tool. The rule that a command has no terminal is the `bash` tool's line and is also in its description (`docs/notes/2026-11-12-prompt.md`). ACP `systemPrompt` on `session/new` maps onto them: `append` adds a section, and `override` replaces the default instruction sections and leaves tools, MCP servers and permissions alone. An unsupported mode is an error. Appending a changed section mid-session to keep the prompt cache is deferred until a measurement shows sections change mid-session.
 
 ## Context loading
 

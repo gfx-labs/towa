@@ -301,8 +301,13 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		if f.cfg.Context.SkillsEnabled {
 			skillTool = extras.NameSkill
 		}
+		hosted, hasHosted, err := hostedsearch.Tool(f.cfg.WebSearch, entry.Provider, entry.Model)
+		if err != nil {
+			return preparedTurn{}, err
+		}
 		system, err := agentctx.Build(agentctx.Prompt{
-			Instructions: agentctx.Instructions, Tools: agentctx.ToolGuidance, Loaded: loaded,
+			Instructions: agentctx.Instructions, Tools: agentctx.ToolGuidance,
+			ToolLines: toolLines(assembled.Set, hasHosted), Loaded: loaded,
 			WorkDir: turn.Cwd, AdditionalDirs: turn.Dirs, SkillTool: skillTool, Client: turn.SystemPrompt,
 		})
 		if err != nil {
@@ -312,11 +317,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 			ContextWindow: entry.Metadata.ContextWindow, MaxOutputTokens: entry.Metadata.MaxOutputTokens,
 			Interruption: agentctx.Interruption, System: system,
 		}
-		hosted, ok, err := hostedsearch.Tool(f.cfg.WebSearch, entry.Provider, entry.Model)
-		if err != nil {
-			return preparedTurn{}, err
-		}
-		if ok {
+		if hasHosted {
 			chain[i].Preparation.HostedSearch, chain[i].Preparation.LocalSearch = hosted, extras.NameWebSearch
 		}
 		if i == 0 {
@@ -382,6 +383,21 @@ func (f *runtimeFactory) accountScheme(id string) (auth.Scheme, error) {
 		}
 	}
 	return "", fmt.Errorf("account %q is not configured", id)
+}
+
+// toolLines returns the prompt's guidance for the tools one chain entry is
+// sent. An entry with hosted search gets the provider's tool in place of
+// the local one, so its line names that tool.
+func toolLines(set tools.Set, hostedSearch bool) []string {
+	var lines []string
+	for _, tool := range set.Tools {
+		if hostedSearch && tool.Spec.Name == extras.NameWebSearch {
+			lines = append(lines, extras.HostedSearchGuidance(hostedsearch.Name))
+			continue
+		}
+		lines = append(lines, tool.Guidance...)
+	}
+	return lines
 }
 
 func (f *runtimeFactory) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, error) {
