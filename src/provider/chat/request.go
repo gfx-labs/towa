@@ -305,8 +305,10 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 				return nil, invalid("items[%d]: thinking opaque names the field %q", i, op.Field)
 			}
 		case item.ToolCall != nil:
-			if len(item.Opaque) > 0 && !mine {
-				return nil, invalid("items[%d]: tool call opaque provenance does not match provider, model and account", i)
+			// Another provider's call goes without its extensions. Text input
+			// has no plain form to fall back to.
+			if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
+				return nil, invalid("items[%d]: tool call with text input has opaque provenance that does not match provider, model and account", i)
 			}
 			tc := item.ToolCall
 			if tc.ID == "" || tc.Name == "" {

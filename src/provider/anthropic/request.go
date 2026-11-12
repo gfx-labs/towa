@@ -301,8 +301,11 @@ func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item
 				return nil, invalidRequest(fmt.Sprintf("item %d: thinking has neither a signature nor redacted data", i))
 			}
 		case item.ToolCall != nil:
-			if len(item.Opaque) > 0 {
-				return nil, invalidRequest(fmt.Sprintf("item %d: Messages cannot preserve opaque tool call extensions", i))
+			// No call from this API has extensions, so these are another
+			// provider's and the call goes without them. Text input has no
+			// plain form to fall back to.
+			if len(item.Opaque) > 0 && item.ToolCall.Input.Kind() == '"' {
+				return nil, invalidRequest(fmt.Sprintf("item %d: tool call with text input carries another provider's opaque data", i))
 			}
 			input, perr := toolInput(item.ToolCall)
 			if perr != nil {

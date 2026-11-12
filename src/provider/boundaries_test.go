@@ -142,7 +142,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 				opaque := jsontext.Value(`"untrusted-opaque-marker"`)
 				for _, item := range []transcript.Item{
 					{Native: &transcript.Native{Kind: "untrusted"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
-					{ToolCall: &transcript.ToolCall{ID: "opaque-call", Name: "tool", Input: jsontext.Value(`{}`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					{ToolCall: &transcript.ToolCall{ID: "opaque-call", Name: "tool", Input: jsontext.Value(`"text input"`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
 				} {
 					req.Items = append(req.Items[:1], item)
 					got = streamError(req)
@@ -158,14 +158,18 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 						require.Equal(t, before, requests.Load())
 					}
 				}
+				// A structural call goes as a plain call without the extensions.
 				req.Items = append(req.Items[:1],
 					transcript.Item{Thinking: &transcript.Thinking{Text: "incompatible-thinking"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
 					transcript.Item{Text: &transcript.Text{Text: "portable-answer"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					transcript.Item{ToolCall: &transcript.ToolCall{ID: "portable-call", Name: "tool", Input: jsontext.Value(`{}`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					transcript.Item{ToolResult: &transcript.ToolResult{CallID: "portable-call", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "done"}}}},
 				)
 				got = streamError(req)
 				require.Equal(t, http.StatusServiceUnavailable, got.Status)
 				body := string(<-bodies)
 				require.Contains(t, body, "portable-answer")
+				require.Contains(t, body, "portable-call")
 				require.NotContains(t, body, "untrusted-opaque-marker")
 				require.NotContains(t, body, "incompatible-thinking")
 				before = requests.Load()

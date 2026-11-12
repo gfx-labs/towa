@@ -265,8 +265,10 @@ func buildInput(own string, origin transcript.Origin, items []transcript.Item) (
 			}
 			out = append(out, reasoningItem{Type: typeReasoning, ID: op.ID, Summary: summary, EncryptedContent: op.EncryptedContent})
 		case item.ToolCall != nil:
-			if len(item.Opaque) > 0 && !mine {
-				return nil, invalidRequest(fmt.Sprintf("item %d: tool call opaque provenance does not match provider, model and account", i))
+			// Another endpoint's call goes as a plain function call without
+			// its extensions. Text input has no plain form to fall back to.
+			if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
+				return nil, invalidRequest(fmt.Sprintf("item %d: tool call with text input has opaque provenance that does not match provider, model and account", i))
 			}
 			call, custom, perr := buildCall(item.ToolCall, op)
 			if perr != nil {
