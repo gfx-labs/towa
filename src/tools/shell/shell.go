@@ -200,7 +200,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	cmd.SysProcAttr = groupAttr()
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
-		return Result{}, errors.Join(fmt.Errorf("shell: start %s: %w", cfg.Shell.Program, err), read.Close(), write.Close())
+		return Result{}, errors.Join(fmt.Errorf("shell: start %s: %w", program, err), read.Close(), write.Close())
 	}
 	res.Started = true
 	// The command holds its own copy. Ours has to go, or the read never
