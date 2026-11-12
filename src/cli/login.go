@@ -140,7 +140,10 @@ func (c *loginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env l
 		}
 		// A device login is approved by its own code and waits for no other.
 		if !device {
-			opts.Later = func(l *auth.Login) error { return store.SavePending(provider, l.Pending(id)) }
+			opts.Later = func(l *auth.Login) error {
+				pending = l.Pending(id)
+				return store.SavePending(ctx, provider, pending)
+			}
 		}
 		tokens, err = auth.RunLogin(ctx, opts)
 		if errors.Is(err, auth.ErrNothingPasted) {
@@ -166,7 +169,7 @@ func (c *loginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env l
 	if !device {
 		// The code is spent. Another login of the provider may have
 		// replaced the record since, and then it is that login's.
-		if err := store.DeletePending(provider); err != nil && !errors.Is(err, auth.ErrNoPendingLogin) {
+		if err := store.DeletePending(ctx, provider, pending); err != nil && !errors.Is(err, auth.ErrNoPendingLogin) {
 			return err
 		}
 	}

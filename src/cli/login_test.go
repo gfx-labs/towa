@@ -178,3 +178,46 @@ accounts:
 	_, err = run("logout", "--account", "fresh")
 	require.ErrorIs(t, err, auth.ErrNotLoggedIn)
 }
+
+func TestCompletingOlderLoginPreservesNewPendingLogin(t *testing.T) {
+	root := t.TempDir()
+	var env commandEnv
+	invoke := func(args ...string) error {
+		var stdout, stderr bytes.Buffer
+		return run(t.Context(), append([]string{"towa"}, args...), Host{
+			Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
+			Environ: []string{"HOME=" + root, "XDG_CONFIG_HOME=" + root, "XDG_STATE_HOME=" + root},
+		}, env)
+	}
+	var requests atomic.Int32
+	began := make(chan error, 1)
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if requests.Add(1) == 1 {
+			// A new login replaces the pending record while the old one exchanges its code.
+			began <- invoke("login", "claude", "--account", "newer", "--manual")
+		}
+		_, _ = io.WriteString(w, `{"access_token":"dummy-access","refresh_token":"dummy-refresh","expires_in":3600,"scope":"user:inference"}`)
+	}))
+	t.Cleanup(endpoint.Close)
+	flow := auth.ClaudeFlow()
+	flow.TokenURL = endpoint.URL
+	env = builtInEnv()
+	env.login = loginEnv{flows: map[string]auth.Flow{"claude": flow}}
+	store := auth.NewStore(filepath.Join(root, "towa", "auth"))
+	require.NoError(t, invoke("login", "claude", "--account", "older", "--manual"))
+	older, err := store.LoadPending("claude")
+	require.NoError(t, err)
+	require.NoError(t, invoke("login", "claude", "--code", "dummy-code#"+older.State))
+	require.NoError(t, <-began)
+	newer, err := store.LoadPending("claude")
+	require.NoError(t, err, "older login deleted the newer login's pending record")
+	require.Equal(t, "newer", newer.Account)
+	require.NoError(t, invoke("login", "claude", "--code", "dummy-code#"+newer.State))
+	_, err = store.LoadPending("claude")
+	require.ErrorIs(t, err, auth.ErrNoPendingLogin)
+	_, err = store.Load("older")
+	require.NoError(t, err)
+	_, err = store.Load("newer")
+	require.NoError(t, err)
+}

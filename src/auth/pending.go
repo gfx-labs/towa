@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -41,11 +42,16 @@ func (s *Store) pendingPath(provider string) (string, error) {
 }
 
 // SavePending records the login that waits for the provider's code.
-func (s *Store) SavePending(provider string, p PendingLogin) error {
+func (s *Store) SavePending(ctx context.Context, provider string, p PendingLogin) (err error) {
 	path, err := s.pendingPath(provider)
 	if err != nil {
 		return err
 	}
+	unlock, err := lockFile(ctx, path+".lock")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
 	return writeFile(path, &p)
 }
 
@@ -64,12 +70,25 @@ func (s *Store) LoadPending(provider string) (PendingLogin, error) {
 	return p, err
 }
 
-// DeletePending removes the provider's pending login. Without one the error
-// is ErrNoPendingLogin.
-func (s *Store) DeletePending(provider string) error {
+// DeletePending removes only the login that the caller completed. A newer
+// pending login stays. Without one the error is ErrNoPendingLogin.
+func (s *Store) DeletePending(ctx context.Context, provider string, completed PendingLogin) (err error) {
 	path, err := s.pendingPath(provider)
 	if err != nil {
 		return err
+	}
+	// SavePending takes the same lock, so a replacement cannot race the removal.
+	unlock, err := lockFile(ctx, path+".lock")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	current, err := s.LoadPending(provider)
+	if err != nil {
+		return err
+	}
+	if current != completed {
+		return nil
 	}
 	err = os.Remove(path)
 	if errors.Is(err, fs.ErrNotExist) {
