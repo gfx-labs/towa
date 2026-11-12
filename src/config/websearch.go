@@ -12,12 +12,12 @@ import "time"
 // hosted and hosted_max_uses are jcode's prefer_native and native_max_uses
 // (crates/jcode-config-types/src/web_search.rs, lines 168 and 178).
 type WebSearch struct {
-	Enabled bool `name:"enabled" default:"true" help:"Give the model the tool that searches the web. On by default."`
+	Enabled bool `name:"enabled" help:"Give the model the tool that searches the web."`
 	// Hosted uses the model provider's own search where it has one: the
 	// built-in claude and codex providers. The provider then runs the
 	// search and this process's websearch tool is left out of the request.
 	// Other providers always get this process's tool.
-	Hosted bool `name:"hosted" default:"true" help:"Use the model provider's own search on the built-in claude and codex providers, and leave this process's tool out of those requests. On by default."`
+	Hosted bool `name:"hosted" default:"true" help:"With websearch.enabled, use the model provider's own search on the built-in claude and codex providers, and leave this process's tool out of those requests. On by default."`
 	// HostedMaxUses is the most searches one Anthropic request may make.
 	// Zero sends no cap. The Responses API has no such setting.
 	HostedMaxUses int `name:"hosted_max_uses" default:"5" validate:"gte=0" help:"Most searches one Anthropic request may make with the provider's own search. 0 sends no cap."`

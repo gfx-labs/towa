@@ -14,7 +14,7 @@ for instance, ask your llm to setup a provider with you, and then run a turn usi
 
 ## requirements
 
-your system needs ripgrep installed. it's much better than maintaining my own grep.
+your system needs ripgrep installed. there is no search tool: the model is told to run `rg` through bash.
 
 ## key features
 

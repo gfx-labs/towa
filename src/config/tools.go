@@ -11,17 +11,16 @@ import "time"
 // and its identifiers change with every version. The jcode figure is
 // unchecked. See docs/notes/2026-11-11-tools.md for what differs.
 type Tools struct {
-	// MaxOutputBytes is the most output one shell or search call keeps in
-	// memory. What is over it is dropped and the result says how much.
+	// MaxOutputBytes is the most output one shell call keeps in memory.
+	// What is over it is dropped and the result says how much.
 	// Codex keeps the same amount: UNIFIED_EXEC_OUTPUT_MAX_BYTES, 1 MiB
 	// (codex-rs/core/src/unified_exec/mod.rs:75), which exec.rs:81 uses
 	// through DEFAULT_OUTPUT_BYTES_CAP (codex-rs/utils/pty/src/lib.rs:25).
 	// It also keeps half from the start and half from the end
 	// (codex-rs/core/src/unified_exec/head_tail_buffer.rs:18).
-	MaxOutputBytes int64       `name:"max_output_bytes" default:"1048576" validate:"gt=0" help:"Most output one shell or search call keeps. The rest is dropped and the result says how much."`
+	MaxOutputBytes int64       `name:"max_output_bytes" default:"1048576" validate:"gt=0" help:"Most output one shell call keeps. The rest is dropped and the result says how much."`
 	Files          ToolsFiles  `embed:"" prefix:"files."`
 	Shell          ToolsShell  `embed:"" prefix:"shell."`
-	Search         ToolsSearch `embed:"" prefix:"search."`
 	Repair         ToolsRepair `embed:"" prefix:"repair."`
 	Gate           ToolsGate   `embed:"" prefix:"gate."`
 	Batch          ToolsBatch  `embed:"" prefix:"batch."`
@@ -81,12 +80,6 @@ type ToolsShell struct {
 	// exited or been killed, while a process it left behind holds the pipe.
 	// Codex: IO_DRAIN_TIMEOUT_MS, 2000 (codex-rs/core/src/exec.rs:94).
 	PipeWait time.Duration `name:"pipe_wait" default:"2s" validate:"gt=0" help:"How long output is still read after a command ended, while a process it left behind holds the pipe."`
-}
-
-// ToolsSearch configures search.
-type ToolsSearch struct {
-	// Ripgrep is the rg binary, a path or a name looked up on PATH.
-	Ripgrep string `name:"ripgrep" default:"rg" validate:"required" help:"The rg binary: a path, or a name looked up on PATH."`
 }
 
 // ToolsRepair configures argument repair.
