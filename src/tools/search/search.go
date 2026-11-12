@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -141,7 +142,8 @@ type File struct {
 }
 
 // Result is what a search found. A grep with Lines fills Lines, and every
-// other search fills Files, in the order rg reported them, sorted by path.
+// other search fills Files. Both are in path order: a directory's entries
+// by name, and a directory's contents where its name sorts.
 type Result struct {
 	Lines []Line
 	Files []File
@@ -162,7 +164,7 @@ func Grep(ctx context.Context, env tools.Env, cfg config.Tools, in GrepInput) (R
 	if in.Before < 0 || in.After < 0 {
 		return Result{}, &Error{Kind: KindRange}
 	}
-	args := []string{"--no-config", "--no-messages", "--sort", "path"}
+	args := []string{"--no-config", "--no-messages"}
 	if in.Literal {
 		args = append(args, "--fixed-strings")
 	}
@@ -175,7 +177,10 @@ func Grep(ctx context.Context, env tools.Env, cfg config.Tools, in GrepInput) (R
 	var parse func(*run, io.Reader) error
 	switch in.Output {
 	case Lines:
-		args = append(args, "--json", "--before-context", strconv.Itoa(in.Before), "--after-context", strconv.Itoa(in.After))
+		// rg sorts the lines, on one thread, so that the search can stop at
+		// the limit without reading every match. A file list is short, so
+		// rg searches in parallel and the list is sorted here.
+		args = append(args, "--sort", "path", "--json", "--before-context", strconv.Itoa(in.Before), "--after-context", strconv.Itoa(in.After))
 		parse = (*run).parseJSON
 	case Files:
 		args = append(args, "--files-with-matches", "--null")
@@ -192,7 +197,7 @@ func Grep(ctx context.Context, env tools.Env, cfg config.Tools, in GrepInput) (R
 
 // Find lists files by name.
 func Find(ctx context.Context, env tools.Env, cfg config.Tools, in Filter) (Result, error) {
-	return in.run(ctx, env, cfg, in.args([]string{"--no-config", "--no-messages", "--sort", "path", "--files", "--null"}), (*run).parsePaths)
+	return in.run(ctx, env, cfg, in.args([]string{"--no-config", "--no-messages", "--files", "--null"}), (*run).parsePaths)
 }
 
 func (f Filter) args(args []string) []string {
@@ -217,7 +222,9 @@ type run struct {
 	budget int64
 	used   int64
 	seen   int
-	res    Result
+	// files are the files rg has reported, in the order it found them.
+	files []File
+	res   Result
 }
 
 // errStop ends the reading of rg's output early.
@@ -293,7 +300,53 @@ func (f Filter) run(ctx context.Context, env tools.Env, cfg config.Tools, args [
 	default:
 		return Result{}, fmt.Errorf("search: %s: %w", program, waitErr)
 	}
+	if err := r.keepFiles(); err != nil {
+		return Result{}, err
+	}
 	return r.res, nil
+}
+
+// comparePaths orders paths as rg --sort path does: by each name along the
+// path in turn, so a directory's contents come where its name sorts. At
+// the first byte that differs, a name that has ended is the shorter name.
+func comparePaths(a, b string) int {
+	for i := range min(len(a), len(b)) {
+		switch {
+		case a[i] == b[i]:
+		case a[i] == os.PathSeparator:
+			return -1
+		case b[i] == os.PathSeparator:
+			return 1
+		case a[i] < b[i]:
+			return -1
+		default:
+			return 1
+		}
+	}
+	return len(a) - len(b)
+}
+
+// keepFiles sorts the files rg reported and keeps those the offset, the
+// limit and the output size allow.
+func (r *run) keepFiles() error {
+	slices.SortFunc(r.files, func(a, b File) int { return comparePaths(a.Path, b.Path) })
+	for _, file := range r.files {
+		keep, err := r.take(len(file.Path))
+		if keep {
+			switch info, statErr := os.Stat(file.Path); {
+			case statErr == nil:
+				file.ModTime = info.ModTime()
+			case errors.Is(statErr, os.ErrNotExist):
+			default:
+				return fmt.Errorf("search: %w", statErr)
+			}
+			r.res.Files = append(r.res.Files, file)
+		}
+		if err != nil {
+			break
+		}
+	}
+	return nil
 }
 
 // take says whether the next result is kept, and returns errStop when no
@@ -396,24 +449,11 @@ func records(out io.Reader, sep byte, fn func(record []byte) error) error {
 	}
 }
 
-func (r *run) addFile(path string, count int) error {
-	keep, err := r.take(len(path))
-	if keep {
-		file := File{Path: path, Count: count}
-		switch info, statErr := os.Stat(path); {
-		case statErr == nil:
-			file.ModTime = info.ModTime()
-		case errors.Is(statErr, os.ErrNotExist):
-		default:
-			return fmt.Errorf("search: %w", statErr)
-		}
-		r.res.Files = append(r.res.Files, file)
-	}
-	return err
-}
-
 func (r *run) parsePaths(out io.Reader) error {
-	return records(out, 0, func(record []byte) error { return r.addFile(string(record), 0) })
+	return records(out, 0, func(record []byte) error {
+		r.files = append(r.files, File{Path: string(record)})
+		return nil
+	})
 }
 
 // parseCounts reads "path NUL count LF" records.
@@ -435,9 +475,7 @@ func (r *run) parseCounts(out io.Reader) error {
 		if err != nil {
 			return fmt.Errorf("search: rg output: %w", err)
 		}
-		if err := r.addFile(string(path[:len(path)-1]), count); err != nil {
-			return err
-		}
+		r.files = append(r.files, File{Path: string(path[:len(path)-1]), Count: count})
 	}
 }
 

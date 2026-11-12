@@ -138,6 +138,30 @@ func TestFindListsFilesWithOffsetAndLimit(t *testing.T) {
 	require.True(t, res.Cut)
 }
 
+// A file list is sorted here, not by rg. A directory's contents come where
+// its name sorts, which is not where its path sorts as text: "sub/b.go"
+// is after "sub b.go" and "sub-x/z.go" as text.
+func TestFileListsAreInPathOrder(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	names := []string{"Sub/a.go", "a.go", "sub/b.go", "sub b.go", "sub-x/z.go", "sub.go"}
+	for _, name := range names {
+		path := filepath.Join(base, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("alpha\n"), 0o644))
+	}
+	env, cfg, ctx := tools.Env{Cwd: base}, toolsConfig(t), context.Background()
+
+	res, err := search.Find(ctx, env, cfg, search.Filter{})
+	require.NoError(t, err)
+	require.Equal(t, names, paths(env, res.Files))
+
+	res, err = search.Grep(ctx, env, cfg, search.GrepInput{Pattern: "alpha", Output: search.Files, Filter: search.Filter{Offset: 2, Limit: 3}})
+	require.NoError(t, err)
+	require.Equal(t, names[2:5], paths(env, res.Files))
+	require.True(t, res.More)
+}
+
 func TestSearchRefusesWhatItCannotDo(t *testing.T) {
 	env, cfg, ctx := tree(t), toolsConfig(t), context.Background()
 	var serr *search.Error
