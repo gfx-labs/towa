@@ -27,7 +27,7 @@ Each changed file says so in its first lines.
 - `emit/dispatch.go`: outbound request wrappers call `SendRequest[T](ctx, c.conn, method, params)`, context first.
 - The generator and generated codecs use Go 1.27's `encoding/json/v2` and `encoding/json/jsontext`. Raw request parameters are `jsontext.Value`.
 - Optional scalar, pointer and interface fields use `omitzero`. Optional collections use `omitempty`, and optional value structs remain present, matching the old encoder.
-- Union and default codecs implement `MarshalJSONTo` and `UnmarshalJSONFrom`. Object unions retain upstream's sorted map shaping, numeric conversion and HTML escaping for wire compatibility. Collection defaults are filled explicitly rather than relying on the encoder's nil-collection options.
+- Union and default codecs implement `MarshalJSONTo` and `UnmarshalJSONFrom`. An object variant is encoded straight from its struct, in the struct's member order, with HTML escaping. Collection defaults are filled explicitly rather than relying on the encoder's nil-collection options.
 - `emit/union_codec.go` holds union selection and codec emission.
 - `emit/constants.go`: the comment on `ProtocolVersionNumber` no longer calls this an SDK.
 

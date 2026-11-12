@@ -213,11 +213,11 @@ func (u *AgentResponse) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 func (u AgentResponse) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Result != nil {
 		v := *u.Result
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Error != nil {
 		v := *u.Error
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("AgentResponse: no variant is set")
 }
@@ -377,11 +377,11 @@ func (u AuthMethod) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Terminal != nil {
 		v := *u.Terminal
 		v.Type = "terminal"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Agent != nil {
 		v := *u.Agent
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("AuthMethod: no variant is set")
 }
@@ -534,7 +534,7 @@ func (u *AvailableCommandInput) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 func (u AvailableCommandInput) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Unstructured != nil {
 		v := *u.Unstructured
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("AvailableCommandInput: no variant is set")
 }
@@ -825,11 +825,11 @@ func (u *ClientResponse) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 func (u ClientResponse) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Result != nil {
 		v := *u.Result
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Error != nil {
 		v := *u.Error
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("ClientResponse: no variant is set")
 }
@@ -1259,35 +1259,35 @@ func (u ContentBlock) MarshalJSONTo(enc *jsontext.Encoder) error {
 		v.Type = "text"
 		v.Meta = nil
 		v.Annotations = nil
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Image != nil {
 		v := *u.Image
 		v.Type = "image"
 		v.Meta = nil
 		v.Annotations = nil
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Audio != nil {
 		v := *u.Audio
 		v.Type = "audio"
 		v.Meta = nil
 		v.Annotations = nil
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ResourceLink != nil {
 		v := *u.ResourceLink
 		v.Type = "resource_link"
 		v.Meta = nil
 		v.Annotations = nil
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Resource != nil {
 		v := *u.Resource
 		v.Type = "resource"
 		v.Meta = nil
 		v.Annotations = nil
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("ContentBlock: no variant is set")
 }
@@ -1513,16 +1513,16 @@ func (u CreateElicitationRequest) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Form != nil {
 		v := *u.Form
 		v.Mode = "form"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Url != nil {
 		v := *u.Url
 		v.Mode = "url"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Other != nil {
 		v := *u.Other
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("CreateElicitationRequest: no variant is set")
 }
@@ -1720,21 +1720,21 @@ func (u CreateElicitationResponse) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Accept != nil {
 		v := *u.Accept
 		v.Action = "accept"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Decline != nil {
 		v := *u.Decline
 		v.Action = "decline"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Cancel != nil {
 		v := *u.Cancel
 		v.Action = "cancel"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Other != nil {
 		v := *u.Other
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("CreateElicitationResponse: no variant is set")
 }
@@ -2045,11 +2045,11 @@ func (u *ElicitationFormMode) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 func (u ElicitationFormMode) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Session != nil {
 		v := *u.Session
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Request != nil {
 		v := *u.Request
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("ElicitationFormMode: no variant is set")
 }
@@ -2424,31 +2424,31 @@ func (u ElicitationPropertySchema) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.String != nil {
 		v := *u.String
 		v.Type = "string"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Number != nil {
 		v := *u.Number
 		v.Type = "number"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Integer != nil {
 		v := *u.Integer
 		v.Type = "integer"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Boolean != nil {
 		v := *u.Boolean
 		v.Type = "boolean"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Array != nil {
 		v := *u.Array
 		v.Type = "array"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Other != nil {
 		v := *u.Other
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("ElicitationPropertySchema: no variant is set")
 }
@@ -2620,11 +2620,11 @@ func (u *ElicitationUrlMode) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 func (u ElicitationUrlMode) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Session != nil {
 		v := *u.Session
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Request != nil {
 		v := *u.Request
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("ElicitationUrlMode: no variant is set")
 }
@@ -2695,11 +2695,11 @@ func (u *EmbeddedResourceResource) UnmarshalJSONFrom(dec *jsontext.Decoder) erro
 func (u EmbeddedResourceResource) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.TextResourceContents != nil {
 		v := *u.TextResourceContents
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.BlobResourceContents != nil {
 		v := *u.BlobResourceContents
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("EmbeddedResourceResource: no variant is set")
 }
@@ -3308,40 +3308,40 @@ func (u IdleStateUpdate) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.EndTurn != nil {
 		v := *u.EndTurn
 		v.StopReason = "end_turn"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.MaxTokens != nil {
 		v := *u.MaxTokens
 		v.StopReason = "max_tokens"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.MaxTurnRequests != nil {
 		v := *u.MaxTurnRequests
 		v.StopReason = "max_turn_requests"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Refusal != nil {
 		v := *u.Refusal
 		v.StopReason = "refusal"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Cancelled != nil {
 		v := *u.Cancelled
 		v.StopReason = "cancelled"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Error != nil {
 		v := *u.Error
 		v.StopReason = "error"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Other != nil {
 		v := *u.Other
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.None != nil {
 		v := *u.None
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("IdleStateUpdate: no variant is set")
 }
@@ -3501,11 +3501,11 @@ func (u InitialSessionConfigOption) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Boolean != nil {
 		v := *u.Boolean
 		v.Type = "boolean"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ValueId != nil {
 		v := *u.ValueId
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("InitialSessionConfigOption: no variant is set")
 }
@@ -4098,21 +4098,21 @@ func (u McpServer) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Http != nil {
 		v := *u.Http
 		v.Type = "http"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Sse != nil {
 		v := *u.Sse
 		v.Type = "sse"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Acp != nil {
 		v := *u.Acp
 		v.Type = "acp"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Stdio != nil {
 		v := *u.Stdio
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("McpServer: no variant is set")
 }
@@ -4314,15 +4314,15 @@ func (u MultiSelectItems) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.String != nil {
 		v := *u.String
 		v.Type = "string"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Other != nil {
 		v := *u.Other
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Titled != nil {
 		v := *u.Titled
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("MultiSelectItems: no variant is set")
 }
@@ -4863,17 +4863,17 @@ func (u PlanUpdateContent) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Items != nil {
 		v := *u.Items
 		v.Type = "items"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.File != nil {
 		v := *u.File
 		v.Type = "file"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Markdown != nil {
 		v := *u.Markdown
 		v.Type = "markdown"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("PlanUpdateContent: no variant is set")
 }
@@ -5269,12 +5269,12 @@ func (u RequestPermissionOutcome) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Cancelled != nil {
 		v := *u.Cancelled
 		v.Outcome = "cancelled"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Selected != nil {
 		v := *u.Selected
 		v.Outcome = "selected"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("RequestPermissionOutcome: no variant is set")
 }
@@ -5780,12 +5780,12 @@ func (u SessionConfigOption) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Select != nil {
 		v := *u.Select
 		v.Type = "select"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Boolean != nil {
 		v := *u.Boolean
 		v.Type = "boolean"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("SessionConfigOption: no variant is set")
 }
@@ -7221,97 +7221,97 @@ func (u SessionUpdate) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.UserMessageChunk != nil {
 		v := *u.UserMessageChunk
 		v.SessionUpdate = "user_message_chunk"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.AgentMessageChunk != nil {
 		v := *u.AgentMessageChunk
 		v.SessionUpdate = "agent_message_chunk"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.AgentThoughtChunk != nil {
 		v := *u.AgentThoughtChunk
 		v.SessionUpdate = "agent_thought_chunk"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ToolCall != nil {
 		v := *u.ToolCall
 		v.SessionUpdate = "tool_call"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ToolCallUpdate != nil {
 		v := *u.ToolCallUpdate
 		v.SessionUpdate = "tool_call_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Plan != nil {
 		v := *u.Plan
 		v.SessionUpdate = "plan"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.PlanUpdate != nil {
 		v := *u.PlanUpdate
 		v.SessionUpdate = "plan_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.PlanRemoved != nil {
 		v := *u.PlanRemoved
 		v.SessionUpdate = "plan_removed"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.AvailableCommandsUpdate != nil {
 		v := *u.AvailableCommandsUpdate
 		v.SessionUpdate = "available_commands_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.CurrentModeUpdate != nil {
 		v := *u.CurrentModeUpdate
 		v.SessionUpdate = "current_mode_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ConfigOptionUpdate != nil {
 		v := *u.ConfigOptionUpdate
 		v.SessionUpdate = "config_option_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.SessionInfoUpdate != nil {
 		v := *u.SessionInfoUpdate
 		v.SessionUpdate = "session_info_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.UsageUpdate != nil {
 		v := *u.UsageUpdate
 		v.SessionUpdate = "usage_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Notice != nil {
 		v := *u.Notice
 		v.SessionUpdate = "notice"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.CompactionUpdate != nil {
 		v := *u.CompactionUpdate
 		v.SessionUpdate = "compaction_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.CompactionSummaryChunk != nil {
 		v := *u.CompactionSummaryChunk
 		v.SessionUpdate = "compaction_summary_chunk"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.SubagentUpdate != nil {
 		v := *u.SubagentUpdate
 		v.SessionUpdate = "subagent_update"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.SessionMessage != nil {
 		v := *u.SessionMessage
 		v.SessionUpdate = "session_message"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.SessionMessageChunk != nil {
 		v := *u.SessionMessageChunk
 		v.SessionUpdate = "session_message_chunk"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("SessionUpdate: no variant is set")
 }
@@ -7488,11 +7488,11 @@ func (u SetSessionConfigOptionRequest) MarshalJSONTo(enc *jsontext.Encoder) erro
 	if u.Boolean != nil {
 		v := *u.Boolean
 		v.Type = "boolean"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ValueId != nil {
 		v := *u.ValueId
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("SetSessionConfigOptionRequest: no variant is set")
 }
@@ -7760,26 +7760,26 @@ func (u StateUpdate) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Running != nil {
 		v := *u.Running
 		v.State = "running"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Idle != nil {
 		v := *u.Idle
 		v.State = "idle"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.RequiresAction != nil {
 		v := *u.RequiresAction
 		v.State = "requires_action"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Unknown != nil {
 		v := *u.Unknown
 		v.State = "unknown"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Other != nil {
 		v := *u.Other
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("StateUpdate: no variant is set")
 }
@@ -8378,22 +8378,22 @@ func (u ToolCallContent) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Content != nil {
 		v := *u.Content
 		v.Type = "content"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Diff != nil {
 		v := *u.Diff
 		v.Type = "diff"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Terminal != nil {
 		v := *u.Terminal
 		v.Type = "terminal"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Session != nil {
 		v := *u.Session
 		v.Type = "session"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("ToolCallContent: no variant is set")
 }
@@ -9047,27 +9047,27 @@ func (u UnstableContentBlock) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Text != nil {
 		v := *u.Text
 		v.Type = "text"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Image != nil {
 		v := *u.Image
 		v.Type = "image"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Audio != nil {
 		v := *u.Audio
 		v.Type = "audio"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.ResourceLink != nil {
 		v := *u.ResourceLink
 		v.Type = "resource_link"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Resource != nil {
 		v := *u.Resource
 		v.Type = "resource"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("UnstableContentBlock: no variant is set")
 }
@@ -9199,11 +9199,11 @@ func (u *UnstableEmbeddedResourceResource) UnmarshalJSONFrom(dec *jsontext.Decod
 func (u UnstableEmbeddedResourceResource) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.TextResourceContents != nil {
 		v := *u.TextResourceContents
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.BlobResourceContents != nil {
 		v := *u.BlobResourceContents
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("UnstableEmbeddedResourceResource: no variant is set")
 }
@@ -9604,21 +9604,21 @@ func (u UnstableMcpServer) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Http != nil {
 		v := *u.Http
 		v.Type = "http"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Sse != nil {
 		v := *u.Sse
 		v.Type = "sse"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Acp != nil {
 		v := *u.Acp
 		v.Type = "acp"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Stdio != nil {
 		v := *u.Stdio
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("UnstableMcpServer: no variant is set")
 }
@@ -9843,11 +9843,11 @@ func (u *UnstableMessageMcpResponse) UnmarshalJSONFrom(dec *jsontext.Decoder) er
 func (u UnstableMessageMcpResponse) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if u.Result != nil {
 		v := *u.Result
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Error != nil {
 		v := *u.Error
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("UnstableMessageMcpResponse: no variant is set")
 }
@@ -10042,12 +10042,12 @@ func (u UnstableSessionConfigOption) MarshalJSONTo(enc *jsontext.Encoder) error 
 	if u.Select != nil {
 		v := *u.Select
 		v.Type = "select"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	if u.Boolean != nil {
 		v := *u.Boolean
 		v.Type = "boolean"
-		return marshalUnionObject(enc, &v)
+		return json.MarshalEncode(enc, &v, jsontext.EscapeForHTML(true))
 	}
 	return errors.New("UnstableSessionConfigOption: no variant is set")
 }

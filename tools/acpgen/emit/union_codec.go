@@ -169,7 +169,7 @@ func emitUnionMarshal(f *File, name string, variants []variantInfo) {
 						gg.Id("v").Dot("Meta").Op("=").Nil()
 						gg.Id("v").Dot("Annotations").Op("=").Nil()
 					}
-					gg.Return(Id("marshalUnionObject").Call(Id("enc"), Op("&").Id("v")))
+					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("v"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
 				}
 			})
 		}
