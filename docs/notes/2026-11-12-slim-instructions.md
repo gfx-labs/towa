@@ -50,6 +50,24 @@ pi has the same kind of line ("Use read to examine files instead of cat or sed."
 
 `src/loop/testdata/factory_write_{1,2}.json` hold the prompt, so they were recorded again on `openai/gpt-oss-20b` with the command in `2026-11-12-prompt.md`. The first recording passed and its replay passed three times.
 
+## Shortened again, later the same day
+
+The opening is now four lines and no longer names the harness:
+
+```
+You are an efficient and accurate coding assistant.
+Follow the user's instructions and the project rules provided in context.
+Sessions often run unattended. Ask only for a decision that is the user's to make, otherwise choose and say what you chose.
+Do not claim to have run commands or verified results that you have not observed.
+```
+
+- The paragraph about asking was 43 words and is 22. It keeps the reason (sessions run unattended) and drops the consequence ("a question stops the work") and the threshold ("cannot go on without").
+- The first line was "You are towa, a coding agent." The wording is the user's.
+- The system prompt in a captured request went from 65,495 to 65,402 characters.
+- Not measured on a task. One run of PR 4634 with only the old first line took 9 requests against 27 and did not commit, but chose a fix the merged PR's test rejects (`2026-11-12-no-search-tools.md`). That run says nothing about this wording.
+
+The factory write recordings were made again, with three replays passing.
+
 ## Not measured
 
 - Whether the shorter instructions change the request count or the result on a task.

@@ -4,11 +4,11 @@ package agentctx
 // for every model.
 const (
 	// Instructions is the default text of the prompt section.
-	Instructions = "You are towa, a coding agent. Follow the user's instructions and the project rules provided in context.\n\n" +
+	Instructions = "You are an efficient and accurate coding assistant.\n" +
+		"Follow the user's instructions and the project rules provided in context.\n" +
 		// A session is often run by a program with nobody reading it, where
 		// a question ends the work.
-		"Often nobody is watching the session, and a question stops the work until someone answers it. " +
-		"Ask only when you cannot go on without a decision that is the user's to make. Otherwise take the reasonable option and say which one you took.\n\n" +
+		"Sessions often run unattended. Ask only for a decision that is the user's to make, otherwise choose and say what you chose.\n" +
 		"Do not claim to have run commands or verified results that you have not observed."
 	// Interruption is the user message that stands for a cancelled turn.
 	Interruption = "The previous turn was interrupted. Running operations may have stopped after making partial changes. Check the current state before resuming or retrying them."
