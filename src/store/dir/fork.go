@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"uuid"
 
+	"github.com/gfx-labs/acpharness/src/filelock"
 	"github.com/gfx-labs/acpharness/src/store"
 )
 
@@ -27,7 +28,7 @@ func (s *Store) Fork(ctx context.Context, source uuid.UUID, meta store.Meta) err
 	return s.build(ctx, meta, func(building string) error {
 		// build holds the root lock first, as Delete does. Acquiring the
 		// source's log first would invert that order.
-		log, format, err := s.openLog(source, os.O_RDONLY, syscall.LOCK_SH)
+		log, format, err := s.openLog(source, os.O_RDONLY, filelock.Shared)
 		if err != nil {
 			return err
 		}

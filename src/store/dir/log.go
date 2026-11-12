@@ -12,12 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"time"
 	"uuid"
 
 	"github.com/valyala/bytebufferpool"
 
+	"github.com/gfx-labs/acpharness/src/filelock"
 	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
@@ -136,7 +136,7 @@ func (s *Store) Append(ctx context.Context, id uuid.UUID, entries []transcript.E
 	if err != nil {
 		return err
 	}
-	f, format, err := s.openLog(id, os.O_RDWR, syscall.LOCK_EX)
+	f, format, err := s.openLog(id, os.O_RDWR, filelock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ type view struct {
 
 // snapshot reads a session's Meta and where its log ends, under the lock.
 func (s *Store) snapshot(id uuid.UUID) (view, error) {
-	f, format, err := s.openLog(id, os.O_RDONLY, syscall.LOCK_SH)
+	f, format, err := s.openLog(id, os.O_RDONLY, filelock.Shared)
 	if err != nil {
 		return view{}, err
 	}
@@ -336,7 +336,7 @@ func (s *Store) Repair(ctx context.Context, id uuid.UUID) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	f, format, err := s.openLog(id, os.O_RDWR, syscall.LOCK_EX)
+	f, format, err := s.openLog(id, os.O_RDWR, filelock.Exclusive)
 	if err != nil {
 		return 0, err
 	}

@@ -18,9 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/acpharness/src/filelock"
 )
 
 // Handler serves one connection and returns when the client hangs up or ctx
@@ -115,8 +114,8 @@ func (l *Listeners) openUnix(ctx context.Context, cfg config.ListenUnix) (net.Li
 		return nil, fmt.Errorf("listen: unix: %w", err)
 	}
 	l.lock = lock
-	if err := flockNow(lock); err != nil {
-		if errors.Is(err, unix.EWOULDBLOCK) {
+	if err := filelock.TryLock(lock, filelock.Exclusive); err != nil {
+		if errors.Is(err, filelock.ErrHeld) {
 			return nil, fmt.Errorf("%w: %s (its lock %s is held)", ErrInUse, cfg.Path, lock.Name())
 		}
 		return nil, fmt.Errorf("listen: unix: lock %s: %w", lock.Name(), err)
@@ -141,15 +140,6 @@ func (l *Listeners) openUnix(ctx context.Context, cfg config.ListenUnix) (net.Li
 		return nil, fmt.Errorf("listen: unix: %w", err)
 	}
 	return ln, nil
-}
-
-func flockNow(f *os.File) error {
-	for {
-		err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if !errors.Is(err, unix.EINTR) {
-			return err
-		}
-	}
 }
 
 func removeStale(ctx context.Context, path string) error {

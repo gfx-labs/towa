@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gfx-labs/acpharness/src/filelock"
 )
 
 // ErrNotLoggedIn says the store holds no login for an OAuth account.
@@ -248,7 +250,7 @@ func lockFile(ctx context.Context, path string) (unlock func() error, err error)
 	}
 	// flock cannot be interrupted, so it waits in a goroutine.
 	locked := make(chan error, 1)
-	go func() { locked <- flockExclusive(f) }()
+	go func() { locked <- filelock.Lock(f, filelock.Exclusive) }()
 	select {
 	case err := <-locked:
 		if err != nil {

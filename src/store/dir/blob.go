@@ -13,9 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"uuid"
 
+	"github.com/gfx-labs/acpharness/src/filelock"
 	"github.com/gfx-labs/acpharness/src/store"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
@@ -42,7 +42,7 @@ func (s *Store) PutBlob(ctx context.Context, id uuid.UUID, mimeType string, cont
 		return transcript.Stored{}, err
 	}
 	// The shared lock keeps Delete away while the content is written.
-	log, _, err := s.openLog(id, os.O_RDONLY, syscall.LOCK_SH)
+	log, _, err := s.openLog(id, os.O_RDONLY, filelock.Shared)
 	if err != nil {
 		return transcript.Stored{}, err
 	}
@@ -108,7 +108,7 @@ func (s *Store) OpenBlob(ctx context.Context, id uuid.UUID, hash string) (io.Rea
 	if err != nil {
 		return nil, err
 	}
-	log, _, err := s.openLog(id, os.O_RDONLY, syscall.LOCK_SH)
+	log, _, err := s.openLog(id, os.O_RDONLY, filelock.Shared)
 	if err != nil {
 		return nil, err
 	}

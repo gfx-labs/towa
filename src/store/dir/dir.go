@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"uuid"
 
+	"github.com/gfx-labs/acpharness/src/filelock"
 	"github.com/gfx-labs/acpharness/src/store"
 )
 
@@ -159,7 +160,7 @@ func (s *Store) build(ctx context.Context, meta store.Meta, fill func(building s
 	if err := s.mkdir(s.root); err != nil {
 		return err
 	}
-	root, err := s.lockRoot(syscall.LOCK_EX)
+	root, err := s.lockRoot(filelock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -216,7 +217,7 @@ func lockDir(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(d.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := filelock.TryLock(d, filelock.Exclusive); err != nil {
 		return nil, errors.Join(err, d.Close())
 	}
 	return d, nil
@@ -228,7 +229,7 @@ func lockDir(path string) (*os.File, error) {
 // call holds is left alone. Nothing calls Sweep on its own: New does no
 // I/O, so the program runs it when it starts.
 func (s *Store) Sweep(ctx context.Context) (int, error) {
-	root, err := s.lockRoot(syscall.LOCK_EX)
+	root, err := s.lockRoot(filelock.Exclusive)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
 	}
@@ -253,7 +254,7 @@ func (s *Store) Sweep(ctx context.Context) (int, error) {
 		}
 		path := filepath.Join(s.root, name.Name())
 		held, err := lockDir(path)
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, filelock.ErrHeld) || errors.Is(err, fs.ErrNotExist) {
 			// In use, or finished since the root was read.
 			continue
 		}
@@ -291,7 +292,7 @@ func (s *Store) SetMeta(ctx context.Context, meta store.Meta) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	log, _, err := s.openLog(meta.ID, os.O_RDONLY, syscall.LOCK_EX)
+	log, _, err := s.openLog(meta.ID, os.O_RDONLY, filelock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -314,7 +315,7 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	root, err := s.lockRoot(syscall.LOCK_EX)
+	root, err := s.lockRoot(filelock.Exclusive)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%w: %s", store.ErrNotFound, id)
 	}
@@ -324,7 +325,7 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 	defer root.Close() //nolint:errcheck // Closing drops the directory lock.
 	// The lock is held until the files are gone, so that a call waiting
 	// for it finds a log with no name and reports the session as not found.
-	log, _, err := s.openLog(id, os.O_RDONLY, syscall.LOCK_EX)
+	log, _, err := s.openLog(id, os.O_RDONLY, filelock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -374,7 +375,7 @@ func (s *Store) readMeta(id uuid.UUID) (store.Meta, error) {
 // openLog opens a session's log, whichever format it is in, and takes a
 // lock on it, which closing the file drops. The log is the lock for the
 // whole session directory.
-func (s *Store) openLog(id uuid.UUID, flag, lock int) (*os.File, logFormat, error) {
+func (s *Store) openLog(id uuid.UUID, flag int, lock filelock.Mode) (*os.File, logFormat, error) {
 	dir := s.SessionDir(id)
 	var f *os.File
 	var format logFormat
@@ -398,14 +399,7 @@ func (s *Store) openLog(id uuid.UUID, flag, lock int) (*os.File, logFormat, erro
 		}
 		return nil, nil, &CorruptError{Path: dir, Err: errors.New("the session has no log")}
 	}
-	var err error
-	for {
-		err = syscall.Flock(int(f.Fd()), lock)
-		if !errors.Is(err, syscall.EINTR) {
-			break
-		}
-	}
-	if err != nil {
+	if err := filelock.Lock(f, lock); err != nil {
 		return nil, nil, closeAfter(fmt.Errorf("store/dir: lock %s: %w", f.Name(), err), f)
 	}
 	// Delete holds the lock until the files are gone, so a log with no name

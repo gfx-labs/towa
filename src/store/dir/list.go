@@ -8,10 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 	"uuid"
 
+	"github.com/gfx-labs/acpharness/src/filelock"
 	"github.com/gfx-labs/acpharness/src/store"
 )
 
@@ -31,18 +31,12 @@ type childrenIndex struct {
 
 // lockRoot orders changes to the root namespace, including making an
 // index. It is never acquired while holding a session log lock.
-func (s *Store) lockRoot(how int) (*os.File, error) {
+func (s *Store) lockRoot(how filelock.Mode) (*os.File, error) {
 	f, err := os.Open(s.root)
 	if err != nil {
 		return nil, err
 	}
-	for {
-		err = syscall.Flock(int(f.Fd()), how)
-		if !errors.Is(err, syscall.EINTR) {
-			break
-		}
-	}
-	if err != nil {
+	if err := filelock.Lock(f, how); err != nil {
 		return nil, errors.Join(err, f.Close())
 	}
 	return f, nil
@@ -62,9 +56,9 @@ func (s *Store) List(ctx context.Context, filter store.Filter) ([]store.Meta, er
 	default:
 		return nil, fmt.Errorf("store/dir: archived filter %d is not valid", filter.Archived)
 	}
-	how := syscall.LOCK_SH
+	how := filelock.Shared
 	if filter.ParentID != uuid.Nil() {
-		how = syscall.LOCK_EX
+		how = filelock.Exclusive
 	}
 	root, err := s.lockRoot(how)
 	if errors.Is(err, fs.ErrNotExist) {
