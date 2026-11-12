@@ -58,7 +58,20 @@ It did not commit and said so. It also picked a different fix, which the merged 
 
 `src/loop/testdata/factory_write_{1,2}.json` hold the tool definitions, so they were recorded again on `openai/gpt-oss-20b` with the command in `2026-11-12-prompt.md`. The first recording passed and its replay passed three times.
 
+## On tasks
+
+One towa run each on `78b4593` (this change, before the shorter opening of `eb665eb`), beside the runs on `85e52ca`:
+
+| PR | `85e52ca` | `78b4593` | pi 1.3.0 |
+|---|---|---|---|
+| 4634 | 27 requests, 1.21M tokens, merged test passes | 24, 869k, merged test fails | 19, 728k, passes |
+| 4646 | 9, 346k | 10, 393k | 10, 359k |
+
+- The first request fell from 31,009 to 27,556 tokens on 4634 and from 31,103 to 27,743 on 4646. pi's is 27,903 and jcode's 27,390 on 4634.
+- On 4634 the run changed only the call site, as the `a799c49` run had, so the merged PR's test fails. One run does not say the tool set caused that.
+- On 4634 all 24 calls were `bash`. There was no `read`, `edit` or `apply_patch` call: files were read with `sed` and `cat` and changed with a `python3` script and `sed -i`. On 4646 it made 4 `read` calls and one `apply_patch`.
+
 ## Not measured
 
-- Request counts and results on a task with the two tools gone.
+- Whether the all-`bash` run on 4634 repeats, and whether the rule "Use bash for file operations" is what pulls reads and edits away from their tools.
 - Whether the model searches ignored directories such as `node_modules` more often now. `rg` skips them by default and `find` and `grep -r` do not.
