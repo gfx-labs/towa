@@ -88,15 +88,17 @@ func Load(req Request) (*Loaded, error) {
 //  2. the AGENTS.md of each directory from the repository root down to the
 //     working directory, so that the file nearest the working directory
 //     comes last;
-//  3. the configured extra files, in config order;
-//  4. the .md files under each configured extra directory, in path order.
+//  3. the .md files under each rules directory, in path order;
+//  4. the configured extra files, in config order;
+//  5. the .md files under each configured extra directory, in path order.
 //
 // Steps 1 and 2 are skipped
 // when context.agents_files is off. The repository root is the nearest
 // directory, from the working directory upwards, that holds a ".git" entry.
 // When there is none, only the working directory is searched.
 //
-// An AGENTS.md that does not exist is not an error. Any other
+// An AGENTS.md that does not exist is not an error, and neither is a rules
+// directory, since the default one is absent on most machines. Any other
 // failure is, including an extra file or directory that does not exist. A
 // file reached twice, such as an extra file that is also an AGENTS.md, is
 // read once, at its first position.
@@ -127,6 +129,18 @@ func LoadFiles(req Request) ([]File, error) {
 		}
 	}
 
+	for _, rules := range req.Config.RulesDirs {
+		dir, err := resolvePath(rules, workDir, req.HomeDir)
+		if err != nil {
+			return nil, fmt.Errorf("agentctx: context.rules_dirs: %w", err)
+		}
+		if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err := l.addDir(dir); err != nil {
+			return nil, err
+		}
+	}
 	for _, extra := range req.Config.ExtraFiles {
 		path, err := resolvePath(extra, workDir, req.HomeDir)
 		if err != nil {
@@ -141,28 +155,36 @@ func LoadFiles(req Request) ([]File, error) {
 		if err != nil {
 			return nil, fmt.Errorf("agentctx: context.extra_dirs: %w", err)
 		}
-		// WalkDir visits in lexical order and does not follow symlinks
-		// below dir, so a link cannot make the walk loop.
-		var paths []string
-		err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !d.IsDir() && filepath.Ext(path) == ".md" {
-				paths = append(paths, path)
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("agentctx: %w", pathError(dir, err))
-		}
-		for _, path := range paths {
-			if err := l.add(path, false); err != nil {
-				return nil, err
-			}
+		if err := l.addDir(dir); err != nil {
+			return nil, err
 		}
 	}
 	return l.files, nil
+}
+
+// addDir reads every .md file under dir, in path order.
+func (l *fileLoader) addDir(dir string) error {
+	// WalkDir visits in lexical order and does not follow symlinks below
+	// dir, so a link cannot make the walk loop.
+	var paths []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".md" {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("agentctx: %w", pathError(dir, err))
+	}
+	for _, path := range paths {
+		if err := l.add(path, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type fileLoader struct {

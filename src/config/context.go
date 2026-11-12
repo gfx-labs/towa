@@ -14,9 +14,13 @@ type Context struct {
 	// GlobalDir is the directory that holds the global AGENTS.md. Empty
 	// means there is no global file.
 	GlobalDir string `name:"global_dir" default:"~/.agents" placeholder:"DIR" help:"Directory that holds the global AGENTS.md. Empty means there is no global file."`
-	// ExtraFiles are read after the instruction files, in this order. Each
+	// RulesDirs are read after the instruction files. Every .md file under
+	// each directory is read, in path order. A directory that does not
+	// exist holds no rules.
+	RulesDirs []string `name:"rules_dirs" default:"~/.agents/rules" placeholder:"DIR" validate:"dive,required" help:"Directories whose .md files are read after the instruction files, in path order. One that does not exist is skipped."`
+	// ExtraFiles are read after the rules, in this order. Each
 	// must exist.
-	ExtraFiles []string `name:"extra_files" placeholder:"FILE" validate:"dive,required" help:"Files read after the instruction files, in this order. Each must exist."`
+	ExtraFiles []string `name:"extra_files" placeholder:"FILE" validate:"dive,required" help:"Files read after the rules, in this order. Each must exist."`
 	// ExtraDirs are read after ExtraFiles. Every .md file under each
 	// directory is read, in path order. Each directory must exist.
 	ExtraDirs []string `name:"extra_dirs" placeholder:"DIR" validate:"dive,required" help:"Directories whose .md files are read after extra_files, in path order. Each must exist."`

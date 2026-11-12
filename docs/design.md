@@ -139,6 +139,9 @@ providers:
 
 context:
   agents_files: true
+  # Every .md file under these is read after the AGENTS.md files. One that
+  # does not exist is skipped.
+  rules_dirs: ["~/.agents/rules"]
   extra_files: []
   extra_dirs: []
   skills_dirs: ["~/.agents/skills"]

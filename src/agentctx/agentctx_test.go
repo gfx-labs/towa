@@ -73,6 +73,8 @@ func TestContextFilesAreReadFromGlobalThenRepoRootDownToWorkDir(t *testing.T) {
 	mid := write(t, filepath.Join(tr.repo, "a", "AGENTS.md"), "mid")
 	leaf := write(t, filepath.Join(tr.workDir, "AGENTS.md"), "leaf")
 	write(t, filepath.Join(tr.workDir, "below", "AGENTS.md"), "below the working directory")
+	ruleB := write(t, filepath.Join(tr.home, ".agents", "rules", "tasks", "b.md"), "rule b")
+	ruleA := write(t, filepath.Join(tr.home, ".agents", "rules", "style", "a.md"), "rule a")
 	extra := write(t, filepath.Join(tr.home, "notes.md"), "extra")
 	dirB := write(t, filepath.Join(tr.repo, "docs", "b.md"), "b")
 	dirA := write(t, filepath.Join(tr.repo, "docs", "a", "z.md"), "z")
@@ -81,20 +83,23 @@ func TestContextFilesAreReadFromGlobalThenRepoRootDownToWorkDir(t *testing.T) {
 	cfg := config.Context{
 		AgentsFiles: true,
 		GlobalDir:   "~/.agents",
-		ExtraFiles:  []string{"~/notes.md"},
+		// The second directory does not exist, as the default does not on
+		// most machines.
+		RulesDirs:  []string{"~/.agents/rules", "~/.jcode/rules"},
+		ExtraFiles: []string{"~/notes.md"},
 		// Relative to the working directory.
 		ExtraDirs: []string{"../../docs"},
 	}
 
 	files, err := agentctx.LoadFiles(tr.request(cfg))
 	require.NoError(t, err)
-	require.Equal(t, []string{global, root, mid, leaf, extra, dirA, dirB}, paths(files))
+	require.Equal(t, []string{global, root, mid, leaf, ruleA, ruleB, extra, dirA, dirB}, paths(files))
 	require.Equal(t, "root", files[1].Text)
 
 	cfg.AgentsFiles = false
 	files, err = agentctx.LoadFiles(tr.request(cfg))
 	require.NoError(t, err)
-	require.Equal(t, []string{extra, dirA, dirB}, paths(files))
+	require.Equal(t, []string{ruleA, ruleB, extra, dirA, dirB}, paths(files))
 }
 
 // Outside a repository there is no root to stop at, so only the working
