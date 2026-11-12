@@ -201,34 +201,3 @@ func TestBashRunsACommandAndRefusesABadTimeout(t *testing.T) {
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
 	require.Contains(t, result.Parts[0].Text, "timed out")
 }
-
-func TestGlobAndGrepRunRealRipgrep(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
-	require.NoError(t, err)
-	env := tools.Env{Cwd: t.TempDir()}
-	path := filepath.Join(env.Cwd, "found.txt")
-	require.NoError(t, os.WriteFile(path, []byte("alpha\nneedle\nneedle\n"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "other.go"), []byte("alpha\n"), 0o600))
-	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker)})
-	// A file under the working directory is named from it.
-	result := run(t, set, env, "glob", map[string]any{"pattern": "*.txt"})
-	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
-	require.Equal(t, "found.txt", result.Parts[0].Text)
-	for mode, want := range map[string]string{
-		"files_with_matches": "Found 1 files\nfound.txt",
-		"content":            "found.txt:2:needle\nfound.txt:3:needle",
-		"count":              "found.txt:2",
-	} {
-		t.Run(mode, func(t *testing.T) {
-			result := run(t, set, env, "grep", map[string]any{"pattern": "needle", "output_mode": mode, "head_limit": 0})
-			require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
-			require.Equal(t, want, result.Parts[0].Text)
-		})
-	}
-	// A file anywhere else keeps its whole path.
-	outside := filepath.Join(t.TempDir(), "elsewhere.txt")
-	require.NoError(t, os.WriteFile(outside, []byte("needle\n"), 0o600))
-	result = run(t, set, env, "grep", map[string]any{"pattern": "needle", "path": filepath.Dir(outside), "output_mode": "content"})
-	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
-	require.Equal(t, outside+":1:needle", result.Parts[0].Text)
-}

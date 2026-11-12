@@ -51,11 +51,28 @@ The same question to Opus 5.5 through `acphost exec` on both builds ("quote ever
 
 217 tokens more on every request. Both named the same ten tools.
 
+## On tasks
+
+`oku-trade/trade` PRs through `acphost exec`, Opus 5.5 at medium effort, towa at `85e52ca`. The "before" and pi columns are earlier runs, kept outside the repository. Requests, then tokens:
+
+| PR | towa before | towa `85e52ca` | pi 1.3.0 |
+|---|---|---|---|
+| 4634 | 47, 2.43M (`a799c49`, 1 run) | 27, 1.21M (1 run) | 19, 728k (1 run) |
+| 4646 | 20, 1.07M (`a799c49`, 1 run) | 9, 346k (1 run) | 10, 359k (1 run) |
+| 4668 | 5, 165k (`a799c49`, 1 run) | 6 and 5, 201k and 164k | 5, 149k (1 run) |
+| 4672 | 6 to 9, 274k to 409k (6 runs, 4 builds) | 7 and 7, 307k and 299k | 6, 238k (1 run) |
+| 4673 | 9, 10 and 9, 485k to 547k (`53c4a2a`, 3 runs) | 8 and 10, 376k and 551k | 6 to 9, 247k to 440k (5 runs) |
+
+- The merged PR's tests: on 4634 they failed before and pass now, with `Switch` changed as the merged PR changed it. On 4646 5 of 8 fail on every agent, for a helper only the merged code has. On 4672 one of the two new runs fails 1 of 2, as one of six did before and as pi's run did.
+- The two large drops are one run each. `a799c49` also predates the shorter instructions (`397bf56`), so this does not separate that change from this one.
+- On the three smaller PRs the new runs are inside the old range.
+- On 4634 the model made no `edit` or `apply_patch` call and changed files with six `python3` scripts in `bash`. pi's run did the same. The line "Change part of a file with edit, not with sed or a script in bash" went with this change. The other seven new runs have one such call between them.
+
 ## The factory write recording
 
 `src/loop/testdata/factory_write_{1,2}.json` hold the prompt. The old recording failed on the first request, as it should. They were recorded again on `openai/gpt-oss-20b` with the command in `2026-11-12-prompt.md`. The first recording passed and its replay passed three times. `TestFactoryWriteProcess` reads the working directory out of the request with the same pattern as before, since that line's text is unchanged.
 
 ## Not measured
 
-- Whether the layout or the wording changes the request count, the context per request or the result on a task.
+- Which of the changes moved the request count on 4634 and 4646: the tags, the tools list, the reworded rules or the shorter instructions before them.
 - Whether the model now searches through `bash` more often, and what that costs: `glob` and `grep` skip ignored files and cap their output, and `rg` in `bash` is capped only by the shell tool's output limit.

@@ -52,14 +52,13 @@ func TestAnEndpointThatWasNotGivenIsAnError(t *testing.T) {
 func TestOTLPIsListedOnlyWhenTurnedOnAndNamed(t *testing.T) {
 	otlp := hosts.OTLP{Endpoint: "http://collector:4318"}
 
-	const noSearch = "websearch:\n  enabled: false\n"
-	off, err := hosts.List(load(t, noSearch), hosts.Inputs{OTLP: otlp})
+	off, err := hosts.List(load(t, ""), hosts.Inputs{OTLP: otlp})
 	require.NoError(t, err)
 	require.Empty(t, off.Hosts)
 
 	// On without a variable: the exporter's default is not ours to state,
 	// so each signal is reported as not covered.
-	unnamed, err := hosts.List(load(t, noSearch+"telemetry:\n  otel: true\n"), hosts.Inputs{})
+	unnamed, err := hosts.List(load(t, "telemetry:\n  otel: true\n"), hosts.Inputs{})
 	require.NoError(t, err)
 	require.Empty(t, unnamed.Hosts)
 	require.Greater(t, len(unnamed.NotCovered), len(off.NotCovered))

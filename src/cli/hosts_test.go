@@ -144,6 +144,8 @@ accounts:
 jev:
   route: typesafe
   account: c
+websearch:
+  enabled: true
 `), 0o600))
 	var stdout, stderr bytes.Buffer
 	h := Host{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, Environ: []string{"XDG_STATE_HOME=" + dir}}

@@ -1,6 +1,8 @@
 // Package core is the tool set every model gets: read, write, edit,
-// apply_patch, bash, glob, grep and todo. Each tool's name, description and
-// schema are in specs/, and each runs one capability from a sibling package.
+// apply_patch, bash and todo. Each tool's name, description and schema are
+// in specs/, and each runs one capability from a sibling package. There is
+// no tool for finding files or searching them: the model runs rg, find and
+// ls through bash.
 package core
 
 import (
@@ -48,8 +50,6 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		{"edit", func(spec provider.Tool) tools.Tool { return editTool(spec, env, cfg, deps.Reads) }},
 		{"apply_patch", func(spec provider.Tool) tools.Tool { return patchTool(spec, env, cfg, deps.Reads) }},
 		{"bash", func(spec provider.Tool) tools.Tool { return bashTool(spec, cfg) }},
-		{"glob", func(spec provider.Tool) tools.Tool { return globTool(spec, env, cfg) }},
-		{"grep", func(spec provider.Tool) tools.Tool { return grepTool(spec, env, cfg) }},
 		{"todo", func(spec provider.Tool) tools.Tool { return planTool(spec, deps) }},
 	}
 	var result []tools.Tool

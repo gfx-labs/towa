@@ -133,6 +133,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	require.NoError(t, err)
 	cfg := loaded.Config
 	cfg.ConversationSearch.Enabled = false
+	cfg.WebSearch.Enabled = true
 	cfg.Providers = []config.Provider{{ID: "other", Kind: config.ProviderResponses, BaseURL: "http://127.0.0.1:1/v1"}}
 	cfg.Accounts = []config.Account{
 		{ID: "chat", Provider: config.ProviderCodex, Kind: config.AccountProxiedOAuth},
