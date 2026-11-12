@@ -1,0 +1,28 @@
+# acpharness
+
+acpharness is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode and https://github.com/vercel-labs/fx, designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
+
+there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
+
+try it with out with https://github.com/gfx-labs/acphost, a lightweight wrapper over acp that proxies and normalizes acp, along with providing journals, persistent sessions, and sandboxing.
+
+there are a large amount of configuration keys, everything configurable through ENV, cli, or file. these are meant to be set per run by a caller, another llm/program/scheduler/whatever. for instance, you could have your orchestator inject a generated config into a file in a kubernetes pod, with a command to run acpharness with this command and a prompt.
+
+## key features
+
+- like jcode, built to run many sessions per host. one process can serve many connections over stdio, a unix socket or tcp with mtls. an idle session wakes no goroutine.
+- claude and codex subscription support, along with chat completions and responses api.
+- a model is a chain of `provider:account/model` entries. on a rate limit, exhausted quota, auth failure or overload the next entry takes the request, and the client is told.
+- a proxy can hold the credentials. the harness sends a placeholder and never sees the token, every http client honours `HTTPS_PROXY`, and `acpharness hosts` prints each host the config will contact, for an egress allowlist.
+- an session log is append-only, with reactive compression which compaction adds a summary and deletes nothing, so `conversation_search` can still read what was compacted away, and a parent can read its subagents' sessions.
+- a tool result over the token budget comes back as a summary with its size. the model asks again to get all of it.
+- mcp servers sit behind one `mcp` tool with list, search and call, so their schemas stay out of the prompt. a server the client adds for the session gets its tools by name.
+- every config key is a flag in `--help`, and can be set in a yaml file or the environment. an invalid value is an error, never a silent fallback.
+- a large amount of levers for selecting custom injected context for the run from different paths.
+- hooks, per-turn limits and opentelemetry traces, metrics and logs, are all config
+
+
+## funny numbers
+
+as a result of doing very little, acpharness is rather lightweight.
+- one process with one empty session measured about 30 MB, with fifty about 36 MB.
