@@ -35,6 +35,9 @@ type Request struct {
 	// HomeDir replaces a leading "~" in a configured path. It may be empty
 	// when no configured path starts with "~".
 	HomeDir string
+	// Skills keeps skill listings between sessions. Nil reads every
+	// SKILL.md again.
+	Skills *SkillCache
 }
 
 // Loaded is what Load read.

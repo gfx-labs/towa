@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/goccy/go-yaml"
 )
@@ -39,6 +41,50 @@ type UnknownSkillError struct {
 
 func (e *UnknownSkillError) Error() string {
 	return fmt.Sprintf("agentctx: no skill is named %q", e.Name)
+}
+
+// SkillCache keeps what ListSkills read from each SKILL.md, so that the
+// sessions of one process share one copy and a file is parsed once. Every
+// listing still walks the directories and stats each SKILL.md: a file whose
+// modification time or size has changed is read again, and a file that is
+// gone is not listed. An edit that keeps both is not seen. A file that
+// fails is not kept, so its error is reported each time.
+//
+// An entry stays for the life of the process, one per SKILL.md path seen.
+type SkillCache struct {
+	mu    sync.Mutex
+	files map[string]cachedSkill
+}
+
+type cachedSkill struct {
+	modTime time.Time
+	size    int64
+	// limit is the file size limit the file was read under.
+	limit int64
+	skill Skill
+}
+
+func (c *SkillCache) read(dir, path string, info fs.FileInfo, limit int64) (Skill, error) {
+	if c == nil {
+		return readSkill(dir, path, limit)
+	}
+	c.mu.Lock()
+	cached, ok := c.files[path]
+	c.mu.Unlock()
+	if ok && cached.modTime.Equal(info.ModTime()) && cached.size == info.Size() && cached.limit == limit && cached.skill.Dir == dir {
+		return cached.skill, nil
+	}
+	skill, err := readSkill(dir, path, limit)
+	if err != nil {
+		return Skill{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.files == nil {
+		c.files = map[string]cachedSkill{}
+	}
+	c.files[path] = cachedSkill{modTime: info.ModTime(), size: info.Size(), limit: limit, skill: skill}
+	return skill, nil
 }
 
 // ListSkills finds the skills under the configured skills directories. A
@@ -74,7 +120,7 @@ func ListSkills(req Request) ([]Skill, error) {
 	var out []Skill
 	byName := map[string]Skill{}
 	for _, r := range roots {
-		w := &skillWalker{limit: req.Config.MaxFileBytes, visited: map[string]bool{}}
+		w := &skillWalker{limit: req.Config.MaxFileBytes, cache: req.Skills, visited: map[string]bool{}}
 		if err := w.walk(r.path, r.optional); err != nil {
 			return nil, err
 		}
@@ -118,6 +164,7 @@ func LoadSkill(skills []Skill, name string, maxBytes int64) (*SkillContent, erro
 
 type skillWalker struct {
 	limit int64
+	cache *SkillCache
 	found []Skill
 	// visited holds resolved directories, so that a symlink cycle ends.
 	visited map[string]bool
@@ -141,9 +188,9 @@ func (w *skillWalker) walk(dir string, optional bool) error {
 	w.visited[resolved] = true
 
 	path := filepath.Join(dir, skillFile)
-	switch _, err := os.Stat(path); {
+	switch info, err := os.Stat(path); {
 	case err == nil:
-		skill, err := readSkill(dir, path, w.limit)
+		skill, err := w.cache.read(dir, path, info, w.limit)
 		if err != nil {
 			return err
 		}

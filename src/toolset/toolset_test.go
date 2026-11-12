@@ -231,3 +231,48 @@ func TestAssembleLeavesANativeToolAsItIs(t *testing.T) {
 	_, _, err = got.Schemas["shell"].Apply(jsontext.Value(`{"accept_large_output":false}`), false)
 	require.NoError(t, err)
 }
+
+func TestACacheSharesSchemasBetweenSessions(t *testing.T) {
+	ctx := context.Background()
+	cache := &toolset.Cache{}
+	assemble := func(schema string, gate config.ToolsGate) toolset.Result {
+		t.Helper()
+		got, err := toolset.Assemble(ctx, toolset.Input{
+			// A session's tools are built anew, so the schema is a copy.
+			Tools:   core(tool("Read", string([]byte(schema)))),
+			MCP:     []tools.Tool{tool("echo", strict)},
+			Gate:    gate,
+			Schemas: cache,
+		})
+		require.NoError(t, err)
+		return got
+	}
+	spec := func(r toolset.Result, name string) jsontext.Value {
+		t.Helper()
+		found, ok := r.Set.Lookup(name)
+		require.True(t, ok)
+		return found.Spec.InputSchema
+	}
+	gate := gateOn(t)
+	first, second := assemble(strict, gate), assemble(strict, gate)
+	require.Same(t, first.Schemas["Read"], second.Schemas["Read"])
+	require.Same(t, &spec(first, "Read")[0], &spec(second, "Read")[0])
+	// It is the schema an assembly without a cache makes.
+	plain, err := toolset.Assemble(ctx, toolset.Input{Tools: core(tool("Read", strict)), Gate: gate})
+	require.NoError(t, err)
+	require.Equal(t, string(spec(plain, "Read")), string(spec(second, "Read")))
+	// An MCP server's tool is one session's.
+	require.NotSame(t, first.Schemas["echo"], second.Schemas["echo"])
+
+	// A tool of the same name with another schema, or another gate
+	// setting, gets its own.
+	other := `{"type":"object","properties":{"file":{"type":"string"}},"required":["file"],"additionalProperties":false}`
+	changed := assemble(other, gate)
+	_, _, err = changed.Schemas["Read"].Apply(jsontext.Value(`{"file":"a","accept_large_output":true}`), false)
+	require.NoError(t, err)
+	ungated := assemble(other, config.ToolsGate{})
+	require.Equal(t, other, string(spec(ungated, "Read")))
+	_, _, err = ungated.Schemas["Read"].Apply(jsontext.Value(`{"file":"a","accept_large_output":true}`), false)
+	var invalid *repair.InvalidError
+	require.ErrorAs(t, err, &invalid)
+}

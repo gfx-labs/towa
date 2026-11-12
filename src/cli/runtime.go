@@ -48,6 +48,10 @@ type runtimeFactory struct {
 	spawner    *subagent.Spawner
 	embeddings *embed.Client
 	jev        *jev.Client
+	// skills and schemas hold what every session reads or builds the same
+	// way, so that a session keeps no copy of its own.
+	skills  agentctx.SkillCache
+	schemas toolset.Cache
 }
 
 type sessionRuntime struct {
@@ -262,7 +266,9 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	contextConfig := f.cfg.Context
 	contextConfig.Agents = append(slices.Clone(contextConfig.Agents), turn.ContextFiles...)
 	contextConfig.SkillsDirs = append(slices.Clone(contextConfig.SkillsDirs), turn.SkillsDirs...)
-	loaded, err := agentctx.Load(agentctx.Request{Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME")})
+	loaded, err := agentctx.Load(agentctx.Request{
+		Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME"), Skills: &f.skills,
+	})
 	if err != nil {
 		return preparedTurn{}, err
 	}
@@ -284,7 +290,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	}
 	assembled, err := toolset.Assemble(ctx, toolset.Input{
 		Tools:  func() ([]tools.Tool, error) { return coreTools, nil },
-		Extras: additional, MCP: frozen, Gate: f.cfg.Tools.Gate,
+		Extras: additional, MCP: frozen, Gate: f.cfg.Tools.Gate, Schemas: &f.schemas,
 	})
 	if err != nil {
 		return preparedTurn{}, err
