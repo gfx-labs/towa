@@ -63,8 +63,8 @@ type Sources struct {
 // Loaded is a resolved configuration and where its values came from.
 type Loaded struct {
 	Config Config
-	// Values holds every key with its value written as JSON, which a YAML
-	// file takes as it is. A duration is text such as "30m0s".
+	// Values holds display-only JSON with credentials redacted. A duration
+	// is text such as "30m0s". Config keeps the original runtime values.
 	Values map[string]string
 	// Origin names the layer that supplied each key's value: "default", a
 	// file, "environment" or "flag".
@@ -120,7 +120,7 @@ func Parse(src Sources, grammar any, flags *Flags, args []string, options ...kon
 	}
 	// After validation, which refuses a number JSON cannot write.
 	for key, flag := range l.keys {
-		text, err := json.Marshal(flag.Target.Interface(), valueOptions)
+		text, err := displayValue(key, flag.Target.Interface())
 		if err != nil {
 			return nil, nil, fmt.Errorf("config: %s: %w", key, err)
 		}
