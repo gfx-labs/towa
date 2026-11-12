@@ -322,6 +322,44 @@ func TestACancelMidStreamStoresAnInterruptionAndNotTheUnfinishedText(t *testing.
 	assert.Equal(t, spent.Usage(), result.Usage)
 }
 
+// A cancel can land after a response that asks for tools is stored and
+// before the tools run. Each call then needs a result: one left open and
+// followed by the interruption makes the session unreadable for the next
+// turn.
+func TestACancelBeforeDispatchLeavesEveryCallAnswered(t *testing.T) {
+	scenario := looptest.ReadTurn
+	scenario.Requests = 1
+	f := looptest.Replay(t, scenario)
+	id := acp.SessionId(uuid.NewV7().String())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var c client
+	// The usage of the first response is sent before its calls are run.
+	c.when = func(u acp.SessionUpdate) {
+		if u.UsageUpdate != nil {
+			cancel()
+		}
+	}
+	result, err := f.Loop.Run(ctx, f.Turn(id, c.update))
+	require.NoError(t, err)
+	assert.Equal(t, acp.StopReasonCancelled, result.StopReason)
+
+	_, got := entries(t, f.Store, id)
+	items := make([]transcript.Item, 0, len(got))
+	var outcomes []transcript.Outcome
+	for _, entry := range got {
+		items = append(items, entry.Item)
+		if entry.Item.ToolResult != nil {
+			outcomes = append(outcomes, entry.Item.ToolResult.Outcome)
+		}
+	}
+	assert.Equal(t, []transcript.Outcome{transcript.OutcomeCancelled}, outcomes)
+	// The next turn reads the session as it is, with nothing to repair.
+	_, repairs, err := loop.Conversation(items, looptest.Interruption)
+	require.NoError(t, err)
+	assert.Empty(t, repairs)
+}
+
 func TestAnUnknownModel404IsATypedStop(t *testing.T) {
 	f := looptest.Replay(t, looptest.UnknownModel)
 	var c client

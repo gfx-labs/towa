@@ -464,8 +464,14 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error) {
 	switch {
 	case ctx.Err() != nil && errors.Is(context.Cause(ctx), errWall):
+		if err := tn.closeCalls(ctx); err != nil {
+			return Result{}, true, err
+		}
 		return LimitResult(config.KeyMaxWall, tn.snapshot()), true, nil
 	case ctx.Err() != nil:
+		if err := tn.closeCalls(ctx); err != nil {
+			return Result{}, true, err
+		}
 		// The model is told about the interruption when the next turn's
 		// request is built.
 		if err := tn.append(ctx, transcript.Item{Interrupted: &transcript.Interrupted{}}); err != nil {
@@ -480,6 +486,28 @@ func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error
 		return Result{}, true, StopFor(streamErr)
 	}
 	return Result{}, false, nil
+}
+
+// closeCalls stores a cancelled result for every call the turn ends before
+// dispatching. The turn can end between storing a response that asks for
+// tools and running them, and a call with no result that is followed by
+// anything else makes the session unreadable for the next turn.
+func (tn *turn) closeCalls(ctx context.Context) error {
+	answered := map[string]bool{}
+	for _, entry := range tn.entries {
+		if entry.Item.ToolResult != nil {
+			answered[entry.Item.ToolResult.CallID] = true
+		}
+	}
+	var unrun []transcript.Item
+	for _, entry := range tn.entries {
+		if call := entry.Item.ToolCall; call != nil && !answered[call.ID] {
+			cancelled := result(*call, transcript.OutcomeCancelled, textInterrupted)
+			unrun = append(unrun, transcript.Item{ToolResult: &cancelled})
+			tn.toolUpdate(ctx, cancelled, nil)
+		}
+	}
+	return tn.append(ctx, unrun...)
 }
 
 func (tn *turn) result(reason acp.StopReason) Result {
