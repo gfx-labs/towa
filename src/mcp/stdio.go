@@ -50,11 +50,15 @@ func (t *stdioTransport) Connect(context.Context) (sdk.Connection, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %q: %w", t.server.Command, err)
 	}
-	p := &process{cmd: cmd, stdin: stdin, stdout: stdout, grace: t.grace, exited: make(chan struct{}), gone: make(chan struct{})}
+	p := &process{
+		cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr, grace: t.grace,
+		exited: make(chan struct{}), gone: make(chan struct{}),
+	}
 	p.reader = &watchedReader{p: p}
 	t.proc = p
-	var stderrDone sync.WaitGroup
-	stderrDone.Go(func() {
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
 		// A line longer than the scanner's buffer ends the scan, and the
 		// rest is discarded so that the server does not block on a full
 		// pipe.
@@ -63,13 +67,16 @@ func (t *stdioTransport) Connect(context.Context) (sdk.Connection, error) {
 			t.logger.Debug("mcp: server stderr", "server", t.server.Name, "line", lines.Text())
 		}
 		_, _ = io.Copy(io.Discard, stderr)
-	})
+	}()
 	go func() {
-		// A child of the server that outlives it keeps the stderr pipe
-		// open. The group is killed when the leader is gone, which closes
-		// it, so this wait ends.
 		<-p.gone
-		stderrDone.Wait()
+		// The group has been killed, which closes stderr unless a process
+		// outside the group holds it. What the server last wrote is given
+		// the grace period to be read, then the pipe is closed.
+		if !p.waitFor(stderrDone) {
+			p.closePipes()
+			<-stderrDone
+		}
 		// The exit status says nothing useful: a server killed here exits
 		// with a signal.
 		_ = cmd.Wait()
@@ -83,7 +90,8 @@ func (t *stdioTransport) Connect(context.Context) (sdk.Connection, error) {
 type process struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
-	stdout io.Reader
+	stdout io.ReadCloser
+	stderr io.Closer
 	grace  time.Duration
 	reader io.ReadCloser
 	// gone is closed when stdout has ended and the group has been killed.
@@ -94,6 +102,7 @@ type process struct {
 	once      sync.Once
 	eofOnce   sync.Once
 	drainOnce sync.Once
+	pipesOnce sync.Once
 }
 
 // eof runs once, when a read of stdout first fails. End of stdout means the
@@ -122,23 +131,25 @@ func (p *process) drain() {
 func (p *process) shutdown() error {
 	p.once.Do(func() {
 		_ = p.stdin.Close()
-		if p.wait() {
+		if p.waitFor(p.exited) {
 			return
 		}
 		_ = signalGroup(p.cmd.Process.Pid, syscall.SIGTERM)
-		if p.wait() {
+		if p.waitFor(p.exited) {
 			return
 		}
 		p.killGroup()
+		p.closePipes()
 	})
 	return nil
 }
 
-func (p *process) wait() bool {
+// waitFor reports whether done was closed within the grace period.
+func (p *process) waitFor(done <-chan struct{}) bool {
 	timer := time.NewTimer(p.grace)
 	defer timer.Stop()
 	select {
-	case <-p.exited:
+	case <-done:
 		return true
 	case <-timer.C:
 		return false
@@ -151,10 +162,22 @@ func (p *process) killGroup() {
 	_ = signalGroup(p.cmd.Process.Pid, syscall.SIGKILL)
 }
 
+// closePipes closes our ends of stdout and stderr, which ends the reads of
+// them. It is called once the group has been killed: a process the server
+// started in another group or session can still hold the other ends, and
+// the reads would otherwise wait for it to exit.
+func (p *process) closePipes() {
+	p.pipesOnce.Do(func() {
+		// exec's Wait closes them again and ignores that they are closed.
+		_, _ = p.stdout.Close(), p.stderr.Close()
+	})
+}
+
 // stop kills whatever is left of the group and waits for the server to be
 // reaped.
 func (p *process) stop() {
 	p.killGroup()
+	p.closePipes()
 	p.drain()
 	<-p.exited
 }

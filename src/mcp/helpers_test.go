@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -35,6 +36,9 @@ const (
 	// modeVanish answers until its vanish tool is called, then exits
 	// without answering that call.
 	modeVanish = "vanish"
+	// modeDetach answers until its stdin closes, then exits. Its detach
+	// tool starts a child in a session of its own.
+	modeDetach = "detach"
 )
 
 func TestMain(m *testing.M) {
@@ -43,8 +47,27 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	case modeMute:
 		select {}
-	case modeServe, modeLinger, modeVanish:
+	case modeServe, modeLinger, modeVanish, modeDetach:
 		server := newTestServer()
+		if mode == modeDetach {
+			sdk.AddTool(server, &sdk.Tool{
+				Name:        "detach",
+				Description: "Start a child in its own session that holds the server's stdout or stderr, and report its process id.",
+			}, func(_ context.Context, _ *sdk.CallToolRequest, in detachInput) (*sdk.CallToolResult, pidsOutput, error) {
+				// A signal to the server's group does not reach the child.
+				child := exec.Command("sleep", "600")
+				child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+				if in.Stream == "stdout" {
+					child.Stdout = os.Stdout
+				} else {
+					child.Stderr = os.Stderr
+				}
+				if err := child.Start(); err != nil {
+					return nil, pidsOutput{}, err
+				}
+				return nil, pidsOutput{PID: os.Getpid(), Child: child.Process.Pid}, nil
+			})
+		}
 		if mode == modeVanish {
 			sdk.AddTool(server, &sdk.Tool{
 				Name:        "vanish",
@@ -80,6 +103,10 @@ type noInput struct{}
 
 type vanishInput struct {
 	Path string `json:"path"`
+}
+
+type detachInput struct {
+	Stream string `json:"stream" jsonschema:"stdout or stderr"`
 }
 
 type pidsOutput struct {

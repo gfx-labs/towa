@@ -193,6 +193,33 @@ func TestCloseKillsTheStdioProcessGroup(t *testing.T) {
 	}
 }
 
+// A process the server started outside its group is not signalled, and it
+// can hold the server's stdout or stderr for as long as it runs.
+func TestCloseDoesNotWaitForAProcessOutsideTheGroup(t *testing.T) {
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			m := newTestManager(t, Options{Servers: []Server{stdioServer(t, "s", modeDetach)}})
+			res, err := m.CallTool(t.Context(), "s", "detach", jsontext.Value(`{"stream":"`+stream+`"}`))
+			require.NoError(t, err)
+			require.False(t, res.IsError, "%v", res.Content)
+			var out pidsOutput
+			require.NoError(t, json.Unmarshal([]byte(textOf(t, res)), &out))
+			t.Cleanup(func() { _ = syscall.Kill(out.Child, syscall.SIGKILL) })
+
+			closed := make(chan error, 1)
+			go func() { closed <- m.Close() }()
+			select {
+			case err := <-closed:
+				require.NoError(t, err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("Close is waiting for the process that holds the pipe")
+			}
+			assert.False(t, alive(out.PID), "server %d is still running", out.PID)
+			assert.True(t, alive(out.Child), "child %d left the group and should not have been signalled", out.Child)
+		})
+	}
+}
+
 func TestServerThatDiesIsStartedAgain(t *testing.T) {
 	m := newTestManager(t, Options{Servers: []Server{stdioServer(t, "s", modeServe)}})
 	first := callPids(t, m, "s")
