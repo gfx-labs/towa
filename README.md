@@ -26,3 +26,4 @@ there are a large amount of configuration keys, everything configurable through 
 
 as a result of doing very little, acpharness is rather lightweight.
 - one process with one empty session measured about 30 MB, with new empty sessions costing 32kb. know that this is purely synthetic.
+- idle sessions not in turn use almost no measurable cycles
