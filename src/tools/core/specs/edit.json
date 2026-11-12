@@ -2,7 +2,7 @@
   "name": "edit",
   "summary": "Make precise file edits with exact text replacement",
   "description": "Replace exact text in a file. Read the file in this session first. old_string must occur once unless replace_all is true. An empty old_string creates a missing or empty file.",
-  "guidance": ["Use edit for precise changes (old_string must match exactly)."],
+  "guidance": ["Use edit for precise changes (old_string must match exactly).", "Edit files with edit, apply_patch or write, not sed, perl or Python scripts in bash."],
   "input_schema": {
     "type": "object",
     "properties": {

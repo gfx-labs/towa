@@ -68,8 +68,17 @@ One towa run each on `78b4593` (this change, before the shorter opening of `eb66
 | 4646 | 9, 346k | 10, 393k | 10, 359k |
 
 - The first request fell from 31,009 to 27,556 tokens on 4634 and from 31,103 to 27,743 on 4646. pi's is 27,903 and jcode's 27,390 on 4634.
-- On 4634 the run changed only the call site, as the `a799c49` run had, so the merged PR's test fails. One run does not say the tool set caused that.
+- On 4634 the run changed only the call site, so the merged PR's test fails. That test asserts that `Switch` forwards `aria-labelledby`, which is the merged implementation and not what the ticket asks for. The ticket asks that the switch be announced as "Randomize". This run wrapped the switch and its text in the design system's `Field` and `FieldLabel`, which are Headless UI's, and a render of that markup gives the switch an `aria-labelledby` pointing at the "Randomize" label. So the ticket's expected behaviour is met by another route, and `Switch` still drops the prop for any other caller. The run said so in its report. Not checked in a browser.
 - On 4634 all 24 calls were `bash`. There was no `read`, `edit` or `apply_patch` call: files were read with `sed` and `cat` and changed with a `python3` script and `sed -i`. On 4646 it made 4 `read` calls and one `apply_patch`.
+
+## A rule against editing through bash
+
+After those runs the `edit` tool got a second rule, jcode's with towa's tool names: "Edit files with edit, apply_patch or write, not sed, perl or Python scripts in bash."
+
+- An edit made by a script skips the exact-match check, the read-before-write check and the diff an ACP client is shown.
+- `85e52ca` had removed the older line "Change part of a file with edit, not with sed or a script in bash" along with the lines about searching. The 4634 runs on `85e52ca` and `78b4593` then made 6 and 2 edits by script and none by tool.
+- The rule about reading through `bash` was kept all along ("Use read to examine files instead of cat or sed.") and the 4634 run still read with `sed` and `cat`, so a rule is not sufficient by itself.
+- Not measured on a task.
 
 ## Not measured
 
