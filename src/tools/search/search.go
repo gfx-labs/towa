@@ -186,7 +186,9 @@ func Grep(ctx context.Context, env tools.Env, cfg config.Tools, in GrepInput) (R
 		args = append(args, "--files-with-matches", "--null")
 		parse = (*run).parsePaths
 	case Counts:
-		args = append(args, "--count", "--null")
+		// rg leaves the path out when it is given one file, and the records
+		// are "path NUL count".
+		args = append(args, "--count", "--null", "--with-filename")
 		parse = (*run).parseCounts
 	default:
 		return Result{}, fmt.Errorf("search: output %d is not defined", in.Output)

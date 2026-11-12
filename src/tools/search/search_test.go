@@ -111,6 +111,12 @@ func TestGrepListsFilesAndCounts(t *testing.T) {
 	require.Equal(t, []string{"a.go", "sub/b.go"}, paths(env, res.Files))
 	require.Equal(t, 2, res.Files[0].Count)
 	require.Equal(t, 1, res.Files[1].Count)
+
+	// rg prints no path for one file unless it is asked to.
+	res, err = search.Grep(ctx, env, cfg, search.GrepInput{Pattern: "Alpha", Output: search.Counts, Filter: search.Filter{Path: "a.go"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.go"}, paths(env, res.Files))
+	require.Equal(t, 2, res.Files[0].Count)
 }
 
 func TestFindListsFilesWithOffsetAndLimit(t *testing.T) {
