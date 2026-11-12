@@ -1,5 +1,6 @@
 {
   "name": "apply_patch",
+  "summary": "Add, update, move and delete files with one patch",
   "description": "Add, update, move and delete files with one patch. The patch starts with \"*** Begin Patch\" and ends with \"*** End Patch\". Between them, each file starts with \"*** Add File: <path>\", \"*** Delete File: <path>\" or \"*** Update File: <path>\". Every line of an added file starts with \"+\". An update may be followed by \"*** Move to: <path>\", then holds hunks that start with \"@@\" or \"@@ <context line>\" and whose lines start with \" \" (context), \"-\" (removed) or \"+\" (added). Files are changed in order and earlier changes stay when a later one fails.",
   "guidance": ["Use apply_patch to change several files, or several places in one file, in one call."],
   "input_schema": {

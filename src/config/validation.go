@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
 )
+
+// sectionName is what a prompt section's name may be: the section is sent
+// inside a tag of that name.
+var sectionName = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 // Registration finishes before any caller can use the shared validator.
 var fields = func() *validator.Validate {
@@ -29,6 +34,11 @@ var fields = func() *validator.Validate {
 	if err := v.RegisterValidation("finite", func(field validator.FieldLevel) bool {
 		value := field.Field().Float()
 		return !math.IsNaN(value) && !math.IsInf(value, 0)
+	}); err != nil {
+		panic(err)
+	}
+	if err := v.RegisterValidation("section_name", func(field validator.FieldLevel) bool {
+		return sectionName.MatchString(field.Field().String())
 	}); err != nil {
 		panic(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -324,8 +325,8 @@ func loadedPrompt(t *testing.T) (tree, agentctx.Prompt) {
 	require.NoError(t, err)
 	return tr, agentctx.Prompt{
 		Instructions:   "UPSTREAM",
-		Tools:          "TOOLS",
-		ToolLines:      []string{"Use read.", "Use bash."},
+		Tools:          []agentctx.ToolLine{{Name: "read", Summary: "Read file contents"}, {Name: "bash", Summary: "Run commands"}},
+		Rules:          []string{"Use read.", "Use bash."},
 		Loaded:         loaded,
 		WorkDir:        tr.workDir,
 		AdditionalDirs: []string{tr.home},
@@ -339,19 +340,24 @@ func TestSectionsComeInTheFixedOrder(t *testing.T) {
 	blocks, err := agentctx.Build(prompt)
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		agentctx.SectionPrompt, agentctx.SectionTools, agentctx.SectionProjectContext,
+		agentctx.SectionPrompt, agentctx.SectionTools, agentctx.SectionRules, agentctx.SectionProjectContext,
 		agentctx.SectionSkills, agentctx.SectionWorkDir, "team", "house",
 	}, names(blocks))
-	// The upstream text is passed through untouched.
+	// The instructions open the prompt as they are. Every section after
+	// them is inside a tag of its name.
 	require.Equal(t, "UPSTREAM", blocks[0].Text)
-	// The lines of the offered tools follow the general guidance.
-	require.Equal(t, "TOOLS\n- Use read.\n- Use bash.", blocks[1].Text)
-	require.Contains(t, blocks[2].Text, filepath.Join(tr.repo, "AGENTS.md"))
-	require.Contains(t, blocks[2].Text, "Use tabs.")
-	require.Contains(t, blocks[3].Text, "deploy: Ship a release")
-	require.Contains(t, blocks[4].Text, tr.workDir)
-	require.Contains(t, blocks[4].Text, tr.home)
-	require.Equal(t, "House rules.", blocks[6].Text)
+	require.Equal(t, "<tools>\n- read: Read file contents\n- bash: Run commands\n</tools>", blocks[1].Text)
+	require.Equal(t, "<rules>\n- Use read.\n- Use bash.\n</rules>", blocks[2].Text)
+	for _, block := range blocks[1:] {
+		require.True(t, strings.HasPrefix(block.Text, "<"+block.Name+">\n"), block.Name)
+		require.True(t, strings.HasSuffix(block.Text, "\n</"+block.Name+">"), block.Name)
+	}
+	// A context file is in a tag that names its path.
+	require.Contains(t, blocks[3].Text, "<project_instructions path=\""+filepath.Join(tr.repo, "AGENTS.md")+"\">\nUse tabs.\n</project_instructions>")
+	require.Contains(t, blocks[4].Text, "deploy: Ship a release")
+	require.Contains(t, blocks[5].Text, tr.workDir)
+	require.Contains(t, blocks[5].Text, tr.home)
+	require.Equal(t, "<house>\nHouse rules.\n</house>", blocks[7].Text)
 
 	// A section with nothing in it is left out, not sent empty.
 	blocks, err = agentctx.Build(agentctx.Prompt{Instructions: "UPSTREAM", WorkDir: tr.workDir})
@@ -369,7 +375,7 @@ func TestClientSystemPromptAppendAndOverride(t *testing.T) {
 		blocks, err := agentctx.Build(prompt)
 		require.NoError(t, err)
 		require.Equal(t, base, blocks[:len(base)])
-		require.Equal(t, []provider.SystemBlock{{Name: agentctx.SectionClient, Text: "Be brief.\n\nAnswer in French."}}, blocks[len(base):])
+		require.Equal(t, []provider.SystemBlock{{Name: agentctx.SectionClient, Text: "<client>\nBe brief.\n\nAnswer in French.\n</client>"}}, blocks[len(base):])
 	})
 
 	t.Run("override replaces the instruction sections only", func(t *testing.T) {
@@ -378,7 +384,7 @@ func TestClientSystemPromptAppendAndOverride(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, provider.SystemBlock{Name: agentctx.SectionClient, Text: "You are a reviewer."}, blocks[0])
 		// Everything that is not a default instruction is unchanged.
-		require.Equal(t, base[2:], blocks[1:])
+		require.Equal(t, base[3:], blocks[1:])
 	})
 
 	t.Run("a mode that is not supported is an error", func(t *testing.T) {

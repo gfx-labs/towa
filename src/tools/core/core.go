@@ -57,12 +57,12 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		if b.name == "todo" && (deps.ShowPlan == nil || !cfg.Todo.Enabled) {
 			continue
 		}
-		spec, guidance, err := definition(b.name)
-		if err != nil {
-			return nil, err
+		def := definition(b.name)
+		if def.err != nil {
+			return nil, def.err
 		}
-		t := b.tool(spec)
-		t.Guidance = guidance
+		t := b.tool(def.spec)
+		t.Summary, t.Guidance = def.summary, def.guidance
 		result = append(result, t)
 	}
 	return result, nil
@@ -70,6 +70,7 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 
 type parsedSpec struct {
 	spec     provider.Tool
+	summary  string
 	guidance []string
 	err      error
 }
@@ -78,34 +79,37 @@ type parsedSpec struct {
 // are embedded and the same for every session, so they are decoded once.
 var parsed sync.Map
 
-func definition(name string) (provider.Tool, []string, error) {
+func definition(name string) parsedSpec {
 	if p, ok := parsed.Load(name); ok {
-		p := p.(parsedSpec)
-		return p.spec, p.guidance, p.err
+		return p.(parsedSpec)
 	}
-	spec, guidance, err := decodeSpec(name)
-	parsed.Store(name, parsedSpec{spec: spec, guidance: guidance, err: err})
-	return spec, guidance, err
+	p := decodeSpec(name)
+	parsed.Store(name, p)
+	return p
 }
 
-func decodeSpec(name string) (provider.Tool, []string, error) {
+func decodeSpec(name string) parsedSpec {
 	raw, err := specs.ReadFile("specs/" + name + ".json")
 	if err != nil {
-		return provider.Tool{}, nil, err
+		return parsedSpec{err: err}
 	}
 	var spec struct {
 		Name        string         `json:"name"`
+		Summary     string         `json:"summary"`
 		Description string         `json:"description"`
 		Guidance    []string       `json:"guidance"`
 		InputSchema jsontext.Value `json:"input_schema"`
 	}
 	if err := json.Unmarshal(raw, &spec); err != nil {
-		return provider.Tool{}, nil, err
+		return parsedSpec{err: err}
 	}
-	if spec.Name != name || len(spec.InputSchema) == 0 {
-		return provider.Tool{}, nil, fmt.Errorf("core: specs/%s.json does not define %s", name, name)
+	if spec.Name != name || spec.Summary == "" || len(spec.InputSchema) == 0 {
+		return parsedSpec{err: fmt.Errorf("core: specs/%s.json does not define %s with a summary and a schema", name, name)}
 	}
-	return provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema}, spec.Guidance, nil
+	return parsedSpec{
+		spec:    provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema},
+		summary: spec.Summary, guidance: spec.Guidance,
+	}
 }
 
 func textResult(text string, failed bool) tools.Result {

@@ -10,9 +10,16 @@ const (
 		"Often nobody is watching the session, and a question stops the work until someone answers it. " +
 		"Ask only when you cannot go on without a decision that is the user's to make. Otherwise take the reasonable option and say which one you took.\n\n" +
 		"Do not claim to have run commands or verified results that you have not observed."
-	// ToolGuidance opens the tools section. The lines of the enabled tools
-	// follow it.
-	ToolGuidance = "Respect tool errors and permission decisions. Do not assume a failed or interrupted tool call made no changes. Inspect the current state before retrying an operation whose outcome is uncertain. When several calls do not depend on each other, make them in one response."
 	// Interruption is the user message that stands for a cancelled turn.
 	Interruption = "The previous turn was interrupted. Running operations may have stopped after making partial changes. Check the current state before resuming or retrying them."
 )
+
+// GeneralRules close the rules section, after the lines of the enabled
+// tools. The first three hold for every tool. The last two are pi's.
+var GeneralRules = []string{
+	"Respect tool errors and permission decisions.",
+	"Do not assume a failed or interrupted tool call made no changes. Inspect the current state before retrying an operation whose outcome is uncertain.",
+	"When several calls do not depend on each other, make them in one response.",
+	"Be concise in your responses.",
+	"Show file paths clearly when working with files.",
+}

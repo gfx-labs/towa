@@ -109,6 +109,7 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"compaction duration overflow", config.Sources{}, []string{"--compaction.pending_wait_ms=9223372036855"}, "compaction.pending_wait_ms"},
 		{"history shorter than samples", config.Sources{}, []string{"--compaction.history_window=2"}, "compaction.history_window"},
 		{"nested section requires one source", file("section-two.yaml", "context:\n  sections:\n    - name: policy\n      text: rule\n      file: rule.md\n"), nil, "context.sections[0].text"},
+		{"a section's name is its tag", file("section-name.yaml", "context:\n  sections:\n    - name: House Rules\n      text: rule\n"), nil, "context.sections[0].name"},
 		{"nested hook tool name", file("hook.yaml", "hooks:\n  - event: pre_tool\n    command: ['true']\n    timeout: 1s\n    tools: ['']\n"), nil, "hooks[0].tools[0]"},
 		{"hook tools on an event without a tool", file("hook-stop.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1s\n    tools: [Bash]\n"), nil, "hooks[0].tools"},
 		{"hook with an empty program", file("hook-empty.yaml", "hooks:\n  - event: stop\n    command: ['']\n    timeout: 1s\n"), nil, "hooks[0].command"},

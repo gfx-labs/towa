@@ -125,9 +125,9 @@ func runtimeToolNames(list []tools.Tool) []string {
 	return names
 }
 
-// The tools section names only the tools a request is sent: a disabled tool
-// has no line, and an entry whose provider searches gets a line for that
-// provider's tool where another entry gets one for ours.
+// The tools and rules sections name only the tools a request is sent: a
+// disabled tool has no line, and an entry whose provider searches gets the
+// lines of that provider's tool where another entry gets ours.
 func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	loaded, err := config.Load(config.Sources{})
 	require.NoError(t, err)
@@ -161,15 +161,19 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		require.NoError(t, err)
 		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
+		var text string
 		for _, block := range prepared.system {
-			if block.Name == agentctx.SectionTools {
-				return block.Text
+			if block.Name == agentctx.SectionTools || block.Name == agentctx.SectionRules {
+				text += block.Text + "\n"
 			}
 		}
-		t.Fatal("the prompt has no tools section")
-		return ""
+		require.Contains(t, text, "<tools>")
+		require.Contains(t, text, "<rules>")
+		return text
 	}
 	plain, hosted := section(plainModel, ""), section(hostedModel, "medium")
+	require.Contains(t, plain, "- "+extras.NameWebSearch+": ")
+	require.Contains(t, hosted, "- "+hostedsearch.Name+": ")
 	require.Contains(t, plain, "with "+extras.NameWebSearch+".")
 	require.Contains(t, hosted, "with "+hostedsearch.Name+".")
 	require.NotContains(t, hosted, extras.NameWebSearch)
@@ -358,7 +362,7 @@ func TestAFallbackSendsTheNextEntrysEffort(t *testing.T) {
 func TestPromptIsBuiltAgainOnlyWhenItsInputsChange(t *testing.T) {
 	t.Parallel()
 	var cache promptCache
-	prompt := agentctx.Prompt{Instructions: "be brief", ToolLines: []string{"read before editing"}, WorkDir: "/work", AdditionalDirs: []string{"/other"}}
+	prompt := agentctx.Prompt{Instructions: "be brief", Rules: []string{"read before editing"}, WorkDir: "/work", AdditionalDirs: []string{"/other"}}
 	text := func(blocks []provider.SystemBlock) string {
 		var b strings.Builder
 		for _, block := range blocks {
@@ -373,7 +377,7 @@ func TestPromptIsBuiltAgainOnlyWhenItsInputsChange(t *testing.T) {
 	require.Same(t, &first[0], &again[0])
 
 	// The session's MCP tools arrive after its first prompt was built.
-	prompt.ToolLines = []string{"read before editing", "ask the tracker for issues"}
+	prompt.Rules = []string{"read before editing", "ask the tracker for issues"}
 	changed, err := cache.build(false, prompt)
 	require.NoError(t, err)
 	require.Contains(t, text(changed), "ask the tracker for issues")

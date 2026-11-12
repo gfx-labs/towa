@@ -16,7 +16,11 @@ import (
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
-// searchGuidance is the prompt's line about a web search tool.
+// SearchSummary is a web search tool's line in the prompt's list of tools,
+// for this package's tool and for a provider's own.
+const SearchSummary = "Search the web"
+
+// searchGuidance is the prompt's rule about a web search tool.
 func searchGuidance(name string) string {
 	return "What you know stops at your training. Check a fact that may have changed since, such as a current version or API, with " + name + "."
 }
@@ -36,6 +40,7 @@ func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
 	}
 	t := newTool(NameWebSearch, "Search the web. Returns titles, URLs and snippets. Fetch a result's URL to read the page.", acp.ToolKindSearch,
 		[]byte(`{"type":"object","required":["query"],"properties":{"intent":{"type":"string"},"query":{"type":"string","description":"Search query."},"num_results":{"type":"integer","description":"How many results to return. Omit for the configured default."}}}`))
+	t.Summary = SearchSummary
 	t.Guidance = []string{searchGuidance(NameWebSearch)}
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
 		var in struct {
