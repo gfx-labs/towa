@@ -50,3 +50,47 @@ func TestUpstreamHeredocs(t *testing.T) {
 	_, err := patch.Parse("<<\"EOF'\n" + text + "\nEOF\n")
 	require.Error(t, err)
 }
+
+// A move whose destination names the source updates it in place. Removing
+// the source after the write used to delete the file.
+func TestMoveToSource(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dest func(dir string) string
+	}{
+		{"same", func(string) string { return "file.txt" }},
+		{"dot", func(string) string { return "./file.txt" }},
+		{"absolute", func(dir string) string { return filepath.Join(dir, "file.txt") }},
+		{"symlink", func(dir string) string {
+			require.NoError(t, os.Symlink("file.txt", filepath.Join(dir, "link.txt")))
+			return "link.txt"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "file.txt")
+			require.NoError(t, os.WriteFile(path, []byte("one\ntwo\n"), 0o600))
+			p, err := patch.Parse("*** Begin Patch\n*** Update File: file.txt\n*** Move to: " + tc.dest(dir) + "\n@@\n-one\n+uno\n two\n*** End Patch")
+			require.NoError(t, err)
+			_, err = patch.Apply(context.Background(), fsops.Roots{Cwd: dir}, config.ToolsFiles{EditMaxBytes: 4 << 20}, p)
+			require.NoError(t, err)
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, "uno\ntwo\n", string(got))
+		})
+	}
+
+	// A hard link is another name: moving onto it removes the source name.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "file.txt")
+	require.NoError(t, os.WriteFile(path, []byte("one\ntwo\n"), 0o600))
+	require.NoError(t, os.Link(path, filepath.Join(dir, "hard.txt")))
+	p, err := patch.Parse("*** Begin Patch\n*** Update File: file.txt\n*** Move to: hard.txt\n@@\n-one\n+uno\n two\n*** End Patch")
+	require.NoError(t, err)
+	_, err = patch.Apply(context.Background(), fsops.Roots{Cwd: dir}, config.ToolsFiles{EditMaxBytes: 4 << 20}, p)
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(dir, "hard.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "uno\ntwo\n", string(got))
+	require.NoFileExists(t, path)
+}

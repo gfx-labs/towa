@@ -80,14 +80,22 @@ func Apply(ctx context.Context, roots fsops.Roots, cfg config.ToolsFiles, p Patc
 				return result, err
 			}
 			dest := h.Path
-			if h.Move != "" {
+			move := h.Move != ""
+			if move {
 				dest = h.Move
+				// A destination that names the source, through another
+				// spelling or a symbolic link, is an update in place:
+				// removing the source would remove what was just written.
+				// An error is left for Write or Remove to report.
+				from, fromErr := roots.Resolve(h.Path)
+				to, toErr := roots.Resolve(dest)
+				move = fromErr != nil || toErr != nil || from != to
 			}
 			change, err := fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: dest, Content: text})
 			if err != nil {
 				return result, fmt.Errorf("Failed to write file %s: %w", dest, err)
 			}
-			if h.Move != "" {
+			if move {
 				// Record the destination before Remove, which can fail independently.
 				result.Changes = append(result.Changes, Applied{Add, dest, change})
 				removed, err := fsops.Remove(ctx, roots, cfg, h.Path)
