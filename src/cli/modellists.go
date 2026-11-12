@@ -36,6 +36,7 @@ func modelListsPath(h Host) (string, error) {
 // when it is selected.
 func unlistedModels(ctx context.Context, cfg config.Config, h Host, p *Providers, logger *slog.Logger, now time.Time) (models.Unlisted, error) {
 	unlisted := models.Unlisted{
+		Providers:  cfg.Providers,
 		Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens},
 		Lists:      models.Lists{},
 	}

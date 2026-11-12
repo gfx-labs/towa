@@ -225,17 +225,42 @@ providers:
   - id: zai
     kind: chat
     base_url: https://zai.example/v4
+    models:
+      - id: glm-5
+        context_window: 200000
+      - id: gpt-6.1-sol
+        max_output_tokens: 32000
 `), 0o600))
 	loaded, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	cfg := loaded.Config
-	unlisted := models.Unlisted{Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}}
+	unlisted := models.Unlisted{Providers: cfg.Providers, Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}}
 
 	first, err := models.Select(cfg.Models, unlisted, "")
 	require.NoError(t, err)
 	require.Equal(t, "claude-opus-4-7", first.Entries[0].Model)
 	require.Equal(t, "medium", first.Entries[0].Effort)
-	require.Equal(t, unlisted.Configured, first.Entries[1].Metadata)
+	// A model no provider describes takes the keys' figures. The provider
+	// gives its model's window, and the key the figure the provider leaves
+	// out.
+	require.Equal(t, models.Metadata{ContextWindow: 128_000, MaxOutputTokens: 8000}, first.Entries[0].Metadata)
+	require.Equal(t, models.Metadata{ContextWindow: 200_000, MaxOutputTokens: 8000}, first.Entries[1].Metadata)
+
+	// What a provider says about a model the table has is what the model
+	// is on that endpoint. On another provider the table's row stands.
+	served, err := models.Select([]string{"zai:main/gpt-6.1-sol", "codex:chatgpt/gpt-6.1-sol"}, unlisted, "")
+	require.NoError(t, err)
+	require.Equal(t, models.Metadata{ContextWindow: served.Entries[1].Metadata.ContextWindow, MaxOutputTokens: 32_000}, served.Entries[0].Metadata)
+	require.NotEqual(t, served.Entries[1].Metadata, served.Entries[0].Metadata)
+
+	// Without the keys, a model the provider does not describe is refused
+	// and the error names the provider whose models would describe it.
+	unlisted.Configured = models.Metadata{}
+	_, err = models.Select([]string{"zai:main/glm-6"}, unlisted, "")
+	var unknown *models.MetadataError
+	require.ErrorAs(t, err, &unknown)
+	require.Equal(t, "zai", unknown.Provider)
+	require.ErrorContains(t, err, `models of provider "zai"`)
 
 	// A flag lists the models separated by commas, and replaces the file's.
 	loaded, err = config.Load(config.Sources{Files: []string{path}}, "--models", "zai:main/glm-5#high,claude:work/claude-opus-4-7")

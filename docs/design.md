@@ -109,7 +109,9 @@ models:
   - "codex:chatgpt/gpt-5.5"
 
 # The third entry is a gateway's own id, which the built-in table does not
-# know. These two keys give the figures of every such model.
+# know. The gateway's provider entry below says what that model is. These two
+# keys are the other way to say it: they give the figures of every model that
+# neither the table nor a provider entry describes, all at once.
 #
 # A model of claude or codex that the table does not know needs neither key.
 # The table holds only what no list settles: the OpenAI models, whose output
@@ -120,9 +122,10 @@ models:
 # account's list has it. A figure the list does not give is guessed from the
 # name: a newer version of a family the table has (gpt-7-sol, when the table
 # stops at gpt-6.1-sol) takes the figures of the family's newest row. The
-# order is: the table, a key that is set, the provider's list, the name.
-model_context_window: 1000000
-model_max_output_tokens: 128000
+# order is: the provider entry's models, the table, a key that is set, the
+# provider's list, the name.
+model_context_window: 0
+model_max_output_tokens: 0
 
 # claude:work, claude:personal and codex:chatgpt have no entry here: a login
 # makes each of them in auth.json. Only an account without a stored login is
@@ -140,6 +143,17 @@ providers:
   - id: openrouter
     kind: chat            # chat | responses
     base_url: https://openrouter.ai/api/v1
+    # What each model is on this endpoint. A gateway names a model its own
+    # way and may serve it with other limits than its maker does, so a
+    # figure here outranks the built-in table. One that is left out comes
+    # from where it would without the entry. max_output_tokens is sent to a
+    # chat endpoint as max_tokens with every request, and an endpoint counts
+    # it against the context window: give a figure that leaves room for the
+    # prompt, not the largest the endpoint allows.
+    models:
+      - id: anthropic/claude-opus-4.7
+        context_window: 1000000
+        max_output_tokens: 128000
   - id: zai
     kind: chat
     base_url: https://api.z.ai/api/coding/paas/v4

@@ -26,6 +26,24 @@ type Provider struct {
 	// OpenRouter holds what only OpenRouter understands. It applies to a
 	// provider of kind chat.
 	OpenRouter OpenRouter `json:"openrouter"`
+	// Models says what the endpoint's models are, for the ones nothing else
+	// describes: a gateway names a model in its own way and may serve it
+	// with other limits than the model's maker does.
+	Models []ProviderModel `json:"models" validate:"unique=ID,dive"`
+}
+
+// ProviderModel is what a provider's entry says about one of its models. A
+// figure that is zero is not set, and comes from where it would without the
+// entry.
+type ProviderModel struct {
+	// ID is the model as a chain entry names it, such as
+	// "deepseek/deepseek-v4.1-flash-1017".
+	ID string `json:"id" validate:"required"`
+	// ContextWindow is the context size in tokens.
+	ContextWindow int64 `json:"context_window" validate:"gte=0"`
+	// MaxOutputTokens is the most tokens one response may hold. A chat
+	// provider is sent it as the limit of every request.
+	MaxOutputTokens int64 `json:"max_output_tokens" validate:"gte=0"`
 }
 
 // Kinds of a provider: the wire protocol it speaks.

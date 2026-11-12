@@ -34,13 +34,16 @@ type Entry struct {
 	GuessedFrom string
 }
 
-// Unlisted is where the figures of a model the built-in table does not have
-// come from. A figure is taken from the first that gives it: the
-// configuration, the provider's model list, then the row the model's name
-// points to (see guess).
+// Unlisted is where a model's figures come from other than the built-in
+// table. A figure is taken from the first that gives it: the models of the
+// entry's provider, the table, the configuration's two keys, the provider's
+// model list, then the row the model's name points to (see guess).
 type Unlisted struct {
+	// Providers are the configured providers. One that describes a model
+	// says what that model is on that endpoint, so it outranks the table.
+	Providers []config.Provider
 	// Configured are the configuration's figures, which are those of every
-	// such model. A zero figure is one that is not set.
+	// model the table does not have. A zero figure is one that is not set.
 	Configured Metadata
 	// Lists are the model lists read from providers.
 	Lists Lists
@@ -73,12 +76,20 @@ func (e *UnknownModelError) Error() string {
 type MetadataError struct {
 	// Entry is the entry as the configuration writes it.
 	Entry string
-	// Missing are the config keys that would complete it.
+	// Missing are the config keys that would complete it, for every model
+	// the table does not have.
 	Missing []string
+	// Provider is the entry's provider when it is a configured one, whose
+	// models can give the figures of this model alone.
+	Provider string
 }
 
 func (e *MetadataError) Error() string {
-	return fmt.Sprintf("models: nothing is known about %q: set %s", e.Entry, strings.Join(e.Missing, " and "))
+	keys := strings.Join(e.Missing, " and ")
+	if e.Provider == "" {
+		return fmt.Sprintf("models: nothing is known about %q: set %s", e.Entry, keys)
+	}
+	return fmt.Sprintf("models: nothing is known about %q: describe it in the models of provider %q, or set %s", e.Entry, e.Provider, keys)
 }
 
 // ProviderError reports a chain entry whose provider has no client.
@@ -94,9 +105,11 @@ func (e *ProviderError) Error() string {
 
 // Select resolves the model a session chose from the configured list. An
 // empty name selects the first. The model's chain is the chosen entry and
-// every entry listed after it. A model the built-in table does not have
-// takes its figures from unlisted. The table outranks a provider's list: it
-// holds only the models a list does not settle.
+// every entry listed after it. A figure that the entry's provider gives for
+// the model in its configuration is the one used. Otherwise a model the
+// built-in table has takes the table's, and any other takes its figures
+// from the rest of unlisted. The table outranks a provider's list: it holds
+// only the models a list does not settle.
 //
 // It is called when a model is selected, so that a model nothing is known
 // about fails then and not in the middle of a turn.
@@ -117,27 +130,42 @@ func Select(configured []string, unlisted Unlisted, name string) (Model, error) 
 		if err != nil {
 			return Model{}, fmt.Errorf("models: %w", err)
 		}
-		meta, listed := builtin[parsed.Model]
-		var guessedFrom string
+		meta, tabled := builtin[parsed.Model]
+		var configuredProvider string
+		var described config.ProviderModel
+		for _, p := range unlisted.Providers {
+			if p.ID != parsed.Provider {
+				continue
+			}
+			configuredProvider = p.ID
+			if i := slices.IndexFunc(p.Models, func(m config.ProviderModel) bool { return m.ID == parsed.Model }); i >= 0 {
+				described = p.Models[i]
+			}
+		}
+		var list Listed
+		var guessed Metadata
+		var row, guessedFrom string
 		var fromList bool
-		if !listed {
+		if !tabled {
 			meta = unlisted.Configured
-			list, _ := unlisted.Lists.Lookup(parsed)
-			guessed, row, _ := guess(parsed.Model)
-			for _, figure := range []struct {
-				to              *int64
-				listed, guessed int64
-			}{
-				{&meta.ContextWindow, list.ContextWindow, guessed.ContextWindow},
-				{&meta.MaxOutputTokens, list.MaxOutputTokens, guessed.MaxOutputTokens},
-			} {
-				switch {
-				case *figure.to != 0:
-				case figure.listed != 0:
-					*figure.to, fromList = figure.listed, true
-				case figure.guessed != 0:
-					*figure.to, guessedFrom = figure.guessed, row
-				}
+			list, _ = unlisted.Lists.Lookup(parsed)
+			guessed, row, _ = guess(parsed.Model)
+		}
+		for _, figure := range []struct {
+			to                         *int64
+			described, listed, guessed int64
+		}{
+			{&meta.ContextWindow, described.ContextWindow, list.ContextWindow, guessed.ContextWindow},
+			{&meta.MaxOutputTokens, described.MaxOutputTokens, list.MaxOutputTokens, guessed.MaxOutputTokens},
+		} {
+			switch {
+			case figure.described != 0:
+				*figure.to = figure.described
+			case *figure.to != 0:
+			case figure.listed != 0:
+				*figure.to, fromList = figure.listed, true
+			case figure.guessed != 0:
+				*figure.to, guessedFrom = figure.guessed, row
 			}
 		}
 		var missing []string
@@ -148,7 +176,7 @@ func Select(configured []string, unlisted Unlisted, name string) (Model, error) 
 			missing = append(missing, config.KeyModelMaxOutputTokens)
 		}
 		if len(missing) > 0 {
-			return Model{}, &MetadataError{Entry: raw, Missing: missing}
+			return Model{}, &MetadataError{Entry: raw, Missing: missing, Provider: configuredProvider}
 		}
 		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, Listed: fromList, GuessedFrom: guessedFrom})
 	}
