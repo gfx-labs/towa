@@ -110,6 +110,9 @@ models:
     # know, so the model states its figures.
     context_window: 1000000
     max_output_tokens: 128000
+    # Sent with every request in the provider's own words. It is not checked
+    # here. Left out, the provider's default applies.
+    effort: medium
   gpt:
     chain:
       - "codex:chatgpt/gpt-5.5"

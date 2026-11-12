@@ -33,6 +33,9 @@ type Model struct {
 	// request to an entry with a smaller context window, so each has its
 	// own metadata.
 	Entries []Entry
+	// Effort is the configured reasoning effort, sent as it is written to
+	// whichever entry takes the request. Empty sends none.
+	Effort string
 }
 
 // NoModelError reports a selection when no model is configured.
@@ -95,7 +98,7 @@ func Select(defaultModel string, configured map[string]config.Model, name string
 // figure in the configuration replaces the built-in one for every entry of
 // the chain.
 func Resolve(name string, cfg config.Model) (Model, error) {
-	m := Model{Name: name}
+	m := Model{Name: name, Effort: cfg.Effort}
 	for _, raw := range cfg.Chain {
 		parsed, err := config.ParseChainEntry(raw)
 		if err != nil {

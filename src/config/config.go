@@ -24,7 +24,7 @@ type Config struct {
 	// DefaultModel names the entry of Models a session starts with.
 	DefaultModel string `name:"default_model" group:"models" help:"Name of the model a session starts with."`
 	// Models are the named models, each an ordered chain of accounts.
-	Models             map[string]Model   `name:"models" type:"table" group:"models" placeholder:"YAML" help:"Named models, each with a chain of provider:account/model entries. Written in a config file."`
+	Models             map[string]Model   `name:"models" type:"table" group:"models" placeholder:"YAML" help:"Named models: chain (provider:account/model entries), then optionally effort, context_window and max_output_tokens. Written in a config file."`
 	Telemetry          Telemetry          `embed:"" prefix:"telemetry." group:"telemetry"`
 	Auth               Auth               `embed:"" prefix:"auth." group:"auth"`
 	Accounts           []Account          `name:"accounts" type:"table" group:"accounts" placeholder:"YAML" help:"Accounts a proxy holds or an API key backs: id, provider, kind. A login makes its own. Written in a config file."`

@@ -18,6 +18,11 @@ type Model struct {
 	// MaxOutputTokens is the most tokens one response may hold. Zero takes
 	// the built-in figure.
 	MaxOutputTokens int64 `json:"max_output_tokens" validate:"gte=0"`
+	// Effort is the reasoning effort sent with every request of the chain,
+	// in the provider's own words, such as "medium". It is not checked: a
+	// word the provider does not take is the provider's error. Empty sends
+	// none, which leaves the provider's default.
+	Effort string `json:"effort"`
 }
 
 // Providers that need no providers entry: the harness has their

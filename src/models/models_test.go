@@ -82,6 +82,7 @@ default_model: opus
 models:
   opus:
     chain: ["claude:work/claude-opus-4-7"]
+    effort: medium
   glm:
     chain: ["zai:main/glm-5"]
 accounts:
@@ -104,6 +105,7 @@ providers:
 	byDefault, err := models.Select(cfg.DefaultModel, cfg.Models, "")
 	require.NoError(t, err)
 	require.Equal(t, "opus", byDefault.Name)
+	require.Equal(t, "medium", byDefault.Effort)
 
 	// Nothing is known about this model: it fails when it is selected.
 	_, err = models.Select(cfg.DefaultModel, cfg.Models, "glm")
