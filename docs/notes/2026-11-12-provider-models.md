@@ -49,6 +49,15 @@ Measured on `deepseek/deepseek-v4.1-flash-1017` pinned to `morph/fp8`, whose end
 
 Not done: towa does not lower `max_tokens` to what the window has left for a request. A model configured with the endpoint's largest completion fails on a long prompt, as the first row shows.
 
-## Not measured
+## One task on the model
 
-- No task was run on this build. The check was one turn with a `read` and an `edit` call on the model, with the figures in the provider entry and both global keys at 0.
+`oku-trade/trade` PR 4668 through towa `e3f0db6` and pi 1.3.0, both on `deepseek/deepseek-v4.1-flash-1017` pinned to `morph/fp8` at medium effort, one run each (`compare-coding-agents`, output `eval19-4668-morph`). towa's limits came from the provider entry, with both global keys at 0.
+
+| Agent | Requests | Tokens | First to last request | Wall s | Cost USD | Change | Merged PR's tests |
+|---|---|---|---|---|---|---|---|
+| towa | 16 | 417,407 | 18,466 to 30,037 | 151 | 0.0033 | 2 files, +31/-1 | 6 of 6 pass |
+| pi | 9 | 214,433 | 18,863 to 26,236 | 46 | 0.0024 | 1 file, +1/-1 | 6 of 6 pass |
+
+- Both made the same fix, trimming the search input where it is passed on. towa also wrote a test file: requests 11 to 15 of its 16 list the directory, read a neighbouring test, write the file, run it and format it. Requests 9 and 10 format, lint and diff the source edit.
+- OpenRouter's generation records name Morph for all 9 of pi's requests. towa keeps no generation id, so its upstream was not confirmed that way. A request body captured from towa in a separate check, with the same routing settings, carries `provider: {order: ["morph/fp8"], allow_fallbacks: false}`.
+- One run each says nothing about which agent takes fewer requests on this model.
