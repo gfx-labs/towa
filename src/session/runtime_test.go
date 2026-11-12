@@ -147,3 +147,37 @@ func TestHostCloseCancelsRuntimeAcquisition(t *testing.T) {
 	got, _ = w.Await(`1`)
 	require.NotNil(t, got[`1`].Error)
 }
+
+// A runtime whose Close fails has still finished closing. The session must
+// leave memory, so that it can be loaded again from the store.
+func TestSessionWithFailedRuntimeCloseCanBeLoadedAgain(t *testing.T) {
+	for _, end := range []string{"disconnect", "session/close"} {
+		t.Run(end, func(t *testing.T) {
+			st, err := dir.New(dir.Options{Root: t.TempDir(), Compression: dir.CompressionZstd})
+			require.NoError(t, err)
+			failed := errors.New("runtime close failed")
+			options := agentOptions(nil)
+			options.Store = st
+			options.Open = func(context.Context, loop.Turn) (session.Runtime, error) {
+				return session.Runtime{Turn: endsTurn, Close: func(context.Context) error { return failed }}, nil
+			}
+			host, err := session.NewHost(options)
+			require.NoError(t, err)
+			first, served := connect(t, host)
+			id := start(t, first)
+			if end == "disconnect" {
+				first.Close()
+				require.ErrorIs(t, <-served, failed)
+			} else {
+				first.Send(closeSession(`1`, id))
+				got, _ := first.Await(`1`)
+				require.NotNil(t, got[`1`].Error)
+			}
+			second, _ := connect(t, host)
+			second.Send(initialize, request(`1`, "session/status", `{"sessionId":"`+id+`"}`), loadRequest(`2`, id, "/work"))
+			got, _ := second.Await(`"init"`, `1`, `2`)
+			require.JSONEq(t, `{"status":"saved"}`, string(got[`1`].Result))
+			require.Nil(t, got[`2`].Error)
+		})
+	}
+}

@@ -174,6 +174,18 @@ func (s *session) close(ctx context.Context) error {
 	}
 }
 
+// finished reports that close has completed: the turn stopped and the
+// runtime's Close returned, with or without an error. Until then the session
+// is still draining and stays live.
+func (s *session) finished() bool {
+	select {
+	case <-s.closeDone:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *session) beginClose(ctx context.Context) {
 	s.closeOnce.Do(func() {
 		s.mu.Lock()

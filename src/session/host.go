@@ -135,9 +135,8 @@ func (h *Host) Close(ctx context.Context) error {
 		s.beginClose(ctx)
 	}
 	for _, s := range sessions {
-		err := s.close(ctx)
-		errs = append(errs, err)
-		if err == nil {
+		errs = append(errs, s.close(ctx))
+		if s.finished() {
 			h.forget(s)
 		}
 	}
@@ -182,9 +181,8 @@ func (a *Agent) Close(ctx context.Context) error {
 		s.beginClose(ctx)
 	}
 	for _, s := range owned {
-		err := s.close(ctx)
-		errs = append(errs, err)
-		if err == nil {
+		errs = append(errs, s.close(ctx))
+		if s.finished() {
 			a.forget(s)
 		}
 	}
@@ -213,18 +211,19 @@ func (h *shared) forget(s *session) {
 }
 
 // drain leaves a closing session visible even when ctx stops waiting, so
-// a later attach must still wait for its turn and runtime to finish.
-// Callers hold the session's id lock.
+// a later attach must still wait for its turn and runtime to finish. A close
+// that finished with an error is over: the session is forgotten and the
+// error returned. Callers hold the session's id lock.
 func (h *shared) drain(ctx context.Context, id acp.SessionId, owner *Agent) (*session, error) {
 	s, actual := h.lookup(id)
 	if s == nil || owner != nil && actual != owner {
 		return nil, nil
 	}
-	if err := s.close(ctx); err != nil {
-		return s, err
+	err := s.close(ctx)
+	if s.finished() {
+		h.forget(s)
 	}
-	h.forget(s)
-	return s, nil
+	return s, err
 }
 
 // put makes a session live on owner. It fails for an agent whose
