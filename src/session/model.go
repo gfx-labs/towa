@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
 	"github.com/gfx-labs/acpharness/src/models"
 )
@@ -20,7 +18,7 @@ const ModelOption acp.SessionConfigId = "model"
 
 // AddModels registers the model config option, the model key of
 // _meta.acpharness on session/new and the /model command. The option is a
-// select over the configured names, starting at the default. The chosen
+// select over the configured models in list order, starting at the first. The chosen
 // name is written to loop.Turn.Model before each turn, so a switch applies
 // from the next turn.
 //
@@ -31,11 +29,11 @@ const ModelOption acp.SessionConfigId = "model"
 // With no model configured there is nothing to choose, and nothing is
 // registered. The wiring calls this only once the turn selects its chain
 // from loop.Turn.Model: registering it is what advertises the option.
-func AddModels(r *Registry, defaultModel string, configured map[string]config.Model) error {
+func AddModels(r *Registry, configured []string, unlisted models.Metadata) error {
 	if len(configured) == 0 {
 		return nil
 	}
-	names := slices.Sorted(maps.Keys(configured))
+	names := slices.Clone(configured)
 	choices := make([]Choice, len(names))
 	for i, name := range names {
 		choices[i] = Choice{Value: acp.SessionConfigValueId(name), Name: name}
@@ -46,9 +44,9 @@ func AddModels(r *Registry, defaultModel string, configured map[string]config.Mo
 		Description: "The model the session's turns use.",
 		Category:    acp.SessionConfigOptionCategoryModel,
 		Choices:     choices,
-		Default:     Value{ID: acp.SessionConfigValueId(defaultModel)},
+		Default:     Value{ID: acp.SessionConfigValueId(names[0])},
 		Validate: func(v Value) error {
-			_, err := models.Select(defaultModel, configured, string(v.ID))
+			_, err := models.Select(names, unlisted, string(v.ID))
 			return err
 		},
 		Apply: func(turn *loop.Turn, v Value) { turn.Model = string(v.ID) },

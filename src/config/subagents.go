@@ -31,10 +31,10 @@ type Subagents struct {
 	// at every depth together. A call over it is refused and does not
 	// wait. 0 means no limit.
 	MaxConcurrent int `name:"max_concurrent" default:"32" validate:"gte=0" help:"Subagents that may run at once in the process. A call over it is refused. 0 is no limit."`
-	// Models are the named models a call may choose for its subagent. A
+	// Models are the entries of the models list a call may choose for its subagent. A
 	// call that names none runs the subagent on its parent's model, which
 	// needs no entry here.
-	Models []string `name:"models" placeholder:"NAME" validate:"unique,dive,required" help:"Named models a call may choose for its subagent. A call that names none uses its parent's model."`
+	Models []string `name:"models" placeholder:"MODEL" validate:"unique,dive,required" help:"Entries of models a call may choose for its subagent, each written as it is in models. A call that names none uses its parent's model."`
 }
 
 func (s Subagents) validate() error {

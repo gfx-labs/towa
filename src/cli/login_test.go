@@ -59,11 +59,8 @@ func TestLoginAccountsLogout(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "acpharness"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.yaml"), []byte(`
-default_model: opus
-# The chain names an account that no login has made yet.
-models:
-  opus:
-    chain: ["claude:fresh/claude-opus-4-7"]
+# The model names an account that no login has made yet.
+models: ["claude:fresh/claude-opus-4-7"]
 accounts:
   - id: work
     provider: claude

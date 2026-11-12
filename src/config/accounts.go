@@ -80,17 +80,15 @@ func (c *Config) addStoredAccounts(stored map[string]string) {
 			c.Accounts = append(c.Accounts, Account{ID: id, Provider: provider, Kind: AccountOAuth, Stored: true})
 		}
 	}
-	// In id and name order, so that the same input always gives the same list.
+	// In id order, then list order, so that the same input always gives the same list.
 	for _, id := range slices.Sorted(maps.Keys(stored)) {
 		add(id, stored[id])
 	}
-	for _, name := range slices.Sorted(maps.Keys(c.Models)) {
-		for _, raw := range c.Models[name].Chain {
-			// An entry that does not parse is for validation to report.
-			entry, err := ParseChainEntry(raw)
-			if err == nil && (entry.Provider == ProviderClaude || entry.Provider == ProviderCodex) {
-				add(entry.Account, entry.Provider)
-			}
+	for _, raw := range c.Models {
+		// An entry that does not parse is for validation to report.
+		entry, err := ParseChainEntry(raw)
+		if err == nil && (entry.Provider == ProviderClaude || entry.Provider == ProviderCodex) {
+			add(entry.Account, entry.Provider)
 		}
 	}
 }

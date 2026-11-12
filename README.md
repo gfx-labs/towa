@@ -16,7 +16,7 @@ for instance, ask your llm to setup a provider with you, and then run a turn usi
 
 - like jcode, built to run many sessions per host. one process can serve many connections over stdio, a unix socket or tcp with mtls. an idle session wakes no goroutine.
 - claude and codex subscription support, along with chat completions and responses api.
-- a model is a chain of `provider:account/model` entries. on a rate limit, exhausted quota, auth failure or overload the next entry takes the request, and the client is told.
+- models are one ordered list of `provider:account/model#effort` entries, comma separated as a flag. on a rate limit, exhausted quota, auth failure or overload the next entry in the list takes the request, and the client is told.
 - a proxy can hold the credentials. the harness sends a placeholder and never sees the token, every http client honours `HTTPS_PROXY`, and `acpharness hosts` prints each host the config will contact, for an egress allowlist.
 - an session log is append-only, with reactive compression which compaction adds a summary and deletes nothing, so `conversation_search` can still read what was compacted away, and a parent can read its subagents' sessions.
 - a tool result over the token budget comes back as a summary with its size. the model asks again to get all of it.

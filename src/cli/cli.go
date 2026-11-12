@@ -130,7 +130,7 @@ func run(ctx context.Context, args []string, h Host, env commandEnv) error {
 			"  4. the environment: ACPHARNESS_LIMITS__MAX_WALL=30m sets limits.max_wall\n"+
 			"  5. the flags\n\n"+
 			"A config file is YAML, and may also be config.yml or config.json. The keys that hold tables\n"+
-			"(models, accounts, providers, hooks, mcp.servers, context.sections) are written in a file.\n"+
+			"(accounts, providers, hooks, mcp.servers, context.sections) are written in a file.\n"+
 			"As a flag or in the environment, a table is one line of YAML."),
 		kong.Writers(h.Stdout, h.Stderr),
 		kong.Exit(func(int) { printed = true }),
@@ -209,7 +209,7 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 		return err
 	}
 	registry := &session.Registry{}
-	if err := session.AddModels(registry, loaded.Config.DefaultModel, loaded.Config.Models); err != nil {
+	if err := session.AddModels(registry, loaded.Config.Models, unlistedModel(loaded.Config)); err != nil {
 		return errors.Join(err, factory.Close())
 	}
 	host, err := session.NewHost(session.Options{

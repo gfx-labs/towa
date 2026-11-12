@@ -46,12 +46,12 @@ func TestRuntimeRetainsSemanticEmbeddingAcrossTurns(t *testing.T) {
 	loaded, err := config.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config
-	cfg.DefaultModel = "first"
-	model := config.Model{
-		Chain:         []string{"abort:local/gpt-5.5"},
-		ContextWindow: looptest.ContextSize, MaxOutputTokens: 1024,
-	}
-	cfg.Models = map[string]config.Model{"first": model, "second": model}
+	// The second entry is the first with an effort, so that it is another
+	// model to select. The turns start on the last entry, which has no
+	// entry to fall back to.
+	cfg.Models = []string{"abort:local/gpt-5.5#low", "abort:local/gpt-5.5"}
+	cfg.ModelContextWindow, cfg.ModelMaxOutputTokens = looptest.ContextSize, 1024
+	turn.Model = cfg.Models[1]
 	cfg.Providers = []config.Provider{{ID: "abort", Kind: config.ProviderResponses, BaseURL: main.URL + "/v1"}}
 	cfg.Accounts = []config.Account{{ID: "local", Provider: "abort", Kind: config.AccountAPIKey, APIKeyEnv: "RUNTIME_TEST_KEY"}}
 	cfg.Limits.Retry.MaxRetries = 0
@@ -111,7 +111,7 @@ func TestRuntimeRetainsSemanticEmbeddingAcrossTurns(t *testing.T) {
 	require.NoError(t, err, "a successful embedding must have persisted a readable exchange")
 	require.Equal(t, http.StatusOK, exchange.Response.Status)
 	if !recording {
-		turn.Model = "second"
+		turn.Model = cfg.Models[0]
 		_, err = runtime.Run(t.Context(), turn)
 		require.Error(t, err)
 		require.EqualValues(t, 2, transport.requests.Load(), "changing the configured model resets semantic state")

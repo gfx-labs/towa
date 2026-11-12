@@ -203,36 +203,33 @@ func TestATableFromTheEnvironmentReplacesTheFilesTable(t *testing.T) {
 	require.Equal(t, "environment", got.Origin["hooks"])
 }
 
-// A table of named entries is added to by each file, as a user's models
-// join the system's. A later file changes one member of an entry and leaves
-// the entry's other members alone.
-func TestEachFileAddsToTheModels(t *testing.T) {
+// The models are one list in order, so a later file's list replaces an
+// earlier file's, as any other key does, and a flag replaces both.
+func TestTheLastModelsListWins(t *testing.T) {
 	dir := t.TempDir()
 	system := write(t, filepath.Join(dir, "system.yaml"),
-		"default_model: opus\nmodels:\n  opus:\n    chain: ['claude:work/claude-opus-4-7']\n    context_window: 1000\n    max_output_tokens: 100\n")
-	user := write(t, filepath.Join(dir, "user.yaml"),
-		"models:\n  opus:\n    context_window: 2000\n  gpt:\n    chain: ['codex:chatgpt/gpt-5.5']\n")
+		"models: ['claude:work/claude-opus-4-7#high', 'claude:work/claude-sonnet-4-6']\nmodel_context_window: 1000\n")
+	user := write(t, filepath.Join(dir, "user.yaml"), "models:\n  - codex:chatgpt/gpt-6.1-sol\n")
 	got, err := config.Load(config.Sources{Files: []string{system, user}})
 	require.NoError(t, err)
-	require.Len(t, got.Config.Models, 2)
-	require.Equal(t, []string{"claude:work/claude-opus-4-7"}, got.Config.Models["opus"].Chain)
-	require.EqualValues(t, 2000, got.Config.Models["opus"].ContextWindow)
-	require.EqualValues(t, 100, got.Config.Models["opus"].MaxOutputTokens)
-	require.Equal(t, system+", "+user, got.Origin["models"])
+	require.Equal(t, []string{"codex:chatgpt/gpt-6.1-sol"}, got.Config.Models)
+	require.EqualValues(t, 1000, got.Config.ModelContextWindow)
+	require.Equal(t, user, got.Origin["models"])
+
+	got, err = config.Load(config.Sources{Files: []string{system, user}}, "--models", "claude:work/claude-opus-4-7#low,codex:chatgpt/gpt-6.1-sol")
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude:work/claude-opus-4-7#low", "codex:chatgpt/gpt-6.1-sol"}, got.Config.Models)
 }
 
-// An account comes from a config layer, from the auth store, or from a model
-// chain that names it on a built-in provider ahead of its login. A declared
+// An account comes from a config layer, from the auth store, or from a
+// model that names it on a built-in provider ahead of its login. A declared
 // account is kept as declared when the store has the same id.
 func TestAccountsComeFromConfigStoreAndChains(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, filepath.Join(dir, "config.yaml"), `
-default_model: opus
 models:
-  opus:
-    chain:
-      - claude:work/claude-opus-4-7
-      - claude:later/claude-opus-4-7
+  - claude:work/claude-opus-4-7
+  - claude:later/claude-opus-4-7
 accounts:
   - id: work
     provider: claude
@@ -251,16 +248,13 @@ accounts:
 		{ID: "later", Provider: "claude", Kind: config.AccountOAuth, Stored: true},
 	}, got.Config.Accounts)
 
-	// A login cannot make an account of a configured provider, so a chain
+	// A login cannot make an account of a configured provider, so a model
 	// that names one must find it declared.
 	path = write(t, filepath.Join(dir, "gateway.yaml"), `
-default_model: remote
 models:
-  remote:
-    chain:
-      - gateway:nobody/some-model
-    context_window: 1000
-    max_output_tokens: 100
+  - gateway:nobody/some-model
+model_context_window: 1000
+model_max_output_tokens: 100
 providers:
   - id: gateway
     kind: chat

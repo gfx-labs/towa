@@ -255,7 +255,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	if reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
-	selected, err := models.Select(f.cfg.DefaultModel, f.cfg.Models, turn.Model)
+	selected, err := models.Select(f.cfg.Models, unlistedModel(f.cfg), turn.Model)
 	if err != nil {
 		return preparedTurn{}, err
 	}
@@ -358,7 +358,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	result.resolved = loop.Resolved{
 		Provider: routed, Tools: assembled.Set, Model: first.Model,
 		ProviderName: first.Provider, ContextSize: first.Metadata.ContextWindow, MaxOutputTokens: first.Metadata.MaxOutputTokens,
-		Effort: selected.Effort, Interruption: agentctx.Interruption,
+		Effort: first.Effort, Interruption: agentctx.Interruption,
 	}
 	result.mapper = loop.Mapper{
 		Tools: assembled.Set,
@@ -406,6 +406,12 @@ func toolLines(set tools.Set, hostedSearch bool) []string {
 		lines = append(lines, tool.Guidance...)
 	}
 	return lines
+}
+
+// unlistedModel returns the configured figures of a model the built-in
+// table does not have.
+func unlistedModel(cfg config.Config) models.Metadata {
+	return models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}
 }
 
 func (f *runtimeFactory) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, error) {

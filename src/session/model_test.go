@@ -9,26 +9,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/acpharness/src/models"
 	"github.com/gfx-labs/acpharness/src/session"
 )
 
 func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		configured := map[string]config.Model{
-			"opus": {Chain: []string{"claude:work/claude-opus-4-7"}},
-			"gpt":  {Chain: []string{"codex:work/gpt-6.1-sol"}},
-			// Listed, and refused when chosen: nothing is known about it.
-			"glm": {Chain: []string{"zai:main/glm-5"}},
-		}
+		configured := []string{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}
 		used := make(chan string, 1)
 		w := serveWith(t, func(_ context.Context, turn loop.Turn) (loop.Result, error) {
 			used <- turn.Model
 			return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
 		}, func(o *session.Options) {
 			o.Registry = &session.Registry{}
-			require.NoError(t, session.AddModels(o.Registry, "opus", configured))
+			require.NoError(t, session.AddModels(o.Registry, configured, models.Metadata{}))
 		})
 		modelOf := func(options []acp.SessionConfigOption) (acp.SessionConfigValueId, []acp.SessionConfigValueId) {
 			for _, o := range options {
@@ -45,50 +40,51 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 			return "", nil
 		}
 
-		// A session starts on the default, and one that names a model in
+		// A session starts on the first model, and the choices keep the
+		// list's order. One that names a model in
 		// _meta on that one.
 		first := create(t, w, `{}`, "")
 		current, choices := modelOf(first.ConfigOptions)
-		require.Equal(t, acp.SessionConfigValueId("opus"), current)
-		require.Equal(t, []acp.SessionConfigValueId{"glm", "gpt", "opus"}, choices)
+		require.Equal(t, acp.SessionConfigValueId("claude:work/claude-opus-4-7"), current)
+		require.Equal(t, []acp.SessionConfigValueId{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}, choices)
 
-		w.Send(request(`"second"`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"gpt"}}}`))
+		w.Send(request(`"second"`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"codex:work/gpt-6.1-sol"}}}`))
 		got, _ := w.Await(`"second"`)
 		var second acp.NewSessionResponse
 		require.NoError(t, json.Unmarshal(got[`"second"`].Result, &second))
 		current, _ = modelOf(second.ConfigOptions)
-		require.Equal(t, acp.SessionConfigValueId("gpt"), current)
+		require.Equal(t, acp.SessionConfigValueId("codex:work/gpt-6.1-sol"), current)
 
 		id, other := string(first.SessionId), string(second.SessionId)
 		w.Send(prompt(`1`, id, "go"))
 		w.Await(`1`)
-		require.Equal(t, "opus", <-used)
+		require.Equal(t, "claude:work/claude-opus-4-7", <-used)
 		w.Send(prompt(`2`, other, "go"))
 		w.Await(`2`)
-		require.Equal(t, "gpt", <-used)
+		require.Equal(t, "codex:work/gpt-6.1-sol", <-used)
 
 		// A switch applies to the session's next turn, and only to it.
-		w.Send(request(`3`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"gpt"}`))
+		w.Send(request(`3`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"codex:work/gpt-6.1-sol"}`))
 		got, _ = w.Await(`3`)
 		var set acp.SetSessionConfigOptionResponse
 		require.NoError(t, json.Unmarshal(got[`3`].Result, &set))
 		current, _ = modelOf(set.ConfigOptions)
-		require.Equal(t, acp.SessionConfigValueId("gpt"), current)
+		require.Equal(t, acp.SessionConfigValueId("codex:work/gpt-6.1-sol"), current)
 		w.Send(prompt(`4`, id, "go"))
 		w.Await(`4`)
-		require.Equal(t, "gpt", <-used)
+		require.Equal(t, "codex:work/gpt-6.1-sol", <-used)
 
 		// /model switches back and is answered without a turn.
-		w.Send(prompt(`5`, id, "/model opus"))
+		w.Send(prompt(`5`, id, "/model claude:work/claude-opus-4-7"))
 		got, others := w.Await(`5`)
 		require.JSONEq(t, endTurn, string(got[`5`].Result))
 		updates := updatesOf(t, others)
 		require.Len(t, updates, 2)
 		current, _ = modelOf(updates[0].Update.ConfigOptionUpdate.ConfigOptions)
-		require.Equal(t, acp.SessionConfigValueId("opus"), current)
-		require.Contains(t, updates[1].Update.AgentMessageChunk.Content.Text.Text, "opus")
+		require.Equal(t, acp.SessionConfigValueId("claude:work/claude-opus-4-7"), current)
+		require.Contains(t, updates[1].Update.AgentMessageChunk.Content.Text.Text, "claude:work/claude-opus-4-7")
 
-		// A model that cannot be used is refused when it is chosen, by any
+		// A model that is not configured is refused when it is chosen, by any
 		// of the three ways, and the session keeps its model.
 		w.Send(
 			request(`6`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"glm"}`),
@@ -105,18 +101,22 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 		require.Equal(t, acp.NewInvalidParams(nil).Code, got[`9`].Error.Code)
 		w.Send(prompt(`10`, id, "go"))
 		w.Await(`10`)
-		require.Equal(t, "opus", <-used)
+		require.Equal(t, "claude:work/claude-opus-4-7", <-used)
 	})
 }
 
 func TestAddModelsWithoutAUsableDefault(t *testing.T) {
 	// No model: nothing is registered, and the agent has no model option.
 	none := &session.Registry{}
-	require.NoError(t, session.AddModels(none, "", nil))
+	require.NoError(t, session.AddModels(none, nil, models.Metadata{}))
 	require.NoError(t, none.AddConfigOption(session.ConfigOption{
 		ID: session.ModelOption, Name: "free", Choices: []session.Choice{{Value: "x", Name: "x"}}, Default: session.Value{ID: "x"},
 	}))
 
-	// A default nothing is known about fails the registration.
-	require.Error(t, session.AddModels(&session.Registry{}, "glm", map[string]config.Model{"glm": {Chain: []string{"zai:main/glm-5"}}}))
+	// A model nothing is known about fails the registration, wherever it
+	// is listed: the first model can fall back to it.
+	unknown := []string{"claude:work/claude-opus-4-7", "zai:main/glm-5"}
+	var missing *models.MetadataError
+	require.ErrorAs(t, session.AddModels(&session.Registry{}, unknown, models.Metadata{}), &missing)
+	require.NoError(t, session.AddModels(&session.Registry{}, unknown, models.Metadata{ContextWindow: 1000, MaxOutputTokens: 100}))
 }

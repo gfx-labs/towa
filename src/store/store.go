@@ -37,7 +37,7 @@ type Meta struct {
 	Title   string    `json:"title,omitzero"`
 	Created time.Time `json:"created"`
 	Updated time.Time `json:"updated"`
-	// Model is the named model the session last used.
+	// Model is the entry of models the session last used.
 	Model string `json:"model,omitzero"`
 	// Mode is the session's mode id.
 	Mode string `json:"mode,omitzero"`

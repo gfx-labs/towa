@@ -13,6 +13,14 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"slices"
+)
+
+// Config keys of the figures of a model the built-in table does not have.
+// A model that is refused for lacking one names it.
+const (
+	KeyModelContextWindow   = "model_context_window"
+	KeyModelMaxOutputTokens = "model_max_output_tokens"
 )
 
 // Config is the resolved configuration. Each section has its own file, with
@@ -21,30 +29,35 @@ import (
 // default in its tag, so a resolved Config never holds a zero value by
 // accident. A table, such as accounts, has no default.
 type Config struct {
-	// DefaultModel names the entry of Models a session starts with.
-	DefaultModel string `name:"default_model" group:"models" help:"Name of the model a session starts with."`
-	// Models are the named models, each an ordered chain of accounts.
-	Models             map[string]Model   `name:"models" type:"table" group:"models" placeholder:"YAML" help:"Named models: chain (provider:account/model entries), then optionally effort, context_window and max_output_tokens. Written in a config file."`
-	Telemetry          Telemetry          `embed:"" prefix:"telemetry." group:"telemetry"`
-	Auth               Auth               `embed:"" prefix:"auth." group:"auth"`
-	Accounts           []Account          `name:"accounts" type:"table" group:"accounts" placeholder:"YAML" help:"Accounts without a stored login: one a proxy holds, one an API key backs, or one whose endpoint takes no credential (kind none). id, provider, kind. Written in a config file."`
-	Providers          []Provider         `name:"providers" type:"table" group:"providers" placeholder:"YAML" help:"Endpoints that are not built in: id, kind, base_url. Written in a config file."`
-	Store              Store              `embed:"" prefix:"store." group:"store"`
-	Tools              Tools              `embed:"" prefix:"tools." group:"tools"`
-	MCP                MCP                `embed:"" prefix:"mcp." group:"mcp"`
-	Session            Session            `embed:"" prefix:"session." group:"session"`
-	Context            Context            `embed:"" prefix:"context." group:"context"`
-	Listen             Listen             `embed:"" prefix:"listen." group:"listen"`
-	Limits             Limits             `embed:"" prefix:"limits." group:"limits"`
-	Hooks              []Hook             `name:"hooks" type:"table" group:"hooks" placeholder:"YAML" help:"Commands run on an event: event, command, timeout. Written in a config file."`
-	Embeddings         Embeddings         `embed:"" prefix:"embeddings." group:"embeddings"`
-	OpenAI             OpenAI             `embed:"" prefix:"openai." group:"openai"`
-	WebFetch           WebFetch           `embed:"" prefix:"webfetch." group:"webfetch"`
-	WebSearch          WebSearch          `embed:"" prefix:"websearch." group:"websearch"`
-	Jev                Jev                `embed:"" prefix:"jev." group:"jev"`
-	Compaction         Compaction         `embed:"" prefix:"compaction." group:"compaction"`
-	ConversationSearch ConversationSearch `embed:"" prefix:"conversation_search." group:"conversation_search"`
-	Subagents          Subagents          `embed:"" prefix:"subagents." group:"subagents"`
+	// Models are the models a session can select, each "provider:account/model"
+	// with an optional "#effort". A session starts with the first. A request
+	// that an entry cannot take falls back to the entries listed after it.
+	Models []string `name:"models" group:"models" placeholder:"MODEL" help:"Models a session can select, in order: provider:account/model, optionally with #effort (claude:work/claude-opus-5-5#medium). Comma separated as a flag, a list in a file. A session starts with the first, and a request an entry cannot take falls back to the entries after it. Without #effort none is sent and the provider's default applies."`
+	// ModelContextWindow and ModelMaxOutputTokens are the figures of a model the
+	// built-in table in src/models does not have. Zero is not set: such a
+	// model is then refused when it is selected.
+	ModelContextWindow   int64              `name:"model_context_window" group:"models" default:"0" validate:"gte=0" help:"Context size in tokens of a model the built-in table does not know. 0 is not set, and such a model is refused."`
+	ModelMaxOutputTokens int64              `name:"model_max_output_tokens" group:"models" default:"0" validate:"gte=0" help:"Most tokens one response may hold, for a model the built-in table does not know. 0 is not set, and such a model is refused."`
+	Telemetry            Telemetry          `embed:"" prefix:"telemetry." group:"telemetry"`
+	Auth                 Auth               `embed:"" prefix:"auth." group:"auth"`
+	Accounts             []Account          `name:"accounts" type:"table" group:"accounts" placeholder:"YAML" help:"Accounts without a stored login: one a proxy holds, one an API key backs, or one whose endpoint takes no credential (kind none). id, provider, kind. Written in a config file."`
+	Providers            []Provider         `name:"providers" type:"table" group:"providers" placeholder:"YAML" help:"Endpoints that are not built in: id, kind, base_url. Written in a config file."`
+	Store                Store              `embed:"" prefix:"store." group:"store"`
+	Tools                Tools              `embed:"" prefix:"tools." group:"tools"`
+	MCP                  MCP                `embed:"" prefix:"mcp." group:"mcp"`
+	Session              Session            `embed:"" prefix:"session." group:"session"`
+	Context              Context            `embed:"" prefix:"context." group:"context"`
+	Listen               Listen             `embed:"" prefix:"listen." group:"listen"`
+	Limits               Limits             `embed:"" prefix:"limits." group:"limits"`
+	Hooks                []Hook             `name:"hooks" type:"table" group:"hooks" placeholder:"YAML" help:"Commands run on an event: event, command, timeout. Written in a config file."`
+	Embeddings           Embeddings         `embed:"" prefix:"embeddings." group:"embeddings"`
+	OpenAI               OpenAI             `embed:"" prefix:"openai." group:"openai"`
+	WebFetch             WebFetch           `embed:"" prefix:"webfetch." group:"webfetch"`
+	WebSearch            WebSearch          `embed:"" prefix:"websearch." group:"websearch"`
+	Jev                  Jev                `embed:"" prefix:"jev." group:"jev"`
+	Compaction           Compaction         `embed:"" prefix:"compaction." group:"compaction"`
+	ConversationSearch   ConversationSearch `embed:"" prefix:"conversation_search." group:"conversation_search"`
+	Subagents            Subagents          `embed:"" prefix:"subagents." group:"subagents"`
 }
 
 // Telemetry configures logs and OpenTelemetry.
@@ -102,6 +115,11 @@ type OTelLog struct {
 
 // validate reports values that decode but that the program cannot act on.
 func (c *Config) validate() error {
+	for key, value := range map[string]int64{KeyModelContextWindow: c.ModelContextWindow, KeyModelMaxOutputTokens: c.ModelMaxOutputTokens} {
+		if value < 0 {
+			return fmt.Errorf("%s: %d is negative", key, value)
+		}
+	}
 	if err := validateFields("telemetry", c.Telemetry); err != nil {
 		return err
 	}
@@ -115,7 +133,7 @@ func (c *Config) validate() error {
 		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate, c.WebSearch.validate,
 		c.Jev.validate, c.validateJevAccount, c.Compaction.validate, c.validateCompaction,
 		c.ConversationSearch.validate, c.Subagents.validate, c.validateSubagentModels,
-		func() error { return validateModelSet(c.DefaultModel, c.Models, c.Accounts, c.Providers) },
+		func() error { return validateModels(c.Models, c.Accounts, c.Providers) },
 	} {
 		if err := section(); err != nil {
 			return err
@@ -154,7 +172,7 @@ func (c *Config) validateJevAccount() error {
 
 func (c *Config) validateSubagentModels() error {
 	for _, name := range c.Subagents.Models {
-		if _, ok := c.Models[name]; !ok {
+		if !slices.Contains(c.Models, name) {
 			return fmt.Errorf("subagents.models: %q is not a configured model", name)
 		}
 	}
