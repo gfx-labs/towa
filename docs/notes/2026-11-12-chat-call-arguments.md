@@ -38,4 +38,4 @@ Both fail against the client before the fix.
 
 ## Not done
 
-- `src/provider/openai` stores empty argument text of a function call as `""` and sends it back as it came. Read in the code, not run: no Responses endpoint was at hand that writes a call with no argument text. Not changed here, and that package is another session's.
+- `src/provider/openai` stores empty argument text of a function call as `""` and sends it back as it came. Not changed. Measured later the same day against Ollama 0.24.0's `/v1/responses` (`qwen2.5:7b`): a call to a tool that takes nothing has `"arguments":""` only in `response.output_item.added`, and `{}` in `response.output_item.done`, which is the event the client stores from. A replayed `function_call` with `"arguments":""` was answered with status 200. So no failure was reproduced on that client. No other Responses endpoint was tried.
