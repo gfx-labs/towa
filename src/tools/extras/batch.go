@@ -35,6 +35,7 @@ func Batch(cfg config.ToolsBatch, dispatcher func(context.Context) (batch.Dispat
 		return tools.Tool{}, err
 	}
 	t := newTool(NameBatch, "Run several independent tool calls in one call and return every result. Each entry contains tool and that tool's own arguments as sibling fields, and nothing else. Calls that only read run at the same time, and a call that writes or executes runs in the order given. Do not batch calls that depend on each other's results, and do not nest batch.", acp.ToolKindExecute, schema)
+	t.Summary = "Run several independent tool calls in one call"
 	// Children can execute. Serialize the parent against outer calls as well.
 	t.Effect = tools.Executes
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {

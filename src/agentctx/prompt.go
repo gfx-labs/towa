@@ -10,12 +10,16 @@ import (
 
 // Names of the built-in sections, in the order they take in the prompt.
 // Sections added by configuration follow them, and a system prompt the
-// client appended comes last.
+// client appended comes last. Every section after the first is sent inside
+// a tag of its name.
 const (
-	// SectionPrompt is the harness's instructions.
+	// SectionPrompt is the harness's instructions. It opens the prompt and
+	// has no tag.
 	SectionPrompt = "prompt"
-	// SectionTools is the guidance about the tools.
+	// SectionTools lists the tools, one line each.
 	SectionTools = "tools"
+	// SectionRules is the guidance about the tools.
+	SectionRules = "rules"
 	// SectionProjectContext holds the context files.
 	SectionProjectContext = "project_context"
 	// SectionSkills lists the skills.
@@ -27,7 +31,14 @@ const (
 )
 
 var builtinSections = []string{
-	SectionPrompt, SectionTools, SectionProjectContext, SectionSkills, SectionWorkDir, SectionClient,
+	SectionPrompt, SectionTools, SectionRules, SectionProjectContext, SectionSkills, SectionWorkDir, SectionClient,
+}
+
+// ToolLine is one tool in the prompt's list of tools.
+type ToolLine struct {
+	Name string
+	// Summary says in a few words what the tool does.
+	Summary string
 }
 
 // Prompt is what the system prompt is built from. A section whose text is
@@ -35,11 +46,11 @@ var builtinSections = []string{
 type Prompt struct {
 	// Instructions is the text of the prompt section.
 	Instructions string
-	// Tools is the guidance that holds for every tool.
-	Tools string
-	// ToolLines are the guidance lines of the tools this request offers,
-	// in the tools' order.
-	ToolLines []string
+	// Tools are the tools this request offers, in the tools' order.
+	Tools []ToolLine
+	// Rules are the guidance lines of those tools, then the lines that
+	// hold for every tool.
+	Rules []string
 	// Loaded is what Load returned. It may be nil.
 	Loaded *Loaded
 	// WorkDir is the session's working directory.
@@ -91,13 +102,18 @@ func Capabilities() *acp.SessionSystemPromptCapabilities {
 }
 
 // Build returns the system prompt's sections in order: the instructions,
-// tools, project context, skills, working directory, the sections
+// tools, rules, project context, skills, working directory, the sections
 // added by configuration, and the client's appended prompt.
 //
+// The instructions are plain text. Every section after them is wrapped in
+// a tag of its name, as pi's prompt is, so that the model can tell where a
+// context file or a skill list ends and the next section begins.
+//
 // A client prompt in append mode is the last section. In override mode it
-// takes the place of the prompt and tools sections, and everything
-// after them stays. Neither mode touches the tool definitions, the MCP
-// servers or the permissions, which are not part of the prompt.
+// takes the place of the prompt, tools and rules sections, untagged as the
+// instructions are, and everything after them stays. Neither mode touches
+// the tool definitions, the MCP servers or the permissions, which are not
+// part of the prompt.
 func Build(p Prompt) ([]provider.SystemBlock, error) {
 	client, err := clientText(p.Client)
 	if err != nil {
@@ -106,17 +122,23 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 	override := p.Client != nil && p.Client.Mode == acp.SystemPromptModeOverride
 
 	var blocks []provider.SystemBlock
-	add := func(name, text string) {
+	opening := func(name, text string) {
 		if strings.TrimSpace(text) != "" {
 			blocks = append(blocks, provider.SystemBlock{Name: name, Text: text})
 		}
 	}
+	add := func(name, text string) {
+		if text = strings.Trim(text, "\n"); strings.TrimSpace(text) != "" {
+			blocks = append(blocks, provider.SystemBlock{Name: name, Text: "<" + name + ">\n" + text + "\n</" + name + ">"})
+		}
+	}
 
 	if override {
-		add(SectionClient, client)
+		opening(SectionClient, client)
 	} else {
-		add(SectionPrompt, p.Instructions)
-		add(SectionTools, toolsText(p.Tools, p.ToolLines))
+		opening(SectionPrompt, p.Instructions)
+		add(SectionTools, toolList(p.Tools))
+		add(SectionRules, list(p.Rules))
 	}
 	var loaded Loaded
 	if p.Loaded != nil {
@@ -181,12 +203,20 @@ func blockKind(b acp.ContentBlock) string {
 	}
 }
 
-// toolsText is the general guidance followed by one list item per line.
-func toolsText(general string, lines []string) string {
+// toolList is one list item per tool: its name and what it does.
+func toolList(tools []ToolLine) string {
+	lines := make([]string, len(tools))
+	for i, t := range tools {
+		lines[i] = t.Name + ": " + t.Summary
+	}
+	return list(lines)
+}
+
+// list is one list item per line.
+func list(lines []string) string {
 	var b strings.Builder
-	b.WriteString(strings.TrimSpace(general))
-	for _, line := range lines {
-		if b.Len() > 0 {
+	for i, line := range lines {
+		if i > 0 {
 			b.WriteString("\n")
 		}
 		b.WriteString("- " + line)
@@ -194,17 +224,21 @@ func toolsText(general string, lines []string) string {
 	return b.String()
 }
 
-// projectContext joins the context files, each under its path.
+// escapeAttribute keeps a path from ending the attribute it is in.
+var escapeAttribute = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
+
+// projectContext joins the context files, each in a tag that names its
+// path.
 func projectContext(files []File) string {
 	var b strings.Builder
 	for _, f := range files {
 		if strings.TrimSpace(f.Text) == "" {
 			continue
 		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
+		if b.Len() == 0 {
+			b.WriteString("Instructions from the context files:")
 		}
-		fmt.Fprintf(&b, "Contents of %s:\n\n%s", f.Path, strings.TrimRight(f.Text, "\n"))
+		fmt.Fprintf(&b, "\n\n<project_instructions path=\"%s\">\n%s\n</project_instructions>", escapeAttribute.Replace(f.Path), strings.Trim(f.Text, "\n"))
 	}
 	return b.String()
 }

@@ -42,15 +42,16 @@ type Context struct {
 	// accepted. Zero means no limit.
 	MaxTotalBytes int64 `name:"max_total_bytes" default:"0" validate:"gte=0" help:"Largest sum of the context files' sizes that is accepted. 0 is no limit."`
 	// Sections are added to the end of the system prompt, in this order.
-	Sections []ContextSection `name:"sections" type:"table" placeholder:"YAML" validate:"unique=Name,dive" help:"Sections added to the end of the system prompt: name, then text or file. Written in a config file."`
+	Sections []ContextSection `name:"sections" type:"table" placeholder:"YAML" validate:"unique=Name,dive" help:"Sections added to the end of the system prompt: name, then text or file. The name is the tag the text is sent in, so a lower-case word. Written in a config file."`
 }
 
 // ContextSection is one system prompt section added by configuration. It
 // has either Text or File.
 type ContextSection struct {
-	// Name identifies the section. It must differ from every other
-	// section's name, including the built-in ones.
-	Name string `json:"name" validate:"required"`
+	// Name identifies the section and is the tag its text is sent in, so
+	// it is a lower-case word. It must differ from every other section's
+	// name, including the built-in ones.
+	Name string `json:"name" validate:"required,section_name"`
 	Text string `json:"text" validate:"required_without=File,excluded_with=File"`
 	// File is the path of a file whose content is the section's text.
 	File string `json:"file"`

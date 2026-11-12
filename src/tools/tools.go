@@ -22,6 +22,10 @@ type Tool struct {
 	// one line each. It is in the prompt only while the tool is enabled,
 	// so the prompt never names a tool the model does not have.
 	Guidance []string
+	// Summary is the tool's line in the prompt's list of tools: a few
+	// words on what it does. A tool without one, such as an MCP server's,
+	// is not in the list.
+	Summary string
 	// Effect is the most the tool can do. Ask mode asks the client before
 	// running a tool that writes or executes.
 	Effect Effect

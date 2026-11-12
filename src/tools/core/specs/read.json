@@ -1,7 +1,8 @@
 {
   "name": "read",
+  "summary": "Read file contents",
   "description": "Read text lines or a PNG, JPEG, GIF or WebP image from a file. Text comes back as it is in the file, without line numbers. A successful read allows edits to the file in this session until the file changes. A large image is scaled down. PDF and notebook files are not supported.",
-  "guidance": ["Look at a file with read, not with cat, head or sed in bash."],
+  "guidance": ["Use read to examine files instead of cat or sed."],
   "input_schema": {
     "type": "object",
     "properties": {

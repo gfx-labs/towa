@@ -1,7 +1,8 @@
 {
   "name": "bash",
+  "summary": "Execute bash commands (ls, grep, find, etc.)",
   "description": "Run a shell command in the session's working directory and wait for it to finish. The command has no terminal and its standard input is empty, so a program that waits for input fails or hangs until the timeout. Standard output and standard error come back together, followed by the exit code when it is not zero. Output is limited. A command that runs past its timeout is stopped with its process group. Commands run without an operating system sandbox.",
-  "guidance": ["Commands in bash get no terminal and no input. Use the non-interactive form of a command (such as -y, --no-edit, --no-pager, or a message given with -m), and never start an editor, a pager or a REPL."],
+  "guidance": ["Use bash for file operations like ls, rg, find.", "Commands in bash get no terminal and no input. Use the non-interactive form of a command (such as -y, --no-edit, --no-pager, or a message given with -m), and never start an editor, a pager or a REPL."],
   "input_schema": {
     "type": "object",
     "properties": {

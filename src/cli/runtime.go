@@ -302,8 +302,8 @@ func (c *promptCache) build(hosted bool, p agentctx.Prompt) ([]provider.SystemBl
 	if hosted {
 		kept = &c.hosted
 	}
-	if b := *kept; b != nil && b.from.Instructions == p.Instructions && b.from.Tools == p.Tools &&
-		slices.Equal(b.from.ToolLines, p.ToolLines) && b.from.Loaded == p.Loaded && b.from.WorkDir == p.WorkDir &&
+	if b := *kept; b != nil && b.from.Instructions == p.Instructions && slices.Equal(b.from.Tools, p.Tools) &&
+		slices.Equal(b.from.Rules, p.Rules) && b.from.Loaded == p.Loaded && b.from.WorkDir == p.WorkDir &&
 		slices.Equal(b.from.AdditionalDirs, p.AdditionalDirs) && b.from.SkillTool == p.SkillTool &&
 		reflect.DeepEqual(b.from.Client, p.Client) {
 		return b.system, nil
@@ -371,9 +371,9 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		if err != nil {
 			return preparedTurn{}, err
 		}
+		listed, rules := toolSections(assembled.Set, hasHosted)
 		system, err := prompts.build(hasHosted, agentctx.Prompt{
-			Instructions: loaded.Instructions, Tools: agentctx.ToolGuidance,
-			ToolLines: toolLines(assembled.Set, hasHosted), Loaded: loaded,
+			Instructions: loaded.Instructions, Tools: listed, Rules: rules, Loaded: loaded,
 			WorkDir: turn.Cwd, AdditionalDirs: turn.Dirs, SkillTool: skillTool, Client: turn.SystemPrompt,
 		})
 		if err != nil {
@@ -453,19 +453,24 @@ func (f *runtimeFactory) accountScheme(id string) (auth.Scheme, error) {
 	return "", fmt.Errorf("account %q is not configured", id)
 }
 
-// toolLines returns the prompt's guidance for the tools one chain entry is
-// sent. An entry with hosted search gets the provider's tool in place of
-// the local one, so its line names that tool.
-func toolLines(set tools.Set, hostedSearch bool) []string {
-	var lines []string
+// toolSections returns the prompt's list of the tools one chain entry is
+// sent and its rules: each tool's guidance, then the rules that hold for
+// every tool. An entry with hosted search gets the provider's tool in place
+// of the local one, so its lines name that tool. A tool without a summary,
+// such as an MCP server's, is not listed: its definition describes it.
+func toolSections(set tools.Set, hostedSearch bool) (listed []agentctx.ToolLine, rules []string) {
 	for _, tool := range set.Tools {
 		if hostedSearch && tool.Spec.Name == extras.NameWebSearch {
-			lines = append(lines, extras.HostedSearchGuidance(hostedsearch.Name))
+			listed = append(listed, agentctx.ToolLine{Name: hostedsearch.Name, Summary: extras.SearchSummary})
+			rules = append(rules, extras.HostedSearchGuidance(hostedsearch.Name))
 			continue
 		}
-		lines = append(lines, tool.Guidance...)
+		if tool.Summary != "" {
+			listed = append(listed, agentctx.ToolLine{Name: tool.Spec.Name, Summary: tool.Summary})
+		}
+		rules = append(rules, tool.Guidance...)
 	}
-	return lines
+	return listed, append(rules, agentctx.GeneralRules...)
 }
 
 func (f *runtimeFactory) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, error) {

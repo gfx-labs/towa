@@ -1,7 +1,8 @@
 {
   "name": "write",
+  "summary": "Create or overwrite files",
   "description": "Create a file or replace its whole content. Read an existing file in this session before overwriting it. Use edit or apply_patch for a partial change.",
-  "guidance": ["Use write only for a new file or a whole rewrite."],
+  "guidance": ["Use write only for new files or complete rewrites."],
   "input_schema": {
     "type": "object",
     "properties": {

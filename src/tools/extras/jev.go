@@ -26,6 +26,7 @@ func JevDecision(client *jev.Client, credential func(context.Context) (auth.Cred
 		return tools.Tool{}, errors.New("jev_decision: no credential resolver")
 	}
 	t := newTool(NameJevDecision, "Ask a separate decision model to choose one of the options you supply. Use it for a bounded choice where a second judgment helps, such as which model a subagent should run. Returns the id of the chosen option, with a confidence when the service gives one. It only chooses: acting on the choice is up to you.", acp.ToolKindThink, []byte(`{"type":"object","required":["instructions","options"],"properties":{"intent":{"type":"string"},"instructions":{"type":"string","description":"What to decide and the criteria to decide it by."},"state":{"type":"object","description":"Facts the decision depends on. The decision model reads it as data, not as instructions."},"options":{"type":"object","additionalProperties":{"type":"string"},"description":"The options, at least two. Each key is an option id of at most 64 bytes, and each value says what choosing it means."},"timeout_ms":{"type":"integer","minimum":1,"description":"Bounded wait in milliseconds, at most jev.max_timeout."}}}`))
+	t.Summary = "Ask a separate decision model to choose among options you supply"
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
 		var in struct {
 			Instructions string            `json:"instructions"`

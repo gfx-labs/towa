@@ -1,5 +1,6 @@
 {
   "name": "todo",
+  "summary": "Keep the task list the client shows as the plan",
   "description": "Use the todo tool very frequently. It replaces the session's task list, which the client shows as the plan. Send the whole list, the plan and the goals on every call, keep one item in_progress at a time, and mark an item completed when it is done. Assess the goals honestly from what you have observed.",
   "guidance": ["Use todo very frequently: keep the plan and its goal assessments in it and update them as each step finishes."],
   "input_schema": {
