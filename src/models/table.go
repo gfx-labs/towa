@@ -2,7 +2,7 @@ package models
 
 // builtin holds the models whose figures were read from a source, by the
 // provider's own model id. A model that is not here needs its figures in
-// the configuration (models.<name>.context_window and max_output_tokens).
+// the configuration (model_context_window and model_max_output_tokens).
 // Add a row only with the source it was read from.
 //
 // A name a gateway gives a model ("anthropic/claude-opus-4.7" on

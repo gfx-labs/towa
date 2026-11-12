@@ -65,7 +65,7 @@ type Input struct {
 	// Prompt is the whole of what the child is told. It sees nothing of
 	// the parent's conversation.
 	Prompt string
-	// Model is a named model from subagents.models. Empty means the
+	// Model is an entry of subagents.models. Empty means the
 	// parent's model.
 	Model string
 	// Description says in a few words what the child is for. It is not

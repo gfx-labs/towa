@@ -6,25 +6,6 @@ import (
 	"strings"
 )
 
-// Model is one named model: the chain of provider entries a request goes
-// down, and what is known about the model when the built-in table in
-// src/models does not know it or is wrong for this endpoint.
-type Model struct {
-	// Chain is tried in order. Each entry is "provider:account/model".
-	Chain []string `json:"chain" validate:"min=1"`
-	// ContextWindow is the model's context size in tokens. Zero takes the
-	// built-in figure.
-	ContextWindow int64 `json:"context_window" validate:"gte=0"`
-	// MaxOutputTokens is the most tokens one response may hold. Zero takes
-	// the built-in figure.
-	MaxOutputTokens int64 `json:"max_output_tokens" validate:"gte=0"`
-	// Effort is the reasoning effort sent with every request of the chain,
-	// in the provider's own words, such as "medium". It is not checked: a
-	// word the provider does not take is the provider's error. Empty sends
-	// none, which leaves the provider's default.
-	Effort string `json:"effort"`
-}
-
 // Providers that need no providers entry: the harness has their
 // endpoints and their OAuth flows built in.
 const (
@@ -32,7 +13,7 @@ const (
 	ProviderCodex  = "codex"
 )
 
-// ChainEntry is one parsed entry of a model's chain.
+// ChainEntry is one parsed entry of the models list.
 type ChainEntry struct {
 	// Provider is a built-in provider or the id of a configured one.
 	Provider string
@@ -41,35 +22,37 @@ type ChainEntry struct {
 	// Model is the provider's own name for the model. It may hold "/" and
 	// ":", as OpenRouter's names do.
 	Model string
+	// Effort is the reasoning effort sent with a request to this entry, in
+	// the provider's own words, such as "medium". It is not checked: a
+	// word the provider does not take is the provider's error. Empty sends
+	// none, which leaves the provider's default.
+	Effort string
 }
 
-// ParseChainEntry parses "provider:account/model". The provider ends at the
-// first ":" and the account at the first "/" after it.
+// ParseChainEntry parses "provider:account/model" or
+// "provider:account/model#effort". The provider ends at the first ":", the
+// account at the first "/" after it, and the model at the last "#".
 func ParseChainEntry(entry string) (ChainEntry, error) {
-	provider, rest, ok := strings.Cut(entry, ":")
+	bad := fmt.Errorf("%q is not provider:account/model or provider:account/model#effort", entry)
+	target, effort := entry, ""
+	if i := strings.LastIndex(entry, "#"); i >= 0 {
+		target, effort = entry[:i], entry[i+1:]
+		if effort == "" {
+			return ChainEntry{}, bad
+		}
+	}
+	provider, rest, ok := strings.Cut(target, ":")
 	account, model, ok2 := strings.Cut(rest, "/")
 	if !ok || !ok2 || provider == "" || account == "" || model == "" || strings.Contains(provider, "/") {
-		return ChainEntry{}, fmt.Errorf("%q is not provider:account/model", entry)
+		return ChainEntry{}, bad
 	}
-	return ChainEntry{Provider: provider, Account: account, Model: model}, nil
+	return ChainEntry{Provider: provider, Account: account, Model: model, Effort: effort}, nil
 }
 
-// validateModelSet reports models the program cannot act on. No model at
-// all is valid: the process then has no model to run a turn with, which is
-// for the turn to report.
-func validateModelSet(defaultModel string, models map[string]Model, accounts []Account, providers []Provider) error {
-	if len(models) == 0 {
-		if defaultModel != "" {
-			return fmt.Errorf("default_model: %q names no model, and no model is configured", defaultModel)
-		}
-		return nil
-	}
-	if _, ok := models[defaultModel]; !ok {
-		if defaultModel == "" {
-			return fmt.Errorf("default_model is empty and models are configured")
-		}
-		return fmt.Errorf("default_model: %q names no model", defaultModel)
-	}
+// validateModels reports entries the program cannot act on. No model at all
+// is valid: the process then has no model to run a turn with, which is for
+// the turn to report.
+func validateModels(models []string, accounts []Account, providers []Provider) error {
 	accountProvider := map[string]string{}
 	for _, a := range accounts {
 		accountProvider[a.ID] = a.Provider
@@ -78,35 +61,25 @@ func validateModelSet(defaultModel string, models map[string]Model, accounts []A
 	for _, p := range providers {
 		known[p.ID] = true
 	}
-	names := make([]string, 0, len(models))
-	for name := range models {
-		names = append(names, name)
-	}
-	// In name order, so that the same config always reports the same error.
-	slices.Sort(names)
-	for _, name := range names {
-		m, at := models[name], "models."+name
-		if name == "" {
-			return fmt.Errorf("models: a model has an empty name")
+	for i, raw := range models {
+		at := fmt.Sprintf("models[%d]", i)
+		entry, err := ParseChainEntry(raw)
+		if err != nil {
+			return fmt.Errorf("%s: %w", at, err)
 		}
-		if err := validateFields(at, m); err != nil {
-			return err
+		// A session selects a model by its text, so two of one text could
+		// not be told apart.
+		if slices.Contains(models[:i], raw) {
+			return fmt.Errorf("%s: %q is listed twice", at, raw)
 		}
-		for i, raw := range m.Chain {
-			at := fmt.Sprintf("%s.chain[%d]", at, i)
-			entry, err := ParseChainEntry(raw)
-			if err != nil {
-				return fmt.Errorf("%s: %w", at, err)
-			}
-			provider, ok := accountProvider[entry.Account]
-			switch {
-			case !known[entry.Provider]:
-				return fmt.Errorf("%s: provider %q is not built in (%q, %q) and not configured", at, entry.Provider, ProviderClaude, ProviderCodex)
-			case !ok:
-				return fmt.Errorf("%s: account %q is not configured", at, entry.Account)
-			case provider != entry.Provider:
-				return fmt.Errorf("%s: account %q belongs to provider %q, not %q", at, entry.Account, provider, entry.Provider)
-			}
+		provider, ok := accountProvider[entry.Account]
+		switch {
+		case !known[entry.Provider]:
+			return fmt.Errorf("%s: provider %q is not built in (%q, %q) and not configured", at, entry.Provider, ProviderClaude, ProviderCodex)
+		case !ok:
+			return fmt.Errorf("%s: account %q is not configured", at, entry.Account)
+		case provider != entry.Provider:
+			return fmt.Errorf("%s: account %q belongs to provider %q, not %q", at, entry.Account, provider, entry.Provider)
 		}
 	}
 	return nil

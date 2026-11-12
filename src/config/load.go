@@ -278,10 +278,6 @@ func (l *layers) Resolve(_ *kong.Context, _ *kong.Path, flag *kong.Flag) (any, e
 	if v, set := l.env[flag.Name]; set {
 		value, origin, in = v.value, "environment", v.name
 	}
-	// A table of named entries is added to by each file: the models of a
-	// user's file join the models of the system's. Any other key holds the
-	// value of the last file that sets it.
-	named := flag.Tag.Type == "table" && flag.Target.Kind() == reflect.Map
 	for i := 0; i < len(l.files) && in == ""; i++ {
 		raw := lookup(l.files[i].values, flag.Name)
 		if raw == nil {
@@ -290,12 +286,6 @@ func (l *layers) Resolve(_ *kong.Context, _ *kong.Path, flag *kong.Flag) (any, e
 		over, err := fileValue(flag, raw)
 		if err != nil {
 			return nil, fmt.Errorf("in %s: %w", l.files[i].path, err)
-		}
-		under, isTable := value.(map[string]any)
-		entries, both := over.(map[string]any)
-		if named && isTable && both {
-			value, origin = merge(under, entries), origin+", "+l.files[i].path
-			continue
 		}
 		value, origin = over, l.files[i].path
 	}
@@ -314,21 +304,6 @@ func (l *layers) Resolve(_ *kong.Context, _ *kong.Path, flag *kong.Flag) (any, e
 	}
 	l.origin[flag.Name] = origin
 	return value, nil
-}
-
-// merge returns over laid on under. A member that is a table in both is
-// merged the same way, and any other member of over replaces under's.
-func merge(under, over map[string]any) map[string]any {
-	out := maps.Clone(under)
-	for name, value := range over {
-		a, isTable := out[name].(map[string]any)
-		b, both := value.(map[string]any)
-		if isTable && both {
-			value = merge(a, b)
-		}
-		out[name] = value
-	}
-	return out
 }
 
 // lookup returns the value at a dotted key in a file's values, or nil.

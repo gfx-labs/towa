@@ -98,24 +98,20 @@ Nothing is guessed. These are errors that name the file or the variable: a key t
 Sketch. The examples in this document are YAML. A JSON file with the same keys loads the same way:
 
 ```yaml
-default_model: opus
-
+# Each entry is provider:account/model, optionally with #effort. A session
+# starts with the first and can select any of them. A request an entry cannot
+# take falls back to the entries after it. As a flag the list is separated
+# by commas: --models claude:work/claude-opus-4-7#medium,codex:chatgpt/gpt-5.5
 models:
-  opus:
-    chain:
-      - "claude:work/claude-opus-4-7"
-      - "claude:personal/claude-opus-4-7"
-      - "openrouter:main/anthropic/claude-opus-4.7"
-    # The last entry is a gateway's own id, which the built-in table does not
-    # know, so the model states its figures.
-    context_window: 1000000
-    max_output_tokens: 128000
-    # Sent with every request in the provider's own words. It is not checked
-    # here. Left out, the provider's default applies.
-    effort: medium
-  gpt:
-    chain:
-      - "codex:chatgpt/gpt-5.5"
+  - "claude:work/claude-opus-4-7#medium"
+  - "claude:personal/claude-opus-4-7#medium"
+  - "openrouter:main/anthropic/claude-opus-4.7"
+  - "codex:chatgpt/gpt-5.5"
+
+# The third entry is a gateway's own id, which the built-in table does not
+# know. These two keys give the figures of every such model.
+model_context_window: 1000000
+model_max_output_tokens: 128000
 
 # claude:work, claude:personal and codex:chatgpt have no entry here: a login
 # makes each of them in auth.json. Only an account without a stored login is
@@ -211,15 +207,15 @@ Model metadata (context window, max output) comes from a pinned table plus provi
 - `acpharness login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
 - A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `acpharness login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
 - Refresh: take an `flock` on the account's lock file (`account.<id>.lock`, not `auth.json`, since the rename that writes the file would leave a lock on the old inode), re-read the account, refresh only if the token is still expired, write, release. Hundreds of processes share one refresh, and the refresh of one account does not wait for another's token request. Every write of `auth.json` takes `auth.json.lock` for its read and its write, so that two accounts written at once both survive, and replaces the file atomically (temp file and rename). A read takes no lock.
-- Model chains: each named model is an ordered list of `provider:account/model`. The router tries the next entry on rate limit, quota exhaustion, auth failure or overload, after retries on the current entry are exhausted. Fallback moves are reported to the client.
+- Models: `models` is one ordered list of `provider:account/model`, each optionally with `#effort` (`docs/notes/2026-11-12-flat-models.md`). A session selects an entry by its text and starts with the first. The selected entry's chain is itself and every entry listed after it, so a fallback can reach another account or another model. An entry's effort is sent with a request to that entry, and an entry without one sends none. The router tries the next entry on rate limit, quota exhaustion, auth failure or overload, after retries on the current entry are exhausted. Fallback moves are reported to the client.
 - Retry: exponential backoff with jitter, honoring `retry-after` and provider reset headers. Policy in config.
 - Rate-limit state is per account and shared in process. Cross-process sharing is a later option (a small file or broker) if contention shows up.
 
 ### Runtime model selection
 
 - `session/new` uses `_meta` or the configured default.
-- `session/set_config_option` with the `model` category switches between turns. The session advertises its named models as a select option. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
-- Subagent spawns may name a model or chain.
+- `session/set_config_option` with the `model` category switches between turns. The session advertises the entries of `models`, in list order, as a select option. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
+- Subagent spawns may name an entry of `subagents.models`, each of which is an entry of `models`.
 
 ## Tools
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -134,12 +135,9 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		{ID: "chat", Provider: config.ProviderCodex, Kind: config.AccountProxiedOAuth},
 		{ID: "local", Provider: "other", Kind: config.AccountAPIKey, APIKeyEnv: "RUNTIME_TEST_KEY"},
 	}
-	sizes := config.Model{ContextWindow: 100_000, MaxOutputTokens: 1024}
-	hostedModel, plainModel := sizes, sizes
-	hostedModel.Chain, plainModel.Chain = []string{"codex:chat/gpt-5.5"}, []string{"other:local/gpt-5.5"}
-	hostedModel.Effort = "medium"
-	cfg.Models = map[string]config.Model{"hosted": hostedModel, "plain": plainModel}
-	cfg.DefaultModel = "plain"
+	const plainModel, hostedModel = "other:local/gpt-5.5", "codex:chat/gpt-5.5#medium"
+	cfg.Models = []string{plainModel, hostedModel}
+	cfg.ModelContextWindow, cfg.ModelMaxOutputTokens = 100_000, 1024
 	home := t.TempDir()
 	host := Host{Stdout: io.Discard, Stderr: io.Discard, Environ: []string{"HOME=" + home, "XDG_STATE_HOME=" + filepath.Join(home, "state"), "RUNTIME_TEST_KEY=placeholder"}}
 	tel, err := telemetry.Start(t.Context(), cfg.Telemetry, version(), io.Discard)
@@ -156,7 +154,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		}
 		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{})
 		require.NoError(t, err)
-		// The model's effort goes with the turn's requests as written.
+		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
 		for _, block := range prepared.system {
 			if block.Name == agentctx.SectionTools {
@@ -166,7 +164,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		t.Fatal("the prompt has no tools section")
 		return ""
 	}
-	plain, hosted := section("plain", ""), section("hosted", "medium")
+	plain, hosted := section(plainModel, ""), section(hostedModel, "medium")
 	require.Contains(t, plain, "with "+extras.NameWebSearch+".")
 	require.Contains(t, hosted, "with "+hostedsearch.Name+".")
 	require.NotContains(t, hosted, extras.NameWebSearch)
@@ -221,4 +219,80 @@ func (m *runtimeMCP) sessions() (opened, closed []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.opened), slices.Clone(m.closed)
+}
+
+// A request that the selected entry's account cannot make goes to the entry
+// listed after it, with that entry's model and effort. An entry without an
+// effort sends none.
+func TestAFallbackSendsTheNextEntrysEffort(t *testing.T) {
+	type sent struct {
+		Model     string `json:"model"`
+		Reasoning *struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
+	}
+	var mu sync.Mutex
+	var requests []sent
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body sent
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
+			t.Error(err)
+		}
+		mu.Lock()
+		requests = append(requests, body)
+		mu.Unlock()
+		// No model reply is invented: every entry is refused.
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+
+	loaded, err := config.Load(config.Sources{})
+	require.NoError(t, err)
+	cfg := loaded.Config
+	cfg.Providers = []config.Provider{{ID: "local", Kind: config.ProviderResponses, BaseURL: server.URL + "/v1"}}
+	cfg.Accounts = []config.Account{{ID: "key", Provider: "local", Kind: config.AccountAPIKey, APIKeyEnv: "RUNTIME_TEST_KEY"}}
+	cfg.Models = []string{"local:key/first#high", "local:key/second", "local:key/third#low"}
+	cfg.ModelContextWindow, cfg.ModelMaxOutputTokens = 100_000, 1024
+	cfg.Limits.Retry.MaxRetries = 0
+	home := t.TempDir()
+	host := Host{Stdout: io.Discard, Stderr: io.Discard, Environ: []string{"HOME=" + home, "XDG_STATE_HOME=" + filepath.Join(home, "state"), "RUNTIME_TEST_KEY=placeholder"}}
+	tel, err := telemetry.Start(t.Context(), cfg.Telemetry, version(), io.Discard)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tel.Shutdown(context.Background())) })
+	factory, err := newRuntimeFactory(t.Context(), cfg, host, tel)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, factory.Close()) })
+
+	run := func(model string) []sent {
+		mu.Lock()
+		requests = nil
+		mu.Unlock()
+		turn := loop.Turn{
+			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
+			Prompt: []acp.ContentBlock{{Text: &acp.ContentBlockText{Type: "text", Text: "hello"}}},
+			Update: func(context.Context, acp.SessionUpdate) error { return nil },
+		}
+		runtime, err := factory.open(t.Context(), turn)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, runtime.Close(context.Background())) })
+		_, err = runtime.Run(t.Context(), turn)
+		require.Error(t, err)
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(requests)
+	}
+	efforts := func(list []sent) (out []string) {
+		for _, r := range list {
+			effort := ""
+			if r.Reasoning != nil {
+				effort = r.Reasoning.Effort
+			}
+			out = append(out, r.Model+"#"+effort)
+		}
+		return slices.Compact(out)
+	}
+	// The session's first model goes down the whole list.
+	require.Equal(t, []string{"first#high", "second#", "third#low"}, efforts(run("")))
+	// A model chosen further down starts there and does not go back up.
+	require.Equal(t, []string{"second#", "third#low"}, efforts(run("local:key/second")))
 }

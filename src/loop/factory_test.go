@@ -161,8 +161,7 @@ func TestFactoryWriteProcess(t *testing.T) {
 		}
 	}))
 	defer relay.Close()
-	configuration := fmt.Sprintf(`default_model: local
-providers:
+	configuration := fmt.Sprintf(`providers:
   - id: local
     kind: chat
     base_url: %q
@@ -172,11 +171,9 @@ accounts:
   - id: local
     provider: local
     kind: none
-models:
-  local:
-    chain: [%q]
-    context_window: 131072
-    max_output_tokens: 1024
+models: [%q]
+model_context_window: 131072
+model_max_output_tokens: 1024
 store:
   root: %q
   compression: none

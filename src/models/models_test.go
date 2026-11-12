@@ -21,70 +21,76 @@ func (client) Stream(context.Context, provider.Request) iter.Seq2[provider.Event
 	return func(func(provider.Event, error) bool) {}
 }
 
-func TestResolveAModelFromItsChain(t *testing.T) {
-	// The chain of the design's sketch: two accounts on the provider's own
-	// endpoint, then the same model behind a gateway under another name.
-	chain := []string{"claude:work/claude-opus-4-7", "claude:personal/claude-opus-4-7", "openrouter:main/anthropic/claude-opus-4.7"}
+func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
+	// Two accounts on the provider's own endpoint, then the same model
+	// behind a gateway under another name.
+	list := []string{"claude:work/claude-opus-4-7#high", "claude:personal/claude-opus-4-7", "openrouter:main/anthropic/claude-opus-4.7#low"}
 
-	// The gateway's name is not in the table, so the model cannot be
-	// selected until the configuration says what it is.
-	_, err := models.Resolve("opus", config.Model{Chain: chain})
+	// The gateway's name is not in the table, so no model that can fall
+	// back to it is usable until the configuration says what it is.
+	_, err := models.Select(list, models.Metadata{}, "")
 	var unknown *models.MetadataError
 	require.ErrorAs(t, err, &unknown)
-	require.Equal(t, "openrouter:main/anthropic/claude-opus-4.7", unknown.Entry)
-	require.Equal(t, []string{"context_window", "max_output_tokens"}, unknown.Missing)
+	require.Equal(t, list[2], unknown.Entry)
+	require.Equal(t, []string{config.KeyModelContextWindow, config.KeyModelMaxOutputTokens}, unknown.Missing)
 
 	// The first two entries alone resolve from the table.
-	direct, err := models.Resolve("opus", config.Model{Chain: chain[:2]})
+	direct, err := models.Select(list[:2], models.Metadata{}, "")
 	require.NoError(t, err)
 	require.Positive(t, direct.Entries[0].Metadata.ContextWindow)
 
-	// A figure in the configuration applies to every entry, so the whole
-	// chain resolves, and it replaces the table's figure.
-	whole, err := models.Resolve("opus", config.Model{Chain: chain, ContextWindow: 150_000, MaxOutputTokens: 30_000})
+	// The configured figures are those of a model the table does not
+	// have. A model the table has keeps the table's.
+	unlisted := models.Metadata{ContextWindow: 150_000, MaxOutputTokens: 30_000}
+	whole, err := models.Select(list, unlisted, "")
 	require.NoError(t, err)
+	require.Equal(t, list[0], whole.Name)
 	require.Len(t, whole.Entries, 3)
-	for _, e := range whole.Entries {
-		require.Equal(t, models.Metadata{ContextWindow: 150_000, MaxOutputTokens: 30_000}, e.Metadata)
-	}
+	require.Equal(t, direct.Entries[0].Metadata, whole.Entries[0].Metadata)
+	require.Equal(t, unlisted, whole.Entries[2].Metadata)
+	// Each entry has its own effort, and one without sends none.
+	require.Equal(t, []string{"high", "", "low"}, []string{whole.Entries[0].Effort, whole.Entries[1].Effort, whole.Entries[2].Effort})
+
+	// A model chosen by its text falls back only to the entries after it.
+	second, err := models.Select(list, unlisted, list[1])
+	require.NoError(t, err)
+	require.Equal(t, list[1], second.Name)
+	require.Len(t, second.Entries, 2)
+	require.Equal(t, "personal", second.Entries[0].Account)
 
 	clients := map[string]provider.Provider{"claude": client{"claude"}, "openrouter": client{"openrouter"}}
 	lookup := func(id string) (provider.Provider, bool) { c, ok := clients[id]; return c, ok }
 	entries, err := whole.Chain(lookup)
 	require.NoError(t, err)
 	require.Len(t, entries, 3)
-	for i, e := range entries {
-		// The router names an entry as the configuration wrote it.
-		require.Equal(t, chain[i], e.String())
-	}
 	require.Equal(t, client{"openrouter"}, entries[2].Provider)
+	require.Equal(t, "low", entries[2].Effort)
+	require.Equal(t, "openrouter:main/anthropic/claude-opus-4.7", entries[2].String())
 
 	delete(clients, "openrouter")
 	_, err = whole.Chain(lookup)
 	var noClient *models.ProviderError
 	require.ErrorAs(t, err, &noClient)
 	require.Equal(t, "openrouter", noClient.Provider)
+
+	_, err = models.Select(list, unlisted, "claude:work/claude-sonnet-4-6")
+	var noSuch *models.UnknownModelError
+	require.ErrorAs(t, err, &noSuch)
+
+	_, err = models.Select(nil, unlisted, "")
+	var none *models.NoModelError
+	require.ErrorAs(t, err, &none)
 }
 
-// A chain may mix providers: every model gets the same tools, so a fallback
-// inside a turn changes nothing the model was told.
-func TestAChainMayMixProviders(t *testing.T) {
-	mixed, err := models.Resolve("m", config.Model{Chain: []string{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}})
-	require.NoError(t, err)
-	require.Len(t, mixed.Entries, 2)
-}
-
-// Select from a real config file, as the wiring will call it.
-func TestSelectFromAConfigFile(t *testing.T) {
+// Select from a real config file and from the flag, as the wiring calls it.
+func TestSelectFromAConfigFileAndAFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
-default_model: opus
 models:
-  opus:
-    chain: ["claude:work/claude-opus-4-7"]
-    effort: medium
-  glm:
-    chain: ["zai:main/glm-5"]
+  - claude:work/claude-opus-4-7#medium
+  - zai:main/glm-5
+model_context_window: 128000
+model_max_output_tokens: 8000
 accounts:
   - id: work
     provider: claude
@@ -101,22 +107,16 @@ providers:
 	loaded, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	cfg := loaded.Config
+	unlisted := models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}
 
-	byDefault, err := models.Select(cfg.DefaultModel, cfg.Models, "")
+	first, err := models.Select(cfg.Models, unlisted, "")
 	require.NoError(t, err)
-	require.Equal(t, "opus", byDefault.Name)
-	require.Equal(t, "medium", byDefault.Effort)
+	require.Equal(t, "claude-opus-4-7", first.Entries[0].Model)
+	require.Equal(t, "medium", first.Entries[0].Effort)
+	require.Equal(t, unlisted, first.Entries[1].Metadata)
 
-	// Nothing is known about this model: it fails when it is selected.
-	_, err = models.Select(cfg.DefaultModel, cfg.Models, "glm")
-	var unknown *models.MetadataError
-	require.ErrorAs(t, err, &unknown)
-
-	_, err = models.Select(cfg.DefaultModel, cfg.Models, "sonnet")
-	var noSuch *models.UnknownModelError
-	require.ErrorAs(t, err, &noSuch)
-
-	_, err = models.Select("", nil, "")
-	var none *models.NoModelError
-	require.ErrorAs(t, err, &none)
+	// A flag lists the models separated by commas, and replaces the file's.
+	loaded, err = config.Load(config.Sources{Files: []string{path}}, "--models", "zai:main/glm-5#high,claude:work/claude-opus-4-7")
+	require.NoError(t, err)
+	require.Equal(t, []string{"zai:main/glm-5#high", "claude:work/claude-opus-4-7"}, loaded.Config.Models)
 }

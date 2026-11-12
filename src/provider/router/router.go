@@ -25,6 +25,9 @@ type Entry struct {
 	Account string
 	// Model is the provider's own name for the model.
 	Model string
+	// Effort is the reasoning effort sent with a request to this entry.
+	// Empty sends none.
+	Effort string
 	// Preparation is the selected model's request metadata. Nil keeps the caller's legacy metadata.
 	Preparation *Preparation
 }
@@ -182,7 +185,7 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 				return
 			}
 			if prepare, ok := ctx.Value(prepareKey{}).(func(context.Context, Entry, provider.Request) (provider.Request, error)); ok {
-				req.Model, req.Credential = entry.Model, cred
+				req.Model, req.Effort, req.Credential = entry.Model, entry.Effort, cred
 				prepared, err := prepare(context.WithValue(ctx, prepareKey{}, struct{}{}), entry, req)
 				if err != nil {
 					failure := &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
@@ -204,7 +207,7 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 			}
 			refreshed := false
 			for retries := 0; ; {
-				req.Model, req.Credential = entry.Model, cred
+				req.Model, req.Effort, req.Credential = entry.Model, entry.Effort, cred
 				failure, stop := r.attempt(ctx, entry, req, yield)
 				if stop {
 					return
