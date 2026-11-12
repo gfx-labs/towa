@@ -18,6 +18,16 @@ type Metadata struct {
 	ContextWindow int64
 	// MaxOutputTokens is the most tokens one response may hold.
 	MaxOutputTokens int64
+	// NoAdaptiveThinking says the model refuses the adaptive thinking
+	// parameter.
+	NoAdaptiveThinking bool
+}
+
+// AdaptiveThinking reports whether a model takes the adaptive thinking
+// parameter. A model the built-in table does not have is taken to: the API
+// refuses the request by name if it does not.
+func AdaptiveThinking(model string) bool {
+	return !builtin[model].NoAdaptiveThinking
 }
 
 // Entry is one parsed chain entry with its metadata.

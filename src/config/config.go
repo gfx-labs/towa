@@ -52,6 +52,7 @@ type Config struct {
 	Hooks                []Hook             `name:"hooks" type:"table" group:"hooks" placeholder:"YAML" help:"Commands run on an event: event, command, timeout. Written in a config file."`
 	Embeddings           Embeddings         `embed:"" prefix:"embeddings." group:"embeddings"`
 	OpenAI               OpenAI             `embed:"" prefix:"openai." group:"openai"`
+	Claude               Claude             `embed:"" prefix:"claude." group:"claude"`
 	WebFetch             WebFetch           `embed:"" prefix:"webfetch." group:"webfetch"`
 	WebSearch            WebSearch          `embed:"" prefix:"websearch." group:"websearch"`
 	Jev                  Jev                `embed:"" prefix:"jev." group:"jev"`
@@ -130,7 +131,7 @@ func (c *Config) validate() error {
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
-		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.WebFetch.validate, c.WebSearch.validate,
+		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.Claude.validate, c.WebFetch.validate, c.WebSearch.validate,
 		c.Jev.validate, c.validateJevAccount, c.Compaction.validate, c.validateCompaction,
 		c.ConversationSearch.validate, c.Subagents.validate, c.validateSubagentModels,
 		func() error { return validateModels(c.Models, c.Accounts, c.Providers) },

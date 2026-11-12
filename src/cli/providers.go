@@ -8,6 +8,7 @@ import (
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/models"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/chat"
@@ -56,9 +57,14 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 		}
 	}()
 
+	thinking, err := claudeThinking(cfg.Claude)
+	if err != nil {
+		return nil, err
+	}
 	claude, err := anthropic.New(anthropic.Config{
 		HTTPClient: client, Version: version(), BaseURL: anthropic.DefaultBaseURL,
 		Provider: anthropic.Provider, ErrorBodyBytes: anthropic.DefaultErrorBodyBytes,
+		Thinking: thinking,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("providers: %s: %w", config.ProviderClaude, err)
@@ -123,6 +129,26 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 		}
 	}
 	return p, nil
+}
+
+// claudeThinking returns the thinking parameter of a request to each Claude
+// model. A model the table marks as without adaptive thinking is sent none:
+// it answers the parameter with an HTTP 400.
+func claudeThinking(cfg config.Claude) (func(model string) anthropic.Thinking, error) {
+	var thinking anthropic.Thinking
+	switch cfg.Thinking {
+	case config.ClaudeThinkingAdaptive:
+		thinking = anthropic.Thinking{Mode: anthropic.ThinkingAdaptive, Display: cfg.ThinkingDisplay}
+	case config.ClaudeThinkingOff:
+	default:
+		return nil, fmt.Errorf("providers: claude.thinking %q is not known", cfg.Thinking)
+	}
+	return func(model string) anthropic.Thinking {
+		if !models.AdaptiveThinking(model) {
+			return anthropic.Thinking{}
+		}
+		return thinking
+	}, nil
 }
 
 // Client returns the client keyed by its configured provider id. Unknown
