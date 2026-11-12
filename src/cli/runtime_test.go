@@ -152,7 +152,9 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
 			Update: func(context.Context, acp.SessionUpdate) error { return nil },
 		}
-		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{})
+		loaded, err := factory.loadContext(turn)
+		require.NoError(t, err)
+		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{}, loaded)
 		require.NoError(t, err)
 		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
@@ -172,6 +174,59 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		require.Contains(t, text, "no terminal")
 		require.NotContains(t, text, extras.NameConversationSearch)
 	}
+}
+
+// A session's prompt holds its context files as they were when it opened. A
+// file changed during the session is in the prompt of the next session.
+func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
+	loaded, err := config.Load(config.Sources{})
+	require.NoError(t, err)
+	cfg := loaded.Config
+	cfg.ConversationSearch.Enabled = false
+	cfg.Providers = []config.Provider{{ID: "other", Kind: config.ProviderResponses, BaseURL: "http://127.0.0.1:1/v1"}}
+	cfg.Accounts = []config.Account{{ID: "local", Provider: "other", Kind: config.AccountNone}}
+	const model = "other:local/gpt-5.5"
+	cfg.Models = []string{model}
+	cfg.ModelContextWindow, cfg.ModelMaxOutputTokens = 100_000, 1024
+	home := t.TempDir()
+	rules := filepath.Join(home, "AGENTS.md")
+	require.NoError(t, os.WriteFile(rules, []byte("first rule\n"), 0o600))
+	host := Host{Stdout: io.Discard, Stderr: io.Discard, Environ: []string{"HOME=" + home, "XDG_STATE_HOME=" + filepath.Join(home, "state")}}
+	tel, err := telemetry.Start(t.Context(), cfg.Telemetry, version(), io.Discard)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tel.Shutdown(context.Background())) })
+	factory, err := newRuntimeFactory(t.Context(), cfg, host, tel)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, factory.Close()) })
+
+	open := func() *sessionRuntime {
+		runtime, err := factory.open(t.Context(), loop.Turn{
+			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
+			Update: func(context.Context, acp.SessionUpdate) error { return nil },
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, runtime.Close(context.Background())) })
+		return runtime
+	}
+	projectContext := func(r *sessionRuntime) string {
+		turn := loop.Turn{SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model}
+		prepared, err := factory.prepare(t.Context(), turn, r.frozen, r.reads, r.loaded)
+		require.NoError(t, err)
+		for _, block := range prepared.system {
+			if block.Name == agentctx.SectionProjectContext {
+				return block.Text
+			}
+		}
+		t.Fatal("the prompt has no project context section")
+		return ""
+	}
+
+	first := open()
+	require.Contains(t, projectContext(first), "first rule")
+	require.NoError(t, os.WriteFile(rules, []byte("second rule\n"), 0o600))
+	require.Contains(t, projectContext(first), "first rule")
+	require.NotContains(t, projectContext(first), "second rule")
+	require.Contains(t, projectContext(open()), "second rule")
 }
 
 // runtimeMCP observes real SDK sessions, not replacement cleanup callbacks.

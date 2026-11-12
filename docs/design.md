@@ -349,6 +349,7 @@ The prompt is built from named sections in a fixed order: the instructions (buil
 - AGENTS.md from the working directory up to the repository root, plus the global file.
 - Skills: directories with `SKILL.md`, listed by name and description in the system prompt and loaded on demand by a `skill` tool.
 - Extra files and directories from config or `_meta`.
+- All of it is read when the session opens, and every turn uses that copy. The copy is in memory only: `session/new`, `session/load`, `session/resume` and `session/fork` each read the files again, so a loaded or resumed session continues with changed rules. Between two opens the prompt stays the same from turn to turn, which keeps the provider's cached prefix.
 
 ## Sessions and storage
 

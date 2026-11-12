@@ -58,10 +58,15 @@ type runtimeFactory struct {
 }
 
 type sessionRuntime struct {
-	factory        *runtimeFactory
-	manager        *mcp.Manager
-	frozen         []tools.Tool
-	reads          *core.ReadTracker
+	factory *runtimeFactory
+	manager *mcp.Manager
+	frozen  []tools.Tool
+	reads   *core.ReadTracker
+	// loaded is the context files, the skill listing and the configured
+	// sections as they were when the session opened. Every turn uses them,
+	// so a file edited during the session does not change the prompt, and
+	// with it the provider's cached prefix, until a new session.
+	loaded         *agentctx.Loaded
 	mapper         loop.Mapper
 	compactor      *compact.Controller
 	compactorModel string
@@ -172,7 +177,12 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 	r := &sessionRuntime{factory: f, reads: &core.ReadTracker{}}
 	var taken []string
 	if len(f.cfg.Models) != 0 {
-		prepared, err := f.prepare(ctx, base, nil, r.reads)
+		loaded, err := f.loadContext(base)
+		if err != nil {
+			return nil, err
+		}
+		r.loaded = loaded
+		prepared, err := f.prepare(ctx, base, nil, r.reads, r.loaded)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +196,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 	}
 	r.manager, r.frozen = manager, frozen
 	if len(f.cfg.Models) != 0 {
-		prepared, err := f.prepare(ctx, base, frozen, r.reads)
+		prepared, err := f.prepare(ctx, base, frozen, r.reads, r.loaded)
 		if err != nil {
 			return nil, errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 		}
@@ -219,7 +229,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 			selected := turn
 			selected.Model = model
 			var err error
-			prepared, err = f.prepare(ctx, selected, r.frozen, r.reads)
+			prepared, err = f.prepare(ctx, selected, r.frozen, r.reads, r.loaded)
 			return prepared.resolved, err
 		},
 		Store: f.store, System: func(context.Context, loop.Turn) ([]provider.SystemBlock, error) { return prepared.system, nil },
@@ -259,7 +269,18 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 	return l.Run(ctx, turn)
 }
 
-func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *core.ReadTracker) (preparedTurn, error) {
+// loadContext reads what a session's prompt takes from the disk: the context
+// files, the skill listing and the configured sections.
+func (f *runtimeFactory) loadContext(turn loop.Turn) (*agentctx.Loaded, error) {
+	contextConfig := f.cfg.Context
+	contextConfig.Agents = append(slices.Clone(contextConfig.Agents), turn.ContextFiles...)
+	contextConfig.SkillsDirs = append(slices.Clone(contextConfig.SkillsDirs), turn.SkillsDirs...)
+	return agentctx.Load(agentctx.Request{
+		Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME"), Skills: &f.skills,
+	})
+}
+
+func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *core.ReadTracker, loaded *agentctx.Loaded) (preparedTurn, error) {
 	if reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
@@ -271,14 +292,8 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	if err != nil {
 		return preparedTurn{}, err
 	}
-	contextConfig := f.cfg.Context
-	contextConfig.Agents = append(slices.Clone(contextConfig.Agents), turn.ContextFiles...)
-	contextConfig.SkillsDirs = append(slices.Clone(contextConfig.SkillsDirs), turn.SkillsDirs...)
-	loaded, err := agentctx.Load(agentctx.Request{
-		Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME"), Skills: &f.skills,
-	})
-	if err != nil {
-		return preparedTurn{}, err
+	if loaded == nil {
+		return preparedTurn{}, errors.New("session context is required")
 	}
 	env := tools.Env{SessionID: turn.SessionID, Cwd: turn.Cwd, Dirs: slices.Clone(turn.Dirs)}
 	showPlan := func(ctx context.Context, env tools.Env, entries []acp.PlanEntry) error {
