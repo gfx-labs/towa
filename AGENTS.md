@@ -12,6 +12,7 @@ A Go coding agent that speaks ACP. Go 1.27.3, module `github.com/gfx-labs/acphar
 - Tests use testify. Provider tests replay recorded real responses, and tool tests run the tool against real files, a real shell and the real `rg`. No mocked providers, and no hand-written stand-in for a recording. Live checks run by hand behind an env flag. A recording that needs a local model is made from `openai/gpt-oss-20b` on an OpenAI-compatible server that takes no key (LM Studio), through an account of kind `none`. Recordings made earlier from `llama3.2:3b` stay until their request changes.
 - Design notes go in a new file `docs/notes/<date>-<slug>.md` (short, dated). `docs/design.md` holds the current design. Update it when a decision changes.
 - Commits go straight to master until the first milestone.
+- Nothing is released and nobody depends on it. Change a format outright: no migration, no compatibility path, and no note or test about the old format or data stored under it.
 - Plain names, short comments explaining why, no marketing language.
 
 ## JSON
