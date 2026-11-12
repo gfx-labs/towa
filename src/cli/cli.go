@@ -213,7 +213,7 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 	if selected, err := models.Select(loaded.Config.Models, factory.unlisted, ""); err == nil {
 		for _, entry := range selected.Entries {
 			if entry.Listed {
-				tel.Logger.Info("model is not in the built-in table, its figures are from the provider's model list",
+				tel.Logger.Debug("the model's figures are from the provider's model list",
 					"model", entry.Model, "account", entry.Account,
 					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
 			}

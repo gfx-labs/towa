@@ -95,9 +95,8 @@ func (e *ProviderError) Error() string {
 // Select resolves the model a session chose from the configured list. An
 // empty name selects the first. The model's chain is the chosen entry and
 // every entry listed after it. A model the built-in table does not have
-// takes its figures from unlisted. The table outranks a provider's list:
-// Anthropic's lists 1M for claude-opus-4-6, which has it only with a beta
-// this client does not send.
+// takes its figures from unlisted. The table outranks a provider's list: it
+// holds only the models a list does not settle.
 //
 // It is called when a model is selected, so that a model nothing is known
 // about fails then and not in the middle of a turn.

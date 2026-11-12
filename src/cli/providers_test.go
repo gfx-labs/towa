@@ -17,10 +17,10 @@ func TestClaudeThinkingIsLeftOffAModelThatRefusesIt(t *testing.T) {
 	require.NoError(t, err)
 	cfg := loaded.Config.Claude
 
-	// What Anthropic's list said of claude-opus-4-5 on 2026-11-12. The table
-	// does not have that model.
+	// What Anthropic's list said of these two on 2026-11-12.
 	lists := models.Lists{"claude:work": {Models: map[string]models.Listed{
-		"claude-opus-4-5-20251101": {ContextWindow: 200_000, MaxOutputTokens: 64_000, NoAdaptiveThinking: true},
+		"claude-opus-4-5-20251101":  {ContextWindow: 200_000, MaxOutputTokens: 64_000, NoAdaptiveThinking: true},
+		"claude-haiku-4-5-20251001": {ContextWindow: 200_000, MaxOutputTokens: 64_000, NoAdaptiveThinking: true},
 	}}}
 	thinking, err := claudeThinking(cfg, func() models.Lists { return lists })
 	require.NoError(t, err)

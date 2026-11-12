@@ -24,7 +24,7 @@ func (client) Stream(context.Context, provider.Request) iter.Seq2[provider.Event
 func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 	// Two accounts on the provider's own endpoint, then the same model
 	// behind a gateway under another name.
-	list := []string{"claude:work/claude-opus-4-7#high", "claude:personal/claude-opus-4-7", "openrouter:main/anthropic/claude-opus-4.7#low"}
+	list := []string{"codex:work/gpt-6.1-sol#high", "codex:personal/gpt-6.1-sol", "openrouter:main/openai/gpt-6.1-sol#low"}
 
 	// The gateway's name is not in the table, so no model that can fall
 	// back to it is usable until the configuration says what it is.
@@ -58,14 +58,14 @@ func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 	require.Len(t, second.Entries, 2)
 	require.Equal(t, "personal", second.Entries[0].Account)
 
-	clients := map[string]provider.Provider{"claude": client{"claude"}, "openrouter": client{"openrouter"}}
+	clients := map[string]provider.Provider{"codex": client{"codex"}, "openrouter": client{"openrouter"}}
 	lookup := func(id string) (provider.Provider, bool) { c, ok := clients[id]; return c, ok }
 	entries, err := whole.Chain(lookup)
 	require.NoError(t, err)
 	require.Len(t, entries, 3)
 	require.Equal(t, client{"openrouter"}, entries[2].Provider)
 	require.Equal(t, "low", entries[2].Effort)
-	require.Equal(t, "openrouter:main/anthropic/claude-opus-4.7", entries[2].String())
+	require.Equal(t, "openrouter:main/openai/gpt-6.1-sol", entries[2].String())
 
 	delete(clients, "openrouter")
 	_, err = whole.Chain(lookup)
@@ -85,18 +85,16 @@ func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 // A model that came out after the table was written works by its name.
 func TestSelectGuessesANewModelFromItsName(t *testing.T) {
 	figures := func(model string) (models.Metadata, string, error) {
-		m, err := models.Select([]string{"claude:work/" + model}, models.Unlisted{}, "")
+		m, err := models.Select([]string{"codex:work/" + model}, models.Unlisted{}, "")
 		if err != nil {
 			return models.Metadata{}, "", err
 		}
 		return m.Entries[0].Metadata, m.Entries[0].GuessedFrom, nil
 	}
 	for model, row := range map[string]string{
-		"claude-opus-6":            "claude-opus-5-5", // a newer version of a known family
-		"claude-opus-5-5-20261001": "claude-opus-5-5", // a known model with its release date
-		"claude-haiku-6-1":         "claude-haiku-5-5",
-		"gpt-7-sol":                "gpt-6.1-sol",
-		"gpt-6.5-luna":             "gpt-6-luna",
+		"gpt-7-sol":            "gpt-6.1-sol", // a newer version of a known family
+		"gpt-6.1-sol-20261001": "gpt-6.1-sol", // a known model with its release date
+		"gpt-6.5-luna":         "gpt-6-luna",
 	} {
 		want, from, err := figures(row)
 		require.NoError(t, err)
@@ -109,38 +107,39 @@ func TestSelectGuessesANewModelFromItsName(t *testing.T) {
 
 	// A family the table does not have takes what the vendor's newest
 	// models agree on.
-	newest, _, err := figures("claude-opus-5-5")
+	newest, _, err := figures("gpt-6.1-sol")
 	require.NoError(t, err)
-	got, from, err := figures("claude-zephyr-6")
+	got, from, err := figures("gpt-7-nova")
 	require.NoError(t, err)
 	require.Equal(t, newest, got)
 	require.NotEmpty(t, from)
 
 	// Nothing says an older model, another vendor's model or a name
-	// without a version has the figures of a row.
-	for _, model := range []string{"claude-opus-4-5", "claude-3-7-sonnet", "glm-5", "claude-opus-latest"} {
+	// without a version has the figures of a row. No Claude model has a
+	// row: its figures come from Anthropic's model list.
+	for _, model := range []string{"gpt-5.6-sol", "claude-opus-6", "glm-5", "gpt-latest"} {
 		_, _, err := figures(model)
 		var unknown *models.MetadataError
 		require.ErrorAs(t, err, &unknown, model)
 	}
 
 	// A configured figure outranks the guess, and the other is still guessed.
-	set, err := models.Select([]string{"claude:work/claude-opus-6"}, models.Unlisted{Configured: models.Metadata{ContextWindow: 300_000}}, "")
+	set, err := models.Select([]string{"codex:work/gpt-7-sol"}, models.Unlisted{Configured: models.Metadata{ContextWindow: 300_000}}, "")
 	require.NoError(t, err)
 	require.Equal(t, models.Metadata{ContextWindow: 300_000, MaxOutputTokens: newest.MaxOutputTokens}, set.Entries[0].Metadata)
-	require.Equal(t, "claude-opus-5-5", set.Entries[0].GuessedFrom)
+	require.Equal(t, "gpt-6.1-sol", set.Entries[0].GuessedFrom)
 }
 
 // A provider's model list gives the figures of a model the table does not
 // have, and is kept in a file between starts.
 func TestSelectTakesAFigureFromTheProvidersList(t *testing.T) {
-	// What Anthropic's list gave on 2026-11-12 for a model the table does
-	// not have and for one it has, and what the Codex backend's gave, which
-	// has no output limit.
+	// What Anthropic's list gave on 2026-11-12, and what the Codex backend's
+	// gave, which has no output limit, for a model the table has and for
+	// one it does not.
 	lists := models.Lists{
 		"claude:work": {FetchedAtUnixMs: 1794504428000, Models: map[string]models.Listed{
 			"claude-opus-4-5-20251101": {ContextWindow: 200_000, MaxOutputTokens: 64_000},
-			"claude-opus-4-6":          {ContextWindow: 1_000_000, MaxOutputTokens: 128_000},
+			"claude-opus-5-5":          {ContextWindow: 1_000_000, MaxOutputTokens: 128_000},
 		}},
 		"codex:chatgpt": {FetchedAtUnixMs: 1794504428000, Models: map[string]models.Listed{
 			"gpt-6.1-sol": {ContextWindow: 500_000},
@@ -165,10 +164,14 @@ func TestSelectTakesAFigureFromTheProvidersList(t *testing.T) {
 	}
 	fromLists := models.Unlisted{Lists: kept}
 
-	// An older model is not guessed, and the list names it with its date.
-	_, err = entry(models.Unlisted{}, "claude:work/claude-opus-4-5")
+	// Without its account's list nothing is known about a Claude model.
+	_, err = entry(models.Unlisted{}, "claude:work/claude-opus-5-5")
 	var unknown *models.MetadataError
 	require.ErrorAs(t, err, &unknown)
+	current, err := entry(fromLists, "claude:work/claude-opus-5-5")
+	require.NoError(t, err)
+	require.Equal(t, models.Metadata{ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, current.Metadata)
+	// The list names an older model with its date.
 	old, err := entry(fromLists, "claude:work/claude-opus-4-5")
 	require.NoError(t, err)
 	require.Equal(t, models.Metadata{ContextWindow: 200_000, MaxOutputTokens: 64_000}, old.Metadata)
@@ -180,9 +183,9 @@ func TestSelectTakesAFigureFromTheProvidersList(t *testing.T) {
 	require.ErrorAs(t, err, &unknown)
 
 	// The table outranks the list for a model it has.
-	tabled, err := entry(fromLists, "claude:work/claude-opus-4-6")
+	tabled, err := entry(fromLists, "codex:chatgpt/gpt-6.1-sol")
 	require.NoError(t, err)
-	require.EqualValues(t, 200_000, tabled.Metadata.ContextWindow)
+	require.EqualValues(t, 1_050_000, tabled.Metadata.ContextWindow)
 	require.False(t, tabled.Listed)
 
 	// A figure the list does not give is guessed, and one nothing gives is

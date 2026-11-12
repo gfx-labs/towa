@@ -23,7 +23,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 			return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
 		}, func(o *session.Options) {
 			o.Registry = &session.Registry{}
-			require.NoError(t, session.AddModels(o.Registry, configured, models.Unlisted{}))
+			require.NoError(t, session.AddModels(o.Registry, configured, models.Unlisted{Configured: models.Metadata{ContextWindow: 1000, MaxOutputTokens: 100}}))
 		})
 		modelOf := func(options []acp.SessionConfigOption) (acp.SessionConfigValueId, []acp.SessionConfigValueId) {
 			for _, o := range options {

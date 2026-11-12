@@ -14,9 +14,9 @@ Read on 2026-11-12 with the stored logins.
 - Codex backend, `GET https://chatgpt.com/backend-api/codex/models?client_version=1.0.0`, 11 models. Each has `context_window` and no output limit. Without `client_version` the answer is HTTP 400, and with `0.1.0` the list is empty.
 - The OpenAI API key endpoint's list gives neither figure, so an API key account has no list (`provider.ErrNoModelList`).
 
-The lists disagree with the table in two places, and the table wins both:
+The lists disagreed with the table in two places:
 
-- Anthropic lists 1M for `claude-opus-4-6` and `claude-sonnet-4-6`. They have 1M only with the `context-1m` beta, which this client does not send. The table says 200K.
+- Anthropic lists 1M for `claude-opus-4-6` and `claude-sonnet-4-6`, and the table said 200K, from jcode's note that they have 1M only with the `context-1m` beta. The list is right (user, 2026-11-12), and the rows are gone.
 - The Codex list gives `gpt-6.1-sol` a `context_window` of 500,000 and a `max_context_window` of 872,000. The table says 1,050,000 from OpenAI's model page. Which is right for a ChatGPT login is not tested.
 
 ## Decision
@@ -28,6 +28,16 @@ The lists disagree with the table in two places, and the table wins both:
 - The list's adaptive thinking flag is kept too. `claude-opus-4-5` answers the default thinking parameter with HTTP 400, and the table only knew that for `claude-haiku-4-5`.
 - A list names a model with its date, so a name without one matches when exactly one listed model has that family and version.
 
+## The table holds only exceptions
+
+Later the same day the table was cut to what no list settles. All nine Claude rows are gone: Anthropic's list gives both figures and the adaptive thinking flag for each. The four OpenAI rows stay, because no list gives their output limit.
+
+- A Claude model is known only through its account's list. A first start that cannot read it (no network, a login that is not made or has expired) logs a warning and refuses the model, until the list is read once or the two keys are set.
+- The name guess now has only OpenAI rows to copy from, so `claude-opus-6` is not guessed. It works when the account's list has it.
+- A model whose figures come from the list is logged at debug, since that is now every Claude model. A guess is still logged at info.
+
+Checked on account `a-ant` with neither key set: `claude-opus-5-5` and `claude-opus-4-6` start with 1,000,000 and 128,000, `claude-haiku-4-5` with 200,000 and 64,000, and a turn completes on `claude-opus-5-5` and on `claude-haiku-4-5`, which is sent no thinking parameter.
+
 ## Check
 
 Build of this change, account `a-ant`, neither key set:
@@ -35,7 +45,7 @@ Build of this change, account `a-ant`, neither key set:
 | Model | Before | After |
 |---|---|---|
 | `claude-opus-4-5` | refused at start | 200,000 and 64,000 from the list, no thinking parameter, the turn completes |
-| `claude-opus-6` (does not exist) | guessed from `claude-opus-5-5` | the same: the list does not have it |
+| `claude-opus-6` (does not exist) | guessed from `claude-opus-5-5` | the same: the list does not have it (refused since the table was cut) |
 | `codex:gfx/gpt-5.6-sol` | refused at start | window 272,000 from the list, still refused for `model_max_output_tokens` alone |
 
 The first start wrote `models.json` (mode 0600, 2.2 KB, two accounts). A second start within the age left its two read times unchanged.
