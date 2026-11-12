@@ -56,21 +56,28 @@ func TestUpstreamHeredocs(t *testing.T) {
 func TestMoveToSource(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		dest func(dir string) string
+		dest func(t *testing.T, dir string) string
 	}{
-		{"same", func(string) string { return "file.txt" }},
-		{"dot", func(string) string { return "./file.txt" }},
-		{"absolute", func(dir string) string { return filepath.Join(dir, "file.txt") }},
-		{"symlink", func(dir string) string {
+		{"same", func(*testing.T, string) string { return "file.txt" }},
+		{"dot", func(*testing.T, string) string { return "./file.txt" }},
+		{"absolute", func(_ *testing.T, dir string) string { return filepath.Join(dir, "file.txt") }},
+		{"symlink", func(t *testing.T, dir string) string {
 			require.NoError(t, os.Symlink("file.txt", filepath.Join(dir, "link.txt")))
 			return "link.txt"
+		}},
+		{"case", func(t *testing.T, dir string) string {
+			// Only a file system that ignores case has this alias.
+			if _, err := os.Stat(filepath.Join(dir, "FILE.txt")); err != nil {
+				t.Skip("the file system distinguishes case")
+			}
+			return "FILE.txt"
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "file.txt")
 			require.NoError(t, os.WriteFile(path, []byte("one\ntwo\n"), 0o600))
-			p, err := patch.Parse("*** Begin Patch\n*** Update File: file.txt\n*** Move to: " + tc.dest(dir) + "\n@@\n-one\n+uno\n two\n*** End Patch")
+			p, err := patch.Parse("*** Begin Patch\n*** Update File: file.txt\n*** Move to: " + tc.dest(t, dir) + "\n@@\n-one\n+uno\n two\n*** End Patch")
 			require.NoError(t, err)
 			_, err = patch.Apply(context.Background(), fsops.Roots{Cwd: dir}, config.ToolsFiles{EditMaxBytes: 4 << 20}, p)
 			require.NoError(t, err)

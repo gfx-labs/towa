@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -80,20 +81,20 @@ func Apply(ctx context.Context, roots fsops.Roots, cfg config.ToolsFiles, p Patc
 				return result, err
 			}
 			dest := h.Path
-			move := h.Move != ""
-			if move {
+			if h.Move != "" {
 				dest = h.Move
-				// A destination that names the source, through another
-				// spelling or a symbolic link, is an update in place:
-				// removing the source would remove what was just written.
-				// An error is left for Write or Remove to report.
-				from, fromErr := roots.Resolve(h.Path)
-				to, toErr := roots.Resolve(dest)
-				move = fromErr != nil || toErr != nil || from != to
 			}
 			change, err := fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: dest, Content: text})
 			if err != nil {
 				return result, fmt.Errorf("Failed to write file %s: %w", dest, err)
+			}
+			move := h.Move != ""
+			if move {
+				move, err = movedAway(roots, h.Path, change.Path)
+				if err != nil {
+					result.Changes = append(result.Changes, Applied{Add, dest, change})
+					return result, fmt.Errorf("Failed to compare original %s with %s, so it was kept: %w", abs, dest, err)
+				}
 			}
 			if move {
 				// Record the destination before Remove, which can fail independently.
@@ -113,4 +114,26 @@ func Apply(ctx context.Context, roots fsops.Roots, cfg config.ToolsFiles, p Patc
 		}
 	}
 	return result, nil
+}
+
+// movedAway reports whether the source of a move is still a file apart from
+// the destination just written. The write put a new inode in place of the
+// destination, so the source names that inode when the destination was the
+// source under another spelling: a symbolic link, or a case alias on a file
+// system that ignores case. A hard link to the source keeps the old inode
+// and is a separate name.
+func movedAway(roots fsops.Roots, source, written string) (bool, error) {
+	from, err := roots.Resolve(source)
+	if err != nil {
+		return false, err
+	}
+	fromInfo, err := os.Stat(from)
+	if err != nil {
+		return false, err
+	}
+	toInfo, err := os.Stat(written)
+	if err != nil {
+		return false, err
+	}
+	return !os.SameFile(fromInfo, toInfo), nil
 }
