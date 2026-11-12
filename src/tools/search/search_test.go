@@ -136,6 +136,14 @@ func TestFindListsFilesWithOffsetAndLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub/notes.md"}, paths(env, res.Files))
 
+	// A glob that names a directory is taken from the directory searched.
+	deep := filepath.Join(env.Cwd, "sub", "deep", "e.go")
+	require.NoError(t, os.MkdirAll(filepath.Dir(deep), 0o755))
+	require.NoError(t, os.WriteFile(deep, []byte("package deep\n"), 0o644))
+	res, err = search.Find(ctx, env, cfg, search.Filter{Path: "sub", Globs: []string{"deep/*.go"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub/deep/e.go"}, paths(env, res.Files))
+
 	// Results over the output size stop the search and say so.
 	cfg.MaxOutputBytes = int64(len(filepath.Join(env.Cwd, "a.go")) + 1)
 	res, err = search.Find(ctx, env, cfg, search.Filter{})

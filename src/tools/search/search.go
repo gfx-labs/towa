@@ -248,18 +248,25 @@ func (f Filter) run(ctx context.Context, env tools.Env, cfg config.Tools, args [
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := os.Stat(target); err != nil {
+	info, err := os.Stat(target)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Result{}, &fsops.Error{Kind: fsops.KindNotFound, Path: path, Err: err}
 		}
 		return Result{}, fmt.Errorf("search: %w", err)
+	}
+	// rg matches a glob that names a directory, such as "sub/*.go", from
+	// the directory it runs in, not from the path it searches.
+	dir := env.Cwd
+	if info.IsDir() {
+		dir = target
 	}
 
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	// rg is given an absolute path, so the paths it prints are absolute.
 	cmd := exec.CommandContext(runCtx, program, append(args, "--", target)...)
-	cmd.Dir = env.Cwd
+	cmd.Dir = dir
 	stderr := &headWriter{keep: stderrKeep}
 	cmd.Stderr = stderr
 	stdout, err := cmd.StdoutPipe()
