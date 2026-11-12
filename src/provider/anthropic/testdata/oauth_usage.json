@@ -1,0 +1,99 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.anthropic.com/api/oauth/usage",
+    "header": {
+      "Accept": [
+        "application/json"
+      ],
+      "Anthropic-Beta": [
+        "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,advanced-tool-use-2025-11-20,effort-2025-11-24"
+      ],
+      "Anthropic-Version": [
+        "2023-06-01"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "User-Agent": [
+        "towa/recording"
+      ],
+      "X-Client-Request-Id": [
+        "83a775ba-b513-4ee9-80fc-40a901a0e60d"
+      ]
+    },
+    "body": {
+      "text": ""
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Anthropic-Organization-Id": [
+        "REDACTED"
+      ],
+      "Anthropic-Workspace-Id": [
+        "REDACTED"
+      ],
+      "Cf-Cache-Status": [
+        "DYNAMIC"
+      ],
+      "Cf-Ray": [
+        "a5992c9549c7dadf-ORD"
+      ],
+      "Content-Security-Policy": [
+        "default-src 'none'; frame-ancestors 'none'"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "Date": [
+        "Thu, 12 Nov 2026 23:04:09 GMT"
+      ],
+      "Request-Id": [
+        "req_011CgysQYaJxvMD7G2a3f2L2"
+      ],
+      "Server": [
+        "cloudflare"
+      ],
+      "Server-Timing": [
+        "x-originResponse;dur=58"
+      ],
+      "Strict-Transport-Security": [
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      "Vary": [
+        "Accept-Encoding"
+      ],
+      "X-Robots-Tag": [
+        "none"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "{\"five_hour\":null,\"seven_day\":{\"utilization\":46.0,\"resets_at\":\"2"
+      },
+      {
+        "text": "026-11-18T04:59:58.884333+00:00\",\"limit_dollars\":null,\"used_d"
+      },
+      {
+        "text": "ollars\":null,\"remaining_dollars\":null,\"locked_reason\":nu"
+      },
+      {
+        "text": "ll},\"seven_day_oauth_apps\":null,\"seven_day_opus\":null,\"seven_day_sonnet\":null,\"seven_day_cowork\":null,\"seven_day_omelette\":nu"
+      },
+      {
+        "text": "ll,\"tangelo\":null,\"iguana_necktie\":null,\"omelette_promotional\":null,\"nimbus_quill\":null,\"cinder_cove\":null,\"copper_kite\":null,\"brass_thimble\":null,\"harbor_lantern\":null,\"wattle_ember\":null,\"promo_credits\":null,\"amber_ladder\":null,\"granite_teacup\":null,\""
+      },
+      {
+        "text": "amber_cistern\":null,\"amber_cistern_offer\":null,\"juniper_tide\":null,\"cedar_ember\":null,\"starry_waterfall\":null,\"amber_gauge\":null,\"pace\":null,\"indicator\":null,\"extra_usage\":{\"is_enabled\":false,\"monthly_limit\":null,\"used_credits\":null,\"utilization\":null,\"currency\":null,\"decimal_places\":null,\"disabled_reason\":null,\"user_disabled\":false,\"spend_limit_reached\":false,\"credits_ever_enabled\":false,\"daily\":null,\"weekly\":null},\"limits\":[{\"kind\":\"weekly_all\",\"group\":\"weekly\",\"percent\":46,\"severity\":\"normal\",\"resets_a"
+      },
+      {
+        "text": "t\":\"2026-11-18T04:59:58.884333+00:00\",\"scope\":null,\"is_active\":false},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"percent\":76,\"severity\":\"warning\",\"resets_at\":\"2026-11-18T04:59:59.884460+00:00\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"is_active\":true}],\"spend\":{\"used\":{\"amount_minor\":0,\"currency\":\"USD\",\"exponent\":2},\"limit\":null,\"percent\":0,\"severity\":\"normal\",\"enabled\":false,\"disabled_reason\":null,\"cap\":null,\"balance\":null,\"auto_reload\":null,\"disclaimer\":\"Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)\",\"can_purchase_credits\":false,\"can_toggle\":false},\"member_dashboard_available\":false,\"seven_day_breakdown\":{\"as_of\":\"2026-11-12T23:04:09.899996+00:00\",\"window_started_at\":\"2026-11-11T04:59:58.884333+00:00\",\"rows\":[{\"key\":\"claude_code\",\"display_name\":\"Claude Code\",\"percent\":100},{\"key\":\"chat\",\"display_name\":\"Chats\",\"percent\":0},{\"key\":\"cowork\",\"display_name\":\"Cowork\",\"percent\":0},{\"key\":\"other\",\"display_name\":\""
+      },
+      {
+        "text": "Other\",\"percent\":0}]},\"weekly_scoped_shares\":[{\"limit_index\":1,\"used_percent_of_weekly\":38,\"allowance_percent_of_weekly\":50}]}"
+      }
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://chatgpt.com/backend-api/wham/usage",
+    "header": {
+      "Accept": [
+        "application/json"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Chatgpt-Account-Id": [
+        "REDACTED"
+      ],
+      "Originator": [
+        "towa"
+      ]
+    },
+    "body": {
+      "text": ""
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Cf-Cache-Status": [
+        "DYNAMIC"
+      ],
+      "Cf-Ray": [
+        "a5993277aa0098a7-ORD"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "Cross-Origin-Opener-Policy": [
+        "same-origin-allow-popups"
+      ],
+      "Date": [
+        "Thu, 12 Nov 2026 23:08:11 GMT"
+      ],
+      "Nel": [
+        "{\"report_to\":\"cf-nel\",\"success_fraction\":0.01,\"max_age\":604800}"
+      ],
+      "Referrer-Policy": [
+        "strict-origin-when-cross-origin"
+      ],
+      "Report-To": [
+        "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=RafXUG8LPLSEBbCeeONil9pKnqLeHGOTEM1RhWYAsQ7eWgtPis5yaeEMeJjXxmYT0Lip1QoeIop9pBZkSY73TZd5T%2BYjDJBmB6buTYK9eju1vGae%2FJg4RqB%2BnbHYiQMdB6oiDR%2BBy1d8\"}]}"
+      ],
+      "Server": [
+        "cloudflare"
+      ],
+      "Set-Cookie": [
+        "REDACTED",
+        "REDACTED",
+        "REDACTED"
+      ],
+      "Strict-Transport-Security": [
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      "X-Content-Type-Options": [
+        "nosniff"
+      ],
+      "X-Oai-Request-Id": [
+        "024a06b0-136a-4de7-9c51-cca1cefc9b37"
+      ],
+      "X-Openai-Proxy-Wasm": [
+        "v0.1"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "{\n  \"user_id\": \"REDACTED\",\n  \"account_id\": "
+      },
+      {
+        "text": "\"REDACTED\",\n  \"email\": \"REDACTED"
+      },
+      {
+        "text": "\",\n  \"plan_type\": \"promax\",\n  \"rate_limit\": {\n"
+      },
+      {
+        "text": "    \"allowed\": true,\n    \"limit_reached\": false,\n    \"primary_window\": {\n      \"used_percent\": 77,\n      \"limit_window_seconds\""
+      },
+      {
+        "text": ": 604800,\n      \"reset_after_seconds\": 375394,\n      \"reset_at\": 1794900284\n    },\n    \"secondary_window\": null\n  },\n  \"code_review_rate_limit\": null,\n  \"additional_rate_limits\": null,\n  \"model_usage\": {\n    \"gpt-6-astra\": {\n      \"available\": true,\n      "
+      },
+      {
+        "text": "\"available_at\": null,\n      \"credits_would_enable\": false\n    }\n  },\n  \"credits\": {\n    \"has_credits\": true,\n    \"unlimited\": false,\n    \"overage_limit_reached\": false,\n    \"balance\": \"REDACTED\",\n    \"approx_local_messages\": [\n      21500,\n      111802\n    ],\n    \"approx_cloud_messages\": [\n      3440,\n      21500\n    ]\n  },\n  \"spend_control\": {\n    \"reached\": false,\n    \"individual_limit\": null\n  },\n  \"rate_limit_reached_type\": null,\n  \"promo\": null,\n  \"rate_limit_reset_credits\": {\n    \"avai"
+      },
+      {
+        "text": "lable_count\": 2,\n    \"applicable_available_count\": 0\n  }\n}"
+      }
+    ]
+  }
+}

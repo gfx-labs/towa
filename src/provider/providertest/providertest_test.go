@@ -73,13 +73,13 @@ func send(t *testing.T, client *http.Client, base, body string, afterFirstRead f
 	}
 }
 
-func record(t *testing.T, cutOff bool) (path, body string, readErr error) {
+func record(t *testing.T, cutOff bool, moreSecrets ...string) (path, body string, readErr error) {
 	t.Helper()
 	firstRead := make(chan struct{})
 	server := upstream(t, firstRead, cutOff)
 	path = filepath.Join(t.TempDir(), "exchange.json")
 	client := httpclient.New()
-	recorder := &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{testKey}}
+	recorder := &providertest.Recorder{Next: client.Transport, Path: path, Secrets: append([]string{testKey}, moreSecrets...)}
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := r.Clone(r.Context())
 		req.URL.Scheme = "http"
@@ -192,6 +192,23 @@ func TestRecordingHoldsTheExchangeWithoutSecrets(t *testing.T) {
 		providertest.Bytes("data: second\n\n"),
 	}, ex.Response.Chunks, "chunk boundaries are kept")
 	require.False(t, ex.Response.Incomplete)
+}
+
+// A value to keep out of a recording can arrive in two reads. It is replaced
+// all the same, and the client still reads what the provider sent.
+func TestRecordingReplacesASecretSplitAcrossTwoReads(t *testing.T) {
+	const split = "\n\ndata: sec"
+	path, body, err := record(t, false, split)
+	require.NoError(t, err)
+	require.Equal(t, "data: first "+testKey+"\n\ndata: second\n\n", body)
+
+	ex, err := providertest.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, []providertest.Bytes{
+		providertest.Bytes("data: first " + providertest.Redacted + providertest.Redacted),
+		providertest.Bytes("ond\n\n"),
+	}, ex.Response.Chunks)
+	require.NotContains(t, string(ex.Response.Body()), split)
 }
 
 func TestReplayServesTheRecordingToTheSameRequest(t *testing.T) {

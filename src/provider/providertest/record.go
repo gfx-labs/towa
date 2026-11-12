@@ -123,18 +123,67 @@ func (b *recordingBody) finish() error {
 	}
 	b.written = true
 	secrets := b.rec.Secrets
-	for i, c := range b.ex.Response.Chunks {
-		b.ex.Response.Chunks[i] = Bytes(redactString(string(c), secrets))
-	}
-	// A secret split across two reads is not replaced above. Writing it
-	// would leak it, so the recording is refused.
+	b.ex.Response.Chunks = redactChunks(b.ex.Response.Chunks, secrets)
+	// Nothing above should leave a secret. Writing one would leak it, so the
+	// recording is refused if it did.
 	whole := b.ex.Response.Body()
 	for _, secret := range secrets {
 		if secret != "" && bytes.Contains(whole, []byte(secret)) {
-			return fmt.Errorf("providertest: a secret spans two chunks of the response, %s was not written", b.rec.Path)
+			return fmt.Errorf("providertest: a secret is left in the response, %s was not written", b.rec.Path)
 		}
 	}
 	return b.ex.write(b.rec.Path)
+}
+
+// redactChunks replaces every secret in the body the chunks make up, and
+// returns it in the same number of chunks. A secret can lie across two
+// reads, so it is looked for in the whole body. A chunk boundary inside a
+// secret moves to the end of what replaced it. Every other boundary stays
+// where it was.
+func redactChunks(chunks []Bytes, secrets []string) []Bytes {
+	var whole []byte
+	ends := make([]int, len(chunks))
+	for i, c := range chunks {
+		whole = append(whole, c...)
+		ends[i] = len(whole)
+	}
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		var out []byte
+		moved := make([]int, len(ends))
+		at, next := 0, 0
+		for {
+			found := bytes.Index(whole[at:], []byte(secret))
+			stop := len(whole)
+			if found >= 0 {
+				stop = at + found
+			}
+			for next < len(ends) && ends[next] <= stop {
+				moved[next] = len(out) + ends[next] - at
+				next++
+			}
+			out = append(out, whole[at:stop]...)
+			if found < 0 {
+				break
+			}
+			out = append(out, Redacted...)
+			at = stop + len(secret)
+			for next < len(ends) && ends[next] < at {
+				moved[next] = len(out)
+				next++
+			}
+		}
+		whole, ends = out, moved
+	}
+	redacted := make([]Bytes, len(chunks))
+	start := 0
+	for i, end := range ends {
+		redacted[i] = Bytes(bytes.Clone(whole[start:end]))
+		start = end
+	}
+	return redacted
 }
 
 func redactURL(u *url.URL, secrets []string) string {

@@ -69,6 +69,7 @@ type commandLine struct {
 	Login    loginCmd    `cmd:"" help:"Log in to ${login_providers} and store the login in auth.json, creating the account when it is new."`
 	Logout   logoutCmd   `cmd:"" help:"Delete an account's stored login."`
 	Accounts accountsCmd `cmd:"" help:"List the accounts of the configuration and of auth.json, and whether each can be used."`
+	Usage    usageCmd    `cmd:"" help:"Ask each subscription account's provider how much of its limits is used and when they reset."`
 	MCP      mcpCmd      `cmd:"" name:"mcp" help:"Manage the OAuth logins of remote MCP servers."`
 	Hosts    hostsCmd    `cmd:"" help:"List the hosts the resolved configuration contacts, one host:port and its config key per line."`
 }
