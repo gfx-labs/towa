@@ -55,13 +55,16 @@ func conversation(providerID string) []transcript.Item {
 		{Thinking: &transcript.Thinking{Text: "I should look."}, Provider: providerID, Opaque: jsontext.Value(`{"field":"reasoning_content"}`), Origin: &transcript.Origin{Model: "deepseek-chat", Account: "main"}},
 		{Text: &transcript.Text{Text: "Looking."}, Provider: providerID},
 		{ToolCall: &transcript.ToolCall{ID: "call_1", Name: "shell", Input: jsontext.Value(`{"command":"ls"}`)}, Provider: providerID},
-		// Arguments that were not valid JSON are stored in a JSON string.
+		// Arguments that were not a JSON object are stored in a JSON string.
 		{ToolCall: &transcript.ToolCall{ID: "call_2", Name: "shell", Input: jsontext.Value(`"{\"command\":"`)}, Provider: providerID},
+		// An object the model wrote inside a JSON string, which the repair ran.
+		{ToolCall: &transcript.ToolCall{ID: "call_3", Name: "shell", Input: jsontext.Value(`"{\"command\":\"pwd\"}"`)}, Provider: providerID},
 		{ToolResult: &transcript.ToolResult{CallID: "call_1", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
 			{Text: "a.go\n"},
 			{Stored: &transcript.Stored{Hash: "sha256:00", Size: 9000}},
 		}}},
 		{ToolResult: &transcript.ToolResult{CallID: "call_2", Name: "shell", Outcome: transcript.OutcomeFailed, Parts: []transcript.Part{{Text: "invalid arguments"}}}},
+		{ToolResult: &transcript.ToolResult{CallID: "call_3", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "/work\n"}}}},
 		{User: &transcript.User{Parts: []transcript.Part{
 			{Text: "and this picture"},
 			{Image: &transcript.Blob{MimeType: "image/png", Data: []byte{1, 2, 3}}},
@@ -97,10 +100,12 @@ func TestRequestBodyForAPlainEndpoint(t *testing.T) {
 			{"role": "user", "content": "list the files"},
 			{"role": "assistant", "content": "Looking.", "reasoning_content": "I should look.", "tool_calls": [
 				{"id": "call_1", "type": "function", "function": {"name": "shell", "arguments": "{\"command\":\"ls\"}"}},
-				{"id": "call_2", "type": "function", "function": {"name": "shell", "arguments": "{\"command\":"}}
+				{"id": "call_2", "type": "function", "function": {"name": "shell", "arguments": "{\"input\":\"{\\\"command\\\":\"}"}},
+				{"id": "call_3", "type": "function", "function": {"name": "shell", "arguments": "{\"command\":\"pwd\"}"}}
 			]},
 			{"role": "tool", "tool_call_id": "call_1", "content": "a.go\n"},
 			{"role": "tool", "tool_call_id": "call_2", "content": "invalid arguments"},
+			{"role": "tool", "tool_call_id": "call_3", "content": "/work\n"},
 			{"role": "user", "content": [
 				{"type": "text", "text": "and this picture"},
 				{"type": "image_url", "image_url": {"url": "data:image/png;base64,AQID"}}
@@ -193,6 +198,37 @@ func TestReasoningDetailsGoBackAsTheyCame(t *testing.T) {
 		{"role":"assistant","content":"Done.","reasoning_details":[
 			{"type":"reasoning.text","text":"Let me think about this step by step...","signature":"sig","id":"reasoning-text-1","format":"anthropic-claude-v1","index":0}
 		]}
+	]}`, string(body))
+}
+
+// The tool_calls element is the fragment quoted in router-for-me/CLIProxyAPI
+// issue 6516, an endpoint writing a call to a tool that takes nothing. The
+// chunk around it is written here: no server at hand streams one. vLLM issue
+// 19419 and Ollama 0.24.0 show what the same text does when it goes back:
+// the server parses it and refuses the request.
+func TestACallWithNoArgumentTextIsAnEmptyObject(t *testing.T) {
+	c := newClient(t, config.Provider{})
+	req := provider.Request{Model: "m", Credential: auth.Credential{Account: "main"}}
+	s := &streamState{client: c, req: req, status: http.StatusOK}
+	require.Nil(t, s.chunk([]byte(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_x","function":{"name":"get_time","arguments":""}}]},"finish_reason":"tool_calls"}]}`)))
+	s.out = nil
+	require.Nil(t, s.end())
+	require.Len(t, s.out, 2)
+	call := s.out[0].Item
+	require.Equal(t, "{}", string(call.ToolCall.Input))
+	require.Equal(t, provider.StopToolUse, s.out[1].Stop)
+
+	req.Items = []transcript.Item{
+		{User: &transcript.User{Parts: []transcript.Part{{Text: "what time is it"}}}},
+		*call,
+		{ToolResult: &transcript.ToolResult{CallID: "call_x", Name: "get_time", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "12:00"}}}},
+	}
+	body, perr := encoded(c, req)
+	require.Nil(t, perr)
+	require.JSONEq(t, `{"model":"m","stream":true,"stream_options":{"include_usage":true},"messages":[
+		{"role":"user","content":"what time is it"},
+		{"role":"assistant","tool_calls":[{"id":"call_x","type":"function","function":{"name":"get_time","arguments":"{}"}}]},
+		{"role":"tool","tool_call_id":"call_x","content":"12:00"}
 	]}`, string(body))
 }
 

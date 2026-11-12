@@ -337,15 +337,8 @@ func (s *streamState) end() *provider.Error {
 		if call.id == "" || call.name == "" {
 			return s.malformed(nil, "tool call %d has no id or no name", i)
 		}
-		args := call.args.String()
-		input := jsontext.Value(args)
-		if !input.IsValid() {
-			// Kept as the model wrote it, in a JSON string, for the
-			// tool's argument repair to judge. It goes back unquoted.
-			input = jsonString(args)
-		}
 		item := &transcript.Item{
-			ToolCall: &transcript.ToolCall{ID: call.id, Name: call.name, Input: input}, Provider: id,
+			ToolCall: &transcript.ToolCall{ID: call.id, Name: call.name, Input: argument(call.args.String())}, Provider: id,
 		}
 		if call.extra != nil {
 			opaque, err := json.Marshal(toolCallOpaque{ExtraContent: call.extra})
@@ -363,6 +356,22 @@ func (s *streamState) end() *provider.Error {
 	}
 	s.out = append(s.out, provider.Event{Stop: stop})
 	return nil
+}
+
+// argument is a tool call's input as it is stored: a JSON object or a JSON
+// string, as transcript.ToolCall.Input says. A call with no argument text is
+// the empty object, which is how vLLM and others write a call to a tool that
+// takes nothing. A JSON string is kept for the argument repair, which reads
+// an object the model wrote inside one. Any other text is kept in a JSON
+// string, so that nothing the model wrote is lost.
+func argument(text string) jsontext.Value {
+	if strings.TrimSpace(text) == "" {
+		return jsontext.Value("{}")
+	}
+	if v := jsontext.Value(text); v.IsValid() && (v.Kind() == '{' || v.Kind() == '"') {
+		return v
+	}
+	return jsonString(text)
 }
 
 func (s *streamState) detailValues() []jsontext.Value {

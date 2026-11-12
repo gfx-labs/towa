@@ -364,17 +364,36 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 	return out, nil
 }
 
-// arguments returns a tool call's argument as the text the model wrote. A
-// JSON string holds text that was not valid JSON, and goes back unquoted.
+// arguments returns the text of a tool call's arguments member, which has to
+// hold a JSON object: Ollama and vLLM parse it and refuse the whole request
+// otherwise, in every later turn of the session. An object the model wrote
+// inside a JSON string, which the argument repair ran, goes back as the
+// object. Any other input, which is JSON the model left unfinished or
+// another provider's free-text call, is sent as an object with the value
+// under "input", so the model still sees what was written.
 func arguments(i int, input jsontext.Value) (string, *provider.Error) {
-	if input.Kind() != '"' {
+	if input.Kind() == '{' {
 		return string(input), nil
 	}
-	var s string
-	if err := json.Unmarshal(input, &s); err != nil {
+	fail := func(err error) (string, *provider.Error) {
 		return "", &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: tool call input", i), Err: err}
 	}
-	return s, nil
+	if input.Kind() == '"' {
+		var text string
+		if err := json.Unmarshal(input, &text); err != nil {
+			return fail(err)
+		}
+		if v := jsontext.Value(text); v.IsValid() && v.Kind() == '{' {
+			return text, nil
+		}
+	}
+	wrapped, err := json.Marshal(struct {
+		Input jsontext.Value `json:"input"`
+	}{input})
+	if err != nil {
+		return fail(err)
+	}
+	return string(wrapped), nil
 }
 
 func linkText(l *transcript.Link) string {
