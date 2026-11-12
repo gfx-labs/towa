@@ -352,7 +352,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	result.resolved = loop.Resolved{
 		Provider: routed, Tools: assembled.Set, Model: first.Model,
 		ProviderName: first.Provider, ContextSize: first.Metadata.ContextWindow, MaxOutputTokens: first.Metadata.MaxOutputTokens,
-		Interruption: agentctx.Interruption,
+		Effort: selected.Effort, Interruption: agentctx.Interruption,
 	}
 	result.mapper = loop.Mapper{
 		Tools: assembled.Set,

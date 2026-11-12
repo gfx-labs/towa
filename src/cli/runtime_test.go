@@ -137,6 +137,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	sizes := config.Model{ContextWindow: 100_000, MaxOutputTokens: 1024}
 	hostedModel, plainModel := sizes, sizes
 	hostedModel.Chain, plainModel.Chain = []string{"codex:chat/gpt-5.5"}, []string{"other:local/gpt-5.5"}
+	hostedModel.Effort = "medium"
 	cfg.Models = map[string]config.Model{"hosted": hostedModel, "plain": plainModel}
 	cfg.DefaultModel = "plain"
 	home := t.TempDir()
@@ -148,13 +149,15 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, factory.Close()) })
 
-	section := func(model string) string {
+	section := func(model, effort string) string {
 		turn := loop.Turn{
 			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
 			Update: func(context.Context, acp.SessionUpdate) error { return nil },
 		}
 		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{})
 		require.NoError(t, err)
+		// The model's effort goes with the turn's requests as written.
+		require.Equal(t, effort, prepared.resolved.Effort)
 		for _, block := range prepared.system {
 			if block.Name == agentctx.SectionTools {
 				return block.Text
@@ -163,7 +166,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		t.Fatal("the prompt has no tools section")
 		return ""
 	}
-	plain, hosted := section("plain"), section("hosted")
+	plain, hosted := section("plain", ""), section("hosted", "medium")
 	require.Contains(t, plain, "with "+extras.NameWebSearch+".")
 	require.Contains(t, hosted, "with "+hostedsearch.Name+".")
 	require.NotContains(t, hosted, extras.NameWebSearch)
