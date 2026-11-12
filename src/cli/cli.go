@@ -188,14 +188,29 @@ func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
 	if err != nil {
 		return err
 	}
+	stopPprof := func() error { return nil }
+	if address := loaded.Config.Telemetry.Pprof.Address; address != "" {
+		if stopPprof, err = servePprof(ctx, address, tel.Logger); err != nil {
+			return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
+		}
+	}
+	err = serveACP(ctx, loaded, h, tel)
+	err = errors.Join(err, stopPprof())
+	tel.Logger.Info("stopped", "err", err)
+	// ctx may be cancelled already. The exporters' own timeouts bound this.
+	return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
+}
 
+// serveACP serves the configured transports until they end, then closes
+// what it opened.
+func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry.Telemetry) error {
 	factory, err := newRuntimeFactory(ctx, loaded.Config, h, tel)
 	if err != nil {
-		return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
+		return err
 	}
 	registry := &session.Registry{}
 	if err := session.AddModels(registry, loaded.Config.DefaultModel, loaded.Config.Models); err != nil {
-		return errors.Join(err, factory.Close(), tel.Shutdown(context.WithoutCancel(ctx)))
+		return errors.Join(err, factory.Close())
 	}
 	host, err := session.NewHost(session.Options{
 		Version:  version(),
@@ -215,17 +230,14 @@ func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
 		Mapper: loop.Mapper{},
 	})
 	if err != nil {
-		return errors.Join(err, factory.Close(), tel.Shutdown(context.WithoutCancel(ctx)))
+		return errors.Join(err, factory.Close())
 	}
 	err = serveListeners(ctx, loaded.Config.Listen, host, h, tel.Logger, h.CloseStdio)
 	if ctx.Err() != nil && errors.Is(err, context.Cause(ctx)) {
 		err = nil
 	}
 	err = errors.Join(err, host.Close(context.WithoutCancel(ctx)))
-	err = errors.Join(err, factory.Close())
-	tel.Logger.Info("stopped", "err", err)
-	// ctx may be cancelled already. The exporters' own timeouts bound this.
-	return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
+	return errors.Join(err, factory.Close())
 }
 
 type configCmd struct{}

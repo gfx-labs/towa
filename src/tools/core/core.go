@@ -10,6 +10,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/src/config"
@@ -66,7 +67,27 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 	return result, nil
 }
 
+type parsedSpec struct {
+	spec     provider.Tool
+	guidance []string
+	err      error
+}
+
+// parsed holds each spec file as it was decoded, by tool name. The files
+// are embedded and the same for every session, so they are decoded once.
+var parsed sync.Map
+
 func definition(name string) (provider.Tool, []string, error) {
+	if p, ok := parsed.Load(name); ok {
+		p := p.(parsedSpec)
+		return p.spec, p.guidance, p.err
+	}
+	spec, guidance, err := decodeSpec(name)
+	parsed.Store(name, parsedSpec{spec: spec, guidance: guidance, err: err})
+	return spec, guidance, err
+}
+
+func decodeSpec(name string) (provider.Tool, []string, error) {
 	raw, err := specs.ReadFile("specs/" + name + ".json")
 	if err != nil {
 		return provider.Tool{}, nil, err

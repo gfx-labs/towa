@@ -51,3 +51,15 @@ func TestListenRefusesAnOpenPortThatWasNotAskedFor(t *testing.T) {
 		})
 	}
 }
+
+func TestPprofIsServedOnlyOnALoopbackAddress(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:6060", "localhost:0", "[::1]:6060"} {
+		loaded, err := config.Load(config.Sources{}, "--telemetry.pprof.address", address)
+		require.NoError(t, err, address)
+		require.Equal(t, address, loaded.Config.Telemetry.Pprof.Address)
+	}
+	for _, address := range []string{":6060", "0.0.0.0:6060", "example.com:6060", "127.0.0.1"} {
+		_, err := config.Load(config.Sources{}, "--telemetry.pprof.address", address)
+		require.ErrorContains(t, err, "telemetry.pprof.address", address)
+	}
+}

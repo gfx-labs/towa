@@ -4,10 +4,13 @@
 package toolset
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/tools"
@@ -35,6 +38,64 @@ type Input struct {
 	// Gate is tools.gate. When it is enabled every tool's schema gets the
 	// member that asks for a withheld result.
 	Gate config.ToolsGate
+	// Schemas keeps the schemas of the core tools and the extras between
+	// sessions. Nil compiles them again.
+	Schemas *Cache
+}
+
+// Cache keeps the input schema of each core tool and extra as it is sent
+// and as it is compiled, so that the sessions of one process share one copy.
+// It holds one entry per tool name. A tool whose schema or gate setting
+// differs from the entry is compiled again and replaces it. MCP tools are
+// not kept: their names and schemas differ by session.
+type Cache struct {
+	mu      sync.Mutex
+	entries map[string]cacheEntry
+}
+
+type cacheEntry struct {
+	// source is the schema the tool came with.
+	source jsontext.Value
+	gated  bool
+	// sent is source with the gate's member when gated.
+	sent     jsontext.Value
+	compiled *repair.Schema
+}
+
+// prepare returns the schema to send for a tool and its compiled form.
+func prepare(source jsontext.Value, gated bool) (jsontext.Value, *repair.Schema, error) {
+	sent := source
+	if gated {
+		var err error
+		if sent, err = withAcceptMember(source); err != nil {
+			return nil, nil, err
+		}
+	}
+	compiled, err := repair.Compile(sent)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sent, compiled, nil
+}
+
+func (c *Cache) prepare(name string, source jsontext.Value, gated bool) (jsontext.Value, *repair.Schema, error) {
+	c.mu.Lock()
+	entry, ok := c.entries[name]
+	c.mu.Unlock()
+	if ok && entry.gated == gated && bytes.Equal(entry.source, source) {
+		return entry.sent, entry.compiled, nil
+	}
+	sent, compiled, err := prepare(source, gated)
+	if err != nil {
+		return nil, nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[string]cacheEntry{}
+	}
+	c.entries[name] = cacheEntry{source: source, gated: gated, sent: sent, compiled: compiled}
+	return sent, compiled, nil
 }
 
 // Result is a session's tools.
@@ -136,6 +197,8 @@ func Assemble(ctx context.Context, in Input) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	// shared counts the core tools and extras, which come first.
+	shared := len(set.Tools)
 	if err := add("mcp", in.MCP); err != nil {
 		return Result{}, err
 	}
@@ -148,18 +211,18 @@ func Assemble(ctx context.Context, in Input) (Result, error) {
 		if len(spec.InputSchema) == 0 {
 			continue
 		}
-		if in.Gate.Enabled {
-			gated, err := withAcceptMember(spec.InputSchema)
-			if err != nil {
-				return Result{}, &SchemaError{Tool: spec.Name, Err: err}
-			}
-			spec.InputSchema = gated
+		var sent jsontext.Value
+		var compiled *repair.Schema
+		var err error
+		if in.Schemas != nil && i < shared {
+			sent, compiled, err = in.Schemas.prepare(spec.Name, spec.InputSchema, in.Gate.Enabled)
+		} else {
+			sent, compiled, err = prepare(spec.InputSchema, in.Gate.Enabled)
 		}
-		schema, err := repair.Compile(spec.InputSchema)
 		if err != nil {
 			return Result{}, &SchemaError{Tool: spec.Name, Err: err}
 		}
-		schemas[spec.Name] = schema
+		spec.InputSchema, schemas[spec.Name] = sent, compiled
 	}
 	return Result{Set: set, Schemas: schemas}, nil
 }

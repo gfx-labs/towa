@@ -52,8 +52,26 @@ type Telemetry struct {
 	// OTel turns on the export of traces, metrics and logs over OTLP/HTTP.
 	// The endpoint and headers come from the standard OTEL_EXPORTER_OTLP_*
 	// environment variables.
-	OTel bool `name:"otel" help:"Export traces, metrics and logs over OTLP/HTTP, to the endpoint the OTEL_EXPORTER_OTLP_* variables name."`
-	Logs Logs `embed:"" prefix:"logs."`
+	OTel  bool  `name:"otel" help:"Export traces, metrics and logs over OTLP/HTTP, to the endpoint the OTEL_EXPORTER_OTLP_* variables name."`
+	Logs  Logs  `embed:"" prefix:"logs."`
+	Pprof Pprof `embed:"" prefix:"pprof."`
+}
+
+// Pprof configures Go's profiling pages. They are on when Address is set.
+type Pprof struct {
+	// Address is host:port on a loopback address. The pages have no
+	// authentication and show the program's memory.
+	Address string `name:"address" placeholder:"HOST:PORT" help:"Loopback address to serve Go's profiling pages on, under /debug/pprof/. Port 0 takes a free port, which the log names. Empty means no profiling pages."`
+}
+
+func (p Pprof) validate() error {
+	if p.Address == "" {
+		return nil
+	}
+	if !(ListenTCP{Address: p.Address}).Loopback() {
+		return fmt.Errorf("telemetry.pprof.address: %q is not host:port on a loopback address", p.Address)
+	}
+	return nil
 }
 
 // Logs configures the two log destinations separately.
@@ -85,6 +103,9 @@ type OTelLog struct {
 // validate reports values that decode but that the program cannot act on.
 func (c *Config) validate() error {
 	if err := validateFields("telemetry", c.Telemetry); err != nil {
+		return err
+	}
+	if err := c.Telemetry.Pprof.validate(); err != nil {
 		return err
 	}
 	for _, section := range []func() error{

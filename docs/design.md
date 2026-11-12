@@ -72,7 +72,7 @@ Packages:
 
 - One process can host many sessions. The default is one process per stdio connection, which is what acphost spawns.
 - Listeners: stdio (default), unix socket, TCP. TCP and unix support TLS with optional client certificate verification (mTLS) from config.
-- A listener process serves many connections, each with its own sessions. Sessions in one process share the provider HTTP pool, auth store, MCP connections where config marks a server shared, and the prompt and schema caches.
+- A listener process serves many connections, each with its own sessions. Sessions in one process share the provider HTTP pool, auth store, MCP connections where config marks a server shared, the skill listing and the compiled tool schemas. The skill listing is checked against each `SKILL.md`'s modification time and size at every `session/new`. Context files are read and the system prompt is built for each session (`docs/notes/2026-11-12-shared-session-state.md`).
 - Idle cost: no goroutine wakes while a session waits for a prompt. No polling timers. Timers start only for active turns, retries and refreshes.
 
 ## Configuration
@@ -176,6 +176,8 @@ mcp:
 
 telemetry:
   otel: true
+  pprof:
+    address: 127.0.0.1:6060   # Go's profiling pages, loopback only, off when empty
   logs:
     stderr:
       level: info

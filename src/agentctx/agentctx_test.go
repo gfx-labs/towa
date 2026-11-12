@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -392,4 +393,47 @@ func TestAConfiguredSectionCannotTakeABuiltInName(t *testing.T) {
 	require.NoError(t, err)
 	_, err = agentctx.Build(agentctx.Prompt{Instructions: "UPSTREAM", Loaded: loaded})
 	require.Error(t, err)
+}
+
+func TestASkillCacheSeesFilesChangeOnDisk(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	req := agentctx.Request{Config: config.Context{SkillsDirs: []string{dir}}, WorkDir: dir, Skills: &agentctx.SkillCache{}}
+	list := func() []agentctx.Skill {
+		t.Helper()
+		skills, err := agentctx.ListSkills(req)
+		require.NoError(t, err)
+		return skills
+	}
+	deploy := write(t, filepath.Join(dir, "deploy", "SKILL.md"), skillFile("deploy", "Ship a release", "body"))
+	audit := write(t, filepath.Join(dir, "audit", "SKILL.md"), skillFile("audit", "Audit tests", "body"))
+	want := []agentctx.Skill{
+		{Name: "audit", Description: "Audit tests", Dir: filepath.Dir(audit), Path: audit},
+		{Name: "deploy", Description: "Ship a release", Dir: filepath.Dir(deploy), Path: deploy},
+	}
+	require.Equal(t, want, list())
+	require.Equal(t, want, list())
+
+	// An edit is seen by the next listing.
+	write(t, deploy, skillFile("deploy", "Ship a release to production", "body"))
+	want[1].Description = "Ship a release to production"
+	require.Equal(t, want, list())
+
+	// So is an edit that keeps the size, by its modification time.
+	info, err := os.Stat(deploy)
+	require.NoError(t, err)
+	write(t, deploy, skillFile("deploy", "Ship a release to PRODUCTION", "body"))
+	require.NoError(t, os.Chtimes(deploy, time.Time{}, info.ModTime().Add(time.Second)))
+	want[1].Description = "Ship a release to PRODUCTION"
+	require.Equal(t, want, list())
+
+	// A file that breaks is an error each time, and is listed again once
+	// it is mended.
+	write(t, audit, "# no front matter\n")
+	for range 2 {
+		_, err = agentctx.ListSkills(req)
+		require.ErrorContains(t, err, audit)
+	}
+	require.NoError(t, os.RemoveAll(filepath.Dir(audit)))
+	require.Equal(t, want[1:], list())
 }
