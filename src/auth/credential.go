@@ -14,6 +14,9 @@ type Scheme string
 const (
 	SchemeOAuth  Scheme = "oauth"
 	SchemeAPIKey Scheme = "api_key"
+	// SchemeNone: the endpoint takes no credential. The Token is empty and
+	// no authorization header is sent.
+	SchemeNone Scheme = "none"
 )
 
 // Credential is what a provider client needs to authorize one request.

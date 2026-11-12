@@ -24,6 +24,9 @@ var (
 	ErrStaticKey = errors.New("an API key cannot be refreshed")
 	// ErrNoKey: the environment variable of an api_key account is not set.
 	ErrNoKey = errors.New("the account's API key variable is not set")
+	// ErrNoCredential: an account of kind none sends no credential, so a
+	// refusal cannot be answered with a newer one.
+	ErrNoCredential = errors.New("the account sends no credential")
 )
 
 // LoginRequiredError says the account's refresh token is dead: the token
@@ -155,6 +158,8 @@ func (s *AccountSource) Credential(ctx context.Context, account string) (Credent
 			return Credential{}, fmt.Errorf("account %q: %s: %w", a.ID, a.APIKeyEnv, ErrNoKey)
 		}
 		return Credential{Account: a.ID, Scheme: SchemeAPIKey, Token: key}, nil
+	case config.AccountNone:
+		return Credential{Account: a.ID, Scheme: SchemeNone}, nil
 	case config.AccountProxiedAPIKey:
 		return Credential{Account: a.ID, Scheme: SchemeAPIKey, Token: PlaceholderToken(a.ID), Proxied: true}, nil
 	case config.AccountProxiedOAuth:
@@ -188,6 +193,8 @@ func (s *AccountSource) Refresh(ctx context.Context, rejected Credential) (Crede
 	switch a.Kind {
 	case config.AccountAPIKey:
 		return Credential{}, fmt.Errorf("account %q: %w", a.ID, ErrStaticKey)
+	case config.AccountNone:
+		return Credential{}, fmt.Errorf("account %q: %w", a.ID, ErrNoCredential)
 	case config.AccountProxiedAPIKey, config.AccountProxiedOAuth:
 		return Credential{}, fmt.Errorf("account %q: %w", a.ID, ErrProxied)
 	case config.AccountOAuth:

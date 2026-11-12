@@ -38,9 +38,10 @@ const recordFactoryWrite = "ACPHARNESS_RECORD_FACTORY_WRITE"
 // from, such as http://127.0.0.1:1234. It must serve factoryModel.
 const recordFactoryUpstream = "ACPHARNESS_FACTORY_WRITE_UPSTREAM"
 
-// factoryModel is the model the recording was made with. A 3b model wrote
-// the wrong content or no file in three of five recordings.
-const factoryModel = "qwen3.8-27b"
+// factoryModel is the model the recording was made with, the one tests are
+// recorded from. A 3b model wrote the wrong content or no file in three of
+// five recordings.
+const factoryModel = "openai/gpt-oss-20b"
 
 type processStderr struct {
 	mu     sync.Mutex
@@ -90,7 +91,7 @@ func TestFactoryWriteProcess(t *testing.T) {
 		client := httpclient.New()
 		for _, path := range paths {
 			// The server's address says whose machine recorded.
-			recorders = append(recorders, &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{"factory-test-key", upstream.Host}})
+			recorders = append(recorders, &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{upstream.Host}})
 		}
 	} else {
 		ex, err := providertest.Load(paths[0])
@@ -165,11 +166,12 @@ providers:
   - id: local
     kind: chat
     base_url: %q
+# The server takes no key. The recording holds no Authorization header, so
+# the replay fails if one is sent.
 accounts:
   - id: local
     provider: local
-    kind: api_key
-    api_key_env: FACTORY_TEST_KEY
+    kind: none
 models:
   local:
     chain: [%q]
@@ -224,7 +226,7 @@ telemetry:
 	var stderr processStderr
 	command := exec.CommandContext(ctx, binary)
 	command.Dir = cwd
-	command.Env = []string{"HOME=" + home, "XDG_CONFIG_HOME=" + filepath.Join(home, "config"), "XDG_STATE_HOME=" + filepath.Join(home, "state"), "FACTORY_TEST_KEY=factory-test-key", "PATH=" + os.Getenv("PATH")}
+	command.Env = []string{"HOME=" + home, "XDG_CONFIG_HOME=" + filepath.Join(home, "config"), "XDG_STATE_HOME=" + filepath.Join(home, "state"), "PATH=" + os.Getenv("PATH")}
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, &stderr
 	require.NoError(t, command.Start())
 	t.Cleanup(func() {

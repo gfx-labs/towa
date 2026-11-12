@@ -152,7 +152,10 @@ func (c *Client) embedBatch(ctx context.Context, inputs []string) ([][]float32, 
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer "+cred.Token)
+		// An account of kind none has no token to send.
+		if cred.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+cred.Token)
+		}
 	}
 	resp, err := c.opts.HTTPClient.Do(req)
 	if err != nil {

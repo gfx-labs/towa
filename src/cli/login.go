@@ -58,6 +58,8 @@ func loginAccount(cfg *config.Config, id string) (account config.Account, ok boo
 		return a, true, nil
 	case config.AccountProxiedOAuth, config.AccountProxiedAPIKey:
 		return config.Account{}, false, fmt.Errorf("account %q: %w, so the harness stores no login for it", id, auth.ErrProxied)
+	case config.AccountNone:
+		return config.Account{}, false, fmt.Errorf("account %q is of kind %s, which has no login: its endpoint takes no credential", id, a.Kind)
 	}
 	return config.Account{}, false, fmt.Errorf("account %q is of kind %s, which has no login: its key comes from %s", id, a.Kind, a.APIKeyEnv)
 }
@@ -223,6 +225,8 @@ func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 		switch a.Kind {
 		case config.AccountProxiedOAuth, config.AccountProxiedAPIKey:
 			state = "held by a proxy"
+		case config.AccountNone:
+			state = "no credential"
 		case config.AccountAPIKey:
 			state = a.APIKeyEnv + " is set"
 			if lookup(h.Environ, a.APIKeyEnv) == "" {

@@ -124,7 +124,7 @@ accounts:
     api_key_env: OPENROUTER_API_KEY
   - id: pod
     provider: claude
-    kind: proxied_oauth   # oauth | api_key | proxied_oauth | proxied_api_key
+    kind: proxied_oauth   # oauth | api_key | proxied_oauth | proxied_api_key | none
 
 providers:
   - id: openrouter
@@ -196,6 +196,7 @@ Model metadata (context window, max output) comes from a pinned table plus provi
 ### Accounts and fallback
 
 - Logins live in one file, `$XDG_STATE_HOME/acpharness/auth/auth.json`, mode 0600, apart from the configuration. It holds every OAuth account by id with its provider and tokens. An account in it needs no `accounts` entry: a login creates it. A model chain may name an account of a built-in provider before its first login, and a turn that reaches it then reports that the account is not logged in and gives the command. `accounts` in the configuration is for what has no stored login: API keys read from the environment and proxy-held accounts. `logout` removes the account's entry.
+- Accounts without a credential (`none`): for a configured endpoint that takes no key, such as a model server on the local network. No `Authorization` header is sent, on the chat and the responses client and for embeddings. The built-in `claude` and `codex` providers refuse the kind, since both always take a credential. A refusal from such an endpoint is an auth stop, as there is nothing to refresh (`docs/notes/2026-11-12-keyless-accounts.md`).
 - Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no entry in `auth.json`, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
 - Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
 - `acpharness hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.

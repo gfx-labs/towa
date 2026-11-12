@@ -378,6 +378,8 @@ func (f *runtimeFactory) accountScheme(id string) (auth.Scheme, error) {
 			return auth.SchemeOAuth, nil
 		case config.AccountAPIKey, config.AccountProxiedAPIKey:
 			return auth.SchemeAPIKey, nil
+		case config.AccountNone:
+			return auth.SchemeNone, nil
 		default:
 			return "", fmt.Errorf("account %q has unsupported kind %q", id, account.Kind)
 		}

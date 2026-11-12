@@ -168,13 +168,13 @@ func (c *Client) ContextName(cred auth.Credential) (string, error) {
 
 func (c *Client) contextName(cred auth.Credential) (string, *provider.Error) {
 	switch cred.Scheme {
-	case auth.SchemeAPIKey:
+	case auth.SchemeAPIKey, auth.SchemeNone:
 		return c.cfg.Provider, nil
 	case auth.SchemeOAuth:
 		return ProviderCodex, nil
 	default:
-		return "", invalidRequest(fmt.Sprintf("account %q has credential scheme %q, which is not %q or %q",
-			cred.Account, cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth))
+		return "", invalidRequest(fmt.Sprintf("account %q has credential scheme %q, which is not %q, %q or %q",
+			cred.Account, cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth, auth.SchemeNone))
 	}
 }
 
@@ -183,7 +183,7 @@ func (c *Client) endpoint(cred auth.Credential) (endpoint, *provider.Error) {
 	if perr != nil {
 		return endpoint{}, perr
 	}
-	if cred.Token == "" {
+	if cred.Token == "" && cred.Scheme != auth.SchemeNone {
 		return endpoint{}, &provider.Error{
 			Class: provider.Fallback, Reason: provider.ReasonAuth,
 			Message: fmt.Sprintf("account %q has no token", cred.Account),
@@ -199,7 +199,10 @@ func (c *Client) endpoint(cred auth.Credential) (endpoint, *provider.Error) {
 // same headers: its token is a placeholder the proxy replaces.
 func (c *Client) header(ep endpoint, req provider.Request) http.Header {
 	h := http.Header{}
-	h.Set("Authorization", "Bearer "+req.Credential.Token)
+	// An endpoint that takes no credential gets no header, not an empty one.
+	if req.Credential.Scheme != auth.SchemeNone {
+		h.Set("Authorization", "Bearer "+req.Credential.Token)
+	}
 	h.Set("Content-Type", "application/json")
 	if c.cfg.UserAgent != "" {
 		h.Set("User-Agent", c.cfg.UserAgent)

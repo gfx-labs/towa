@@ -27,7 +27,7 @@ type Config struct {
 	Models             map[string]Model   `name:"models" type:"table" group:"models" placeholder:"YAML" help:"Named models, each with a chain of provider:account/model entries. Written in a config file."`
 	Telemetry          Telemetry          `embed:"" prefix:"telemetry." group:"telemetry"`
 	Auth               Auth               `embed:"" prefix:"auth." group:"auth"`
-	Accounts           []Account          `name:"accounts" type:"table" group:"accounts" placeholder:"YAML" help:"Accounts a proxy holds or an API key backs: id, provider, kind. A login makes its own. Written in a config file."`
+	Accounts           []Account          `name:"accounts" type:"table" group:"accounts" placeholder:"YAML" help:"Accounts without a stored login: one a proxy holds, one an API key backs, or one whose endpoint takes no credential (kind none). id, provider, kind. Written in a config file."`
 	Providers          []Provider         `name:"providers" type:"table" group:"providers" placeholder:"YAML" help:"Endpoints that are not built in: id, kind, base_url. Written in a config file."`
 	Store              Store              `embed:"" prefix:"store." group:"store"`
 	Tools              Tools              `embed:"" prefix:"tools." group:"tools"`

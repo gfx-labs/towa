@@ -9,7 +9,7 @@ A Go coding agent that speaks ACP. Go 1.27.3, module `github.com/gfx-labs/acphar
 - `pkg/acp/*_gen.go` are generated from `pkg/acp/schema` by `tools/acpgen`. Change the generator or the schema files, then run `go generate ./pkg/acp`. Never edit a generated file. `tools/acpgen` is its own module: check it with `go vet ./... && go test ./...` in that directory.
 - Keep the dependency list short. Record why each dependency was added in `docs/notes/`.
 - Limits come from configuration, a protocol or a measurement, never an unexplained constant. Report an invalid state as an error. Do not truncate, clamp or fall back silently.
-- Tests use testify. Provider tests replay recorded real responses, and tool tests run the tool against real files, a real shell and the real `rg`. No mocked providers, and no hand-written stand-in for a recording. Live checks run by hand behind an env flag.
+- Tests use testify. Provider tests replay recorded real responses, and tool tests run the tool against real files, a real shell and the real `rg`. No mocked providers, and no hand-written stand-in for a recording. Live checks run by hand behind an env flag. A recording that needs a local model is made from `openai/gpt-oss-20b` on an OpenAI-compatible server that takes no key (LM Studio), through an account of kind `none`. Recordings made earlier from `llama3.2:3b` stay until their request changes.
 - Design notes go in a new file `docs/notes/<date>-<slug>.md` (short, dated). `docs/design.md` holds the current design. Update it when a decision changes.
 - Commits go straight to master until the first milestone.
 - Plain names, short comments explaining why, no marketing language.

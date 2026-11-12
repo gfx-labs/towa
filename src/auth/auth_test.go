@@ -58,6 +58,7 @@ func sourceOptions(dir, tokenURL string, jsonRequests bool) auth.Options {
 			{ID: "key", Provider: "openrouter", Kind: config.AccountAPIKey, APIKeyEnv: "TEST_KEY"},
 			{ID: "held", Provider: "codex", Kind: config.AccountProxiedOAuth, ChatGPTAccountID: "acct-1"},
 			{ID: "heldkey", Provider: "openrouter", Kind: config.AccountProxiedAPIKey},
+			{ID: "open", Provider: "lan", Kind: config.AccountNone},
 		},
 		Store:      auth.NewStore(dir),
 		HTTPClient: httpclient.New(),
@@ -415,6 +416,12 @@ func TestAccountsWithoutAStoredLogin(t *testing.T) {
 	require.Equal(t, auth.Credential{Account: "key", Scheme: auth.SchemeAPIKey, Token: "sk-from-env"}, key)
 	_, err = src.Refresh(ctx, key)
 	require.ErrorIs(t, err, auth.ErrStaticKey)
+
+	open, err := src.Credential(ctx, "open")
+	require.NoError(t, err)
+	require.Equal(t, auth.Credential{Account: "open", Scheme: auth.SchemeNone}, open)
+	_, err = src.Refresh(ctx, open)
+	require.ErrorIs(t, err, auth.ErrNoCredential)
 
 	held, err := src.Credential(ctx, "held")
 	require.NoError(t, err)

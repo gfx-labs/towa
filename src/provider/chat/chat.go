@@ -53,10 +53,11 @@ func (c *Client) ContextName(cred auth.Credential) (string, error) {
 }
 
 func (c *Client) contextName(cred auth.Credential) (string, *provider.Error) {
-	if cred.Scheme != auth.SchemeAPIKey && cred.Scheme != auth.SchemeOAuth {
-		return "", invalid("credential scheme %q is not %q or %q", cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth)
+	switch cred.Scheme {
+	case auth.SchemeAPIKey, auth.SchemeOAuth, auth.SchemeNone:
+		return c.cfg.ID, nil
 	}
-	return c.cfg.ID, nil
+	return "", invalid("credential scheme %q is not %q, %q or %q", cred.Scheme, auth.SchemeAPIKey, auth.SchemeOAuth, auth.SchemeNone)
 }
 
 // New returns a client for the endpoint in cfg.
@@ -105,7 +106,10 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
 	}
 	h := httpReq.Header
-	h.Set("Authorization", "Bearer "+req.Credential.Token)
+	// An endpoint that takes no credential gets no header, not an empty one.
+	if req.Credential.Scheme != auth.SchemeNone {
+		h.Set("Authorization", "Bearer "+req.Credential.Token)
+	}
 	h.Set("Content-Type", "application/json")
 	h.Set("Accept", "text/event-stream")
 	h.Set("User-Agent", c.userAgent)

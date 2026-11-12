@@ -34,7 +34,7 @@ type Account struct {
 	// Provider is the provider the account belongs to, such as "claude",
 	// "codex" or "openrouter".
 	Provider string `json:"provider" validate:"required"`
-	Kind     string `json:"kind" validate:"oneof=oauth api_key proxied_oauth proxied_api_key"`
+	Kind     string `json:"kind" validate:"oneof=oauth api_key proxied_oauth proxied_api_key none"`
 	// APIKeyEnv names the environment variable that holds the key of an
 	// api_key account.
 	APIKeyEnv string `json:"api_key_env" validate:"required_if=Kind api_key,excluded_unless=Kind api_key"`
@@ -59,6 +59,9 @@ const (
 	// request as for the kind it stands for.
 	AccountProxiedOAuth  = "proxied_oauth"
 	AccountProxiedAPIKey = "proxied_api_key"
+	// AccountNone: the endpoint takes no credential, as a model server on
+	// the local network does. No authorization is sent.
+	AccountNone = "none"
 )
 
 // addStoredAccounts adds the accounts of the auth store, given as the
@@ -108,6 +111,9 @@ func (c *Config) validateAccounts() error {
 			return fmt.Errorf("%s.id: %q is not a plain file name", at, a.ID)
 		case seen[a.ID]:
 			return fmt.Errorf("%s.id: %q is used by more than one account", at, a.ID)
+		case a.Kind == AccountNone && (a.Provider == ProviderClaude || a.Provider == ProviderCodex):
+			// Both built-in providers refuse a request without a credential.
+			return fmt.Errorf("%s.kind: %q is for a configured provider, and %q always takes a credential", at, a.Kind, a.Provider)
 		}
 		seen[a.ID] = true
 	}
