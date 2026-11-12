@@ -25,7 +25,7 @@ import (
 // cancelled by then.
 //
 //   - A tool that returned a result knows best what happened, also after a
-//     cancel: its outcome stands.
+//     cancel: its outcome stands. A result with nothing in it says so.
 //   - A tool that returned an error after a cancel did not say whether it
 //     took effect. That is the unknown outcome, except for a tool that only
 //     reads, which cannot have had one.
@@ -37,6 +37,7 @@ func Settle(effect tools.Effect, res tools.Result, runErr error, cancelled bool)
 		if _, err := Status(res.Outcome); err != nil {
 			return textResult(transcript.OutcomeFailed, textNoOutcome)
 		}
+		res.Parts = told(res.Parts)
 		return res
 	case cancelled && effect == tools.ReadOnly:
 		return textResult(transcript.OutcomeCancelled, textReadStopped)

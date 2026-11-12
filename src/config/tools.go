@@ -25,6 +25,7 @@ type Tools struct {
 	Repair         ToolsRepair `embed:"" prefix:"repair."`
 	Gate           ToolsGate   `embed:"" prefix:"gate."`
 	Batch          ToolsBatch  `embed:"" prefix:"batch."`
+	Todo           ToolsTodo   `embed:"" prefix:"todo."`
 }
 
 // ToolsFiles configures read, write and edit.
@@ -118,6 +119,14 @@ type ToolsBatch struct {
 	// MaxCalls is the most calls one batch may hold. They may all run at
 	// once. Unchecked: jcode's batch takes one to ten calls.
 	MaxCalls int `name:"max_calls" default:"10" validate:"gt=0" help:"Most calls one batch may hold."`
+}
+
+// ToolsTodo configures the todo tool.
+type ToolsTodo struct {
+	// Enabled gives the model the todo tool. It is off by default: the
+	// tool's definition is about 1,100 tokens of every request
+	// (docs/notes/2026-11-12-token-use.md).
+	Enabled bool `name:"enabled" help:"Give the model the todo tool, whose list the client shows as the plan."`
 }
 
 func (t Tools) validate() error {

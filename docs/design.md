@@ -147,10 +147,10 @@ limits:
   max_input_tokens: 0
   max_output_tokens: 0
   max_stop_denials: 3     # how often a stop hook may keep a turn going
-  max_todo_pokes: 3       # how often a turn ending with unfinished todos is sent back
+  max_todo_pokes: 0       # how often a turn ending with unfinished todos is sent back, with tools.todo.enabled
 
 subagents:
-  max_depth: 2
+  max_depth: 2            # 0, the default, gives the model no subagent tool
   max_concurrent: 4
 
 compaction:
@@ -225,14 +225,14 @@ Every model gets the same tools and the same instructions. There is no per-famil
 
 | tool | does |
 |---|---|
-| `read` | a text file with line numbers, or an image |
+| `read` | a text file as it is, without line numbers, or an image |
 | `write` | create or replace a whole file |
 | `edit` | replace one exact string in a file |
 | `apply_patch` | add, update, move and delete files from one patch |
 | `bash` | run a shell command |
-| `glob` | files by name pattern |
-| `grep` | file contents by regular expression, through `rg` |
-| `todo` | the plan, sent to the client as ACP `plan` updates |
+| `glob` | files by name pattern, named from the working directory when they are under it |
+| `grep` | file contents by regular expression, through `rg`, with the same paths |
+| `todo` | the plan, sent to the client as ACP `plan` updates (off by default) |
 
 Names, descriptions and schemas are in `src/tools/core/specs`. The instructions are `agentctx.Instructions`. A tool's limits come from `[tools]` configuration.
 
@@ -244,8 +244,10 @@ Names, descriptions and schemas are in `src/tools/core/specs`. The instructions 
 - `batch`: run several independent tool calls in one call, for models that do not emit parallel calls.
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
 - Search: an agentgrep-style tool with grep, find, outline and trace modes. Text search requires the `rg` binary and reports a clear error when it is missing. Structural modes need a separately specified implementation, not a claimed ripgrep capability.
-- Todo: the `todo` tool maps to ACP `plan` updates. Its input is jcode's: the list, a `plan` (the user's intention and how well it is understood) and `goals` (the feedback loop for each goal, its coverage, relevance and traceability, delivery state and when to stop). The model fills the assessment in and nothing scores it. A turn that ends with unfinished items is sent back to them up to `limits.max_todo_pokes` times.
-- Web: webfetch with HTML to Markdown. Web search has two forms, chosen per chain entry (`docs/notes/2026-11-12-hosted-websearch.md`):
+- Todo: the `todo` tool maps to ACP `plan` updates. Its input is jcode's: the list, a `plan` (the user's intention and how well it is understood) and `goals` (the feedback loop for each goal, its coverage, relevance and traceability, delivery state and when to stop). The model fills the assessment in and nothing scores it. A turn that ends with unfinished items is sent back to them up to `limits.max_todo_pokes` times. Both are off by default (`tools.todo.enabled`, `limits.max_todo_pokes: 0`).
+- Off by default: `todo`, `webfetch` and `subagent`. A tool's definition is sent with every request, and these three were about 2,000 tokens of each one (`docs/notes/2026-11-12-token-use.md`). `tools.todo.enabled`, `webfetch.enabled` and `subagents.max_depth: 1` turn them on.
+- A tool result with nothing in it, such as a command that printed nothing, reaches the model as "The tool call returned no output." A provider refuses an empty part.
+- Web: webfetch with HTML to Markdown, off by default. Web search has two forms, chosen per chain entry (`docs/notes/2026-11-12-hosted-websearch.md`):
   - Hosted (`websearch.hosted`, on by default): an entry on the built-in `claude` or `codex` provider is sent the provider's own `web_search` tool in place of ours, and the provider runs the search. Its items are stored whole and go back only to the provider, model and account that made them. Any other request gets them as text. The client is shown each search as a tool call.
   - Local: every other entry gets `websearch`, where this process posts the query to DuckDuckGo's HTML page (`websearch.endpoint`) and returns titles, URLs and snippets. A bot challenge from the endpoint is reported to the model as a failed search (`docs/notes/2026-11-11-websearch.md`).
 - Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. It can also read other sessions by id, so a parent can read the sessions of the subagents it spawned. Scope is a config setting: `self`, `descendants` (the session and every subagent session below it, the default) or `store` (every session in the store, opt-in because a shared store holds other workers' sessions). Keyword matching first. Result and snippet limits come from config.

@@ -5,6 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -36,6 +37,24 @@ func searchDescription(env tools.Env, cfg config.ToolsFiles, name string) func(j
 	}
 }
 
+// shownPath returns how a found path is written for the model. A file under
+// the working directory is written relative to it: the directory is the same
+// on every line of a result, and the file tools take a relative path from
+// it. Any other file keeps its absolute path.
+func shownPath(env tools.Env, cfg config.ToolsFiles) (func(string) string, error) {
+	// A search prints paths with links followed, so the directory is too.
+	cwd, err := fsops.RootsOf(env, cfg).Resolve(env.Cwd)
+	if err != nil {
+		return nil, err
+	}
+	return func(path string) string {
+		if rel, err := filepath.Rel(cwd, path); err == nil && filepath.IsLocal(rel) {
+			return rel
+		}
+		return path
+	}, nil
+}
+
 func globTool(spec provider.Tool, env tools.Env, cfg config.Tools) tools.Tool {
 	return tools.Tool{
 		Spec: spec, Effect: tools.ReadOnly,
@@ -52,10 +71,14 @@ func globTool(spec provider.Tool, env tools.Env, cfg config.Tools) tools.Tool {
 			if err != nil {
 				return textResult(err.Error(), true), nil
 			}
+			shown, err := shownPath(call.Env, cfg.Files)
+			if err != nil {
+				return textResult(err.Error(), true), nil
+			}
 			slices.SortStableFunc(found.Files, func(a, b search.File) int { return b.ModTime.Compare(a.ModTime) })
 			var lines []string
 			for _, file := range found.Files {
-				lines = append(lines, file.Path)
+				lines = append(lines, shown(file.Path))
 			}
 			if len(lines) == 0 {
 				lines = append(lines, "No files found")
@@ -128,6 +151,10 @@ func grepTool(spec provider.Tool, env tools.Env, cfg config.Tools) tools.Tool {
 			if err != nil {
 				return textResult(err.Error(), true), nil
 			}
+			shown, err := shownPath(call.Env, cfg.Files)
+			if err != nil {
+				return textResult(err.Error(), true), nil
+			}
 			var lines []string
 			switch in.Output {
 			case search.Lines:
@@ -137,21 +164,21 @@ func grepTool(spec provider.Tool, env tools.Env, cfg config.Tools) tools.Tool {
 						separator = "-"
 					}
 					if args.Numbers == nil || *args.Numbers {
-						lines = append(lines, fmt.Sprintf("%s%s%d%s%s", line.Path, separator, line.Number, separator, line.Text))
+						lines = append(lines, fmt.Sprintf("%s%s%d%s%s", shown(line.Path), separator, line.Number, separator, line.Text))
 					} else {
-						lines = append(lines, line.Path+separator+line.Text)
+						lines = append(lines, shown(line.Path)+separator+line.Text)
 					}
 				}
 			case search.Files:
 				for _, file := range found.Files {
-					lines = append(lines, file.Path)
+					lines = append(lines, shown(file.Path))
 				}
 				if len(lines) > 0 {
 					lines = append([]string{fmt.Sprintf("Found %d files", len(found.Files))}, lines...)
 				}
 			case search.Counts:
 				for _, file := range found.Files {
-					lines = append(lines, fmt.Sprintf("%s:%d", file.Path, file.Count))
+					lines = append(lines, fmt.Sprintf("%s:%d", shown(file.Path), file.Count))
 				}
 			}
 			if len(lines) == 0 {

@@ -5,8 +5,8 @@
   "input_schema": {
     "type": "object",
     "properties": {
-      "file_path": {"type": "string", "description": "Absolute path of the file."},
-      "old_string": {"type": "string", "description": "Text to replace, exactly as it is in the file, without line numbers."},
+      "file_path": {"type": "string", "description": "Path of the file, absolute or from the working directory."},
+      "old_string": {"type": "string", "description": "Text to replace, exactly as it is in the file."},
       "new_string": {"type": "string", "description": "Replacement text. It must differ from old_string."},
       "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence."}
     },

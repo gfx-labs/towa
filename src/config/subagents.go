@@ -10,11 +10,14 @@ const (
 
 // Subagents configures the child turns a session's model may start.
 //
-// The defaults are what jcode does at 8e11eb23e. Its direct subagent tool is
-// gone (crates/jcode-app-core/src/tool/tests.rs:342). The in-process child
-// that is left is run_swarm_task in crates/jcode-app-core/src/server/swarm.rs:
-//   - max_depth 1: the child's tool set has "subagent" and "task" removed
-//     (swarm.rs:1990-1993), so a child starts no child.
+// max_depth is 0 by default, so the model is not given the tool: its
+// definition is sent with every request and most sessions start no child
+// (docs/notes/2026-11-12-token-use.md). The other defaults are what jcode
+// does at 8e11eb23e. Its direct subagent tool is gone
+// (crates/jcode-app-core/src/tool/tests.rs:342). The in-process child that
+// is left is run_swarm_task in crates/jcode-app-core/src/server/swarm.rs:
+//   - jcode's depth is 1: the child's tool set has "subagent" and "task"
+//     removed (swarm.rs:1990-1993), so a child starts no child.
 //   - max_concurrent 32: default_swarm_max_concurrent_agents
 //     (crates/jcode-config-types/src/lib.rs:609-611), where 0 also turns
 //     the limit off (lib.rs:584-587). jcode counts the live agents of one
@@ -25,8 +28,9 @@ const (
 type Subagents struct {
 	// MaxDepth is how many sessions may stand between a subagent and the
 	// session the client opened, counting the subagent. 1 lets a session
-	// start subagents that start none. 0 lets no session start one.
-	MaxDepth int `name:"max_depth" default:"1" validate:"gte=0" help:"Sessions that may stand between a subagent and the session the client opened, counting the subagent. 0 lets no session start one."`
+	// start subagents that start none. 0 lets no session start one, and
+	// leaves the tool out.
+	MaxDepth int `name:"max_depth" default:"0" validate:"gte=0" help:"Sessions that may stand between a subagent and the session the client opened, counting the subagent. 1 gives the model the subagent tool. 0 lets no session start one."`
 	// MaxConcurrent is how many subagents may run at once in the process,
 	// at every depth together. A call over it is refused and does not
 	// wait. 0 means no limit.

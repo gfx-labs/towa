@@ -46,6 +46,7 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	loaded, err := config.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config.Tools
+	cfg.Todo.Enabled = true
 	env := tools.Env{Cwd: t.TempDir()}
 	var tracker core.ReadTracker
 	var shown []acp.PlanEntry
@@ -80,7 +81,7 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
 	result = run(t, set, env, "read", map[string]any{"file_path": path, "limit": 1})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
-	require.Contains(t, result.Parts[0].Text, "1\tfirst line")
+	require.Equal(t, "first line\n[More lines remain. Continue with offset 2.]", result.Parts[0].Text)
 	edit["old_string"], edit["new_string"] = "EXTERN", "reread"
 	result = run(t, set, env, "edit", edit)
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
@@ -190,20 +191,25 @@ func TestGlobAndGrepRunRealRipgrep(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("alpha\nneedle\nneedle\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "other.go"), []byte("alpha\n"), 0o600))
 	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker)})
+	// A file under the working directory is named from it.
 	result := run(t, set, env, "glob", map[string]any{"pattern": "*.txt"})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
-	require.Equal(t, path, result.Parts[0].Text)
-	for _, mode := range []string{"files_with_matches", "content", "count"} {
+	require.Equal(t, "found.txt", result.Parts[0].Text)
+	for mode, want := range map[string]string{
+		"files_with_matches": "Found 1 files\nfound.txt",
+		"content":            "found.txt:2:needle\nfound.txt:3:needle",
+		"count":              "found.txt:2",
+	} {
 		t.Run(mode, func(t *testing.T) {
 			result := run(t, set, env, "grep", map[string]any{"pattern": "needle", "output_mode": mode, "head_limit": 0})
 			require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
-			require.Contains(t, result.Parts[0].Text, path)
-			if mode == "content" {
-				require.Contains(t, result.Parts[0].Text, ":2:needle")
-			}
-			if mode == "count" {
-				require.Contains(t, result.Parts[0].Text, ":2")
-			}
+			require.Equal(t, want, result.Parts[0].Text)
 		})
 	}
+	// A file anywhere else keeps its whole path.
+	outside := filepath.Join(t.TempDir(), "elsewhere.txt")
+	require.NoError(t, os.WriteFile(outside, []byte("needle\n"), 0o600))
+	result = run(t, set, env, "grep", map[string]any{"pattern": "needle", "path": filepath.Dir(outside), "output_mode": "content"})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.Equal(t, outside+":1:needle", result.Parts[0].Text)
 }

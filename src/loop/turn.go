@@ -386,6 +386,10 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 				if reason != acp.StopReasonEndTurn || tn.limits.MaxTodoPokes == 0 {
 					return tn.result(reason), nil
 				}
+				// Without the tool the model cannot finish or drop an item.
+				if _, ok := tn.model.Tools.Lookup(todo.Name); !ok {
+					return tn.result(reason), nil
+				}
 				open, sent, err := todo.Open(tn.entries)
 				if err != nil {
 					return Result{}, err

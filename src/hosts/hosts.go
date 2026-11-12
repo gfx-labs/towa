@@ -243,8 +243,11 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 		}
 	}
 
+	if cfg.WebFetch.Enabled {
+		r.NotCovered = append(r.NotCovered,
+			"webfetch: the tool fetches any URL the model names, so it reaches any host. An allowlist built from this list alone makes those fetches fail")
+	}
 	r.NotCovered = append(r.NotCovered,
-		"webfetch: the tool fetches any URL the model names, so it reaches any host. An allowlist built from this list alone makes those fetches fail",
 		"session/new: MCP servers a client names for a session are not in the configuration",
 		"hooks and the shell tool: what a command contacts cannot be known",
 	)

@@ -7,7 +7,7 @@ import "time"
 // 8e11eb23e: DEFAULT_TIMEOUT (line 17), MAX_SIZE (line 9) and
 // MAX_OUTPUT_CHARS (line 12), which despite its name counts bytes.
 type WebFetch struct {
-	Enabled bool `name:"enabled" default:"true" help:"Give the model the tool that fetches one URL. On by default."`
+	Enabled bool `name:"enabled" help:"Give the model the tool that fetches one URL."`
 	// Timeout bounds one fetch, from the request to the last byte of the
 	// body, across redirects.
 	Timeout time.Duration `name:"timeout" default:"30s" validate:"gt=0" help:"How long one fetch may take, from the request to the last byte of the body, across redirects."`

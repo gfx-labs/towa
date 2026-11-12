@@ -90,7 +90,7 @@ mcp:
 		},
 	}
 	// A config key is a flag, before or after the command.
-	require.NoError(t, run(t.Context(), []string{"acpharness", "--config", file, "--telemetry.otel", "hosts", "--websearch.enabled=false"}, h, env))
+	require.NoError(t, run(t.Context(), []string{"acpharness", "--config", file, "--telemetry.otel", "hosts", "--websearch.enabled=false", "--webfetch.enabled"}, h, env))
 
 	// The authorize and token endpoints share a host, which is one line.
 	// The proxied codex account goes to the login endpoint and lists no
@@ -119,7 +119,8 @@ mcp:
 	require.Contains(t, stderr.String(), `"moved" has no stored login`)
 	require.NotContains(t, stderr.String(), `"docs" has no stored login`)
 	require.Contains(t, stderr.String(), `"files" is a stdio server`)
-	// Webfetch is said to reach any host, and is not in the list.
+	// Webfetch is on here. It is said to reach any host, and is not in the
+	// list.
 	require.Contains(t, stderr.String(), "webfetch: the tool fetches any URL the model names, so it reaches any host")
 	require.NotContains(t, stdout.String(), "webfetch")
 }

@@ -5,7 +5,7 @@
   "input_schema": {
     "type": "object",
     "properties": {
-      "file_path": {"type": "string", "description": "Absolute path of the file."},
+      "file_path": {"type": "string", "description": "Path of the file, absolute or from the working directory."},
       "content": {"type": "string", "description": "The file's new content."}
     },
     "required": ["file_path", "content"],

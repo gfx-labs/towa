@@ -1,6 +1,6 @@
 {
   "name": "glob",
-  "description": "Find files whose path matches a glob pattern such as \"**/*.go\". Results are ordered by modification time, newest first.",
+  "description": "Find files whose path matches a glob pattern such as \"**/*.go\". Results are ordered by modification time, newest first. A path under the working directory is given from it.",
   "guidance": ["Find files by name with glob, not with find or ls in bash."],
   "input_schema": {
     "type": "object",

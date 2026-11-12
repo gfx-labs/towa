@@ -158,11 +158,14 @@ func TestSettle(t *testing.T) {
 		{"an error after a cancel, from a tool that reads", tools.ReadOnly, tools.Result{}, boom, true, transcript.OutcomeCancelled},
 		{"an error without a cancel", tools.Writes, tools.Result{}, boom, false, transcript.OutcomeFailed},
 		{"a result with no outcome", tools.Writes, tools.Result{}, nil, false, transcript.OutcomeFailed},
+		{"a command that printed nothing", tools.Executes, tools.Result{Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: ""}}}, nil, false, transcript.OutcomeCompleted},
+		{"a result with no parts", tools.Executes, tools.Result{Outcome: transcript.OutcomeCompleted}, nil, false, transcript.OutcomeCompleted},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := loop.Settle(tc.effect, tc.res, tc.err, tc.cancelled)
 			assert.Equal(t, tc.want, got.Outcome)
 			assert.NotEmpty(t, got.Parts, "the model is always told something")
+			assert.NotContains(t, got.Parts, transcript.Part{}, "a provider refuses a part with nothing in it")
 		})
 	}
 }
@@ -175,7 +178,9 @@ func TestConversation(t *testing.T) {
 		return transcript.Item{ToolCall: &transcript.ToolCall{ID: id, Name: "write"}}
 	}
 	resultItem := func(id string) transcript.Item {
-		return transcript.Item{ToolResult: &transcript.ToolResult{CallID: id, Name: "write", Outcome: transcript.OutcomeCompleted}}
+		return transcript.Item{ToolResult: &transcript.ToolResult{
+			CallID: id, Name: "write", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "wrote it"}},
+		}}
 	}
 	text := transcript.Item{Text: &transcript.Text{Text: "done"}}
 
@@ -201,6 +206,17 @@ func TestConversation(t *testing.T) {
 		assert.Equal(t, "2", repairs[0].ToolResult.CallID)
 		assert.Equal(t, transcript.OutcomeUnknown, repairs[0].ToolResult.Outcome)
 		assert.Equal(t, repairs[0], items[len(items)-1], "the model is sent the result that is stored")
+	})
+
+	t.Run("a result stored with nothing in it is sent with a text", func(t *testing.T) {
+		silent := resultItem("1")
+		silent.ToolResult.Parts = []transcript.Part{{Text: ""}}
+		items, repairs, err := loop.Conversation([]transcript.Item{user("go"), callItem("1"), silent}, "[interrupted]")
+		require.NoError(t, err)
+		assert.Empty(t, repairs)
+		require.Len(t, items[2].ToolResult.Parts, 1)
+		assert.NotEmpty(t, items[2].ToolResult.Parts[0].Text)
+		assert.Equal(t, []transcript.Part{{Text: ""}}, silent.ToolResult.Parts, "the stored item is not changed")
 	})
 
 	t.Run("an interruption keeps the user messages around it", func(t *testing.T) {

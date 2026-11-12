@@ -23,7 +23,8 @@ import (
 // across turns and never shared between sessions.
 type Deps struct {
 	Reads *ReadTracker
-	// ShowPlan sends the checked list to the client. Nil omits todo.
+	// ShowPlan sends the checked list to the client. Nil omits todo, as
+	// does tools.todo.enabled when it is off.
 	ShowPlan func(context.Context, tools.Env, []acp.PlanEntry) error
 }
 
@@ -53,7 +54,7 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 	}
 	var result []tools.Tool
 	for _, b := range build {
-		if b.name == "todo" && deps.ShowPlan == nil {
+		if b.name == "todo" && (deps.ShowPlan == nil || !cfg.Todo.Enabled) {
 			continue
 		}
 		spec, guidance, err := definition(b.name)

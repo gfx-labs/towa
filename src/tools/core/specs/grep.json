@@ -1,6 +1,6 @@
 {
   "name": "grep",
-  "description": "Search file contents with a ripgrep regular expression. Returns matching paths by default. Escape literal braces.",
+  "description": "Search file contents with a ripgrep regular expression. Returns matching paths by default. A path under the working directory is given from it. Escape literal braces.",
   "guidance": ["Search file contents with the grep tool, not by running grep or rg in bash."],
   "input_schema": {
     "type": "object",

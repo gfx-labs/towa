@@ -36,9 +36,10 @@ type Limits struct {
 	MaxStopDenials int64 `name:"max_stop_denials" default:"3" validate:"gte=0" help:"Times in one turn that stop hooks may keep the turn going. 0 ends the turn on the first deny."`
 	// MaxTodoPokes is how many times a turn that ends with unfinished todo
 	// items is sent back to them, while those items and the user's prompt
-	// stay the same. Zero never sends a turn back. The default is jcode's
-	// INCOMPLETE_TODO_MAX_ATTEMPTS.
-	MaxTodoPokes int64 `name:"max_todo_pokes" default:"3" validate:"gte=0" help:"Times a turn that ends with unfinished todo items is sent back to them. 0 never sends it back."`
+	// stay the same. Zero, the default, never sends a turn back. jcode's
+	// INCOMPLETE_TODO_MAX_ATTEMPTS is 3. It applies only with the todo tool
+	// (tools.todo.enabled).
+	MaxTodoPokes int64 `name:"max_todo_pokes" default:"0" validate:"gte=0" help:"Times a turn that ends with unfinished todo items is sent back to them, with tools.todo.enabled. 0 never sends it back."`
 	Retry        Retry `embed:"" prefix:"retry."`
 }
 

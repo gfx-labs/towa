@@ -22,20 +22,19 @@ func readResult(read fsops.ReadResult) tools.Result {
 	if read.Text == "" {
 		return textResult("<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>", false)
 	}
-	var text strings.Builder
-	// Each line is its number, a tab and the text. The capability keeps line
+	// The lines go as they are in the file, without their numbers: a number
+	// and a tab on every line were about a tenth of a source file's tokens
+	// (docs/notes/2026-11-12-token-use.md). The capability keeps line
 	// endings, and a CRLF's CR is removed here.
-	lines := strings.Split(strings.TrimSuffix(read.Text, "\n"), "\n")
-	for i, line := range lines {
-		if i > 0 {
-			text.WriteByte('\n')
-		}
-		fmt.Fprintf(&text, "%d\t%s", read.FirstLine+i, strings.TrimSuffix(line, "\r"))
+	text := strings.TrimSuffix(strings.ReplaceAll(strings.TrimSuffix(read.Text, "\n"), "\r\n", "\n"), "\r")
+	if strings.TrimSpace(text) == "" {
+		// Blank lines alone would read as a result that was lost.
+		text = fmt.Sprintf("[Lines %d to %d hold only whitespace.]", read.FirstLine, read.FirstLine+read.Lines-1)
 	}
 	if read.More {
-		fmt.Fprintf(&text, "\n[More lines remain. Continue with offset %d.]", read.FirstLine+read.Lines)
+		text += fmt.Sprintf("\n[More lines remain. Continue with offset %d.]", read.FirstLine+read.Lines)
 	}
-	return textResult(text.String(), false)
+	return textResult(text, false)
 }
 
 func bashResult(run shell.Result) tools.Result {
