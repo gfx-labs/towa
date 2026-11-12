@@ -1,0 +1,130 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages?beta=true",
+    "header": {
+      "Accept": [
+        "application/json"
+      ],
+      "Anthropic-Beta": [
+        "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,advanced-tool-use-2025-11-20,effort-2025-11-24"
+      ],
+      "Anthropic-Version": [
+        "2023-06-01"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/recording"
+      ],
+      "X-Client-Request-Id": [
+        "be60e732-ed9e-4368-826a-a9c7708742c0"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":16,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Write three paragraphs about rivers.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"stream\":true}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Anthropic-Organization-Id": [
+        "REDACTED"
+      ],
+      "Anthropic-Ratelimit-Unified-7d-Reset": [
+        "1794978000"
+      ],
+      "Anthropic-Ratelimit-Unified-7d-Status": [
+        "allowed"
+      ],
+      "Anthropic-Ratelimit-Unified-7d-Utilization": [
+        "0.36"
+      ],
+      "Anthropic-Ratelimit-Unified-7d_oi-Reset": [
+        "1794978000"
+      ],
+      "Anthropic-Ratelimit-Unified-7d_oi-Status": [
+        "allowed"
+      ],
+      "Anthropic-Ratelimit-Unified-7d_oi-Utilization": [
+        "0.67"
+      ],
+      "Anthropic-Ratelimit-Unified-Fallback-Percentage": [
+        "0.5"
+      ],
+      "Anthropic-Ratelimit-Unified-Overage-Disabled-Reason": [
+        "org_level_disabled"
+      ],
+      "Anthropic-Ratelimit-Unified-Overage-Status": [
+        "rejected"
+      ],
+      "Anthropic-Ratelimit-Unified-Representative-Claim": [
+        "seven_day"
+      ],
+      "Anthropic-Ratelimit-Unified-Reset": [
+        "1794978000"
+      ],
+      "Anthropic-Ratelimit-Unified-Status": [
+        "allowed"
+      ],
+      "Anthropic-Workspace-Id": [
+        "REDACTED"
+      ],
+      "Cache-Control": [
+        "no-cache"
+      ],
+      "Cf-Cache-Status": [
+        "DYNAMIC"
+      ],
+      "Cf-Ray": [
+        "a59463033abca8aa-ORD"
+      ],
+      "Content-Security-Policy": [
+        "default-src 'none'; frame-ancestors 'none'"
+      ],
+      "Content-Type": [
+        "text/event-stream; charset=utf-8"
+      ],
+      "Date": [
+        "Thu, 12 Nov 2026 09:07:30 GMT"
+      ],
+      "Request-Id": [
+        "req_011Cgxmc8fH5TJUFCopyGaHc"
+      ],
+      "Server": [
+        "cloudflare"
+      ],
+      "Server-Timing": [
+        "x-originResponse;dur=118"
+      ],
+      "Strict-Transport-Security": [
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      "Traceresponse": [
+        "00-ea1000a66dc601451e3a7823ae869263-87d7026d7d040eac-01"
+      ],
+      "Vary": [
+        "Accept-Encoding"
+      ],
+      "X-Robots-Tag": [
+        "none"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-fable-5-2\",\"id\":\"msg_011Cgxmc8uQNQvRPKvKH1NWv\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":48,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":8,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"diagnostics\":null,\"context_management\":null}               }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}    }\n\n"
+      },
+      {
+        "text": "event: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\"}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"CAQS+gQKEAgTGAI4AUIIdGhpbmtpbmcSDLCtKuoTM90lpuzCbBoMb+UaepauRLaevw1zIjCTKslbyHWuBK2gAnIY0i46bIYxGaIIAVxIal+NGXl+dd4t2Hx3miUW80L4DcOEw/kqlwRKX4Fc/zwhx9Yp1tKipZQrVwu/b2IHLbkY6xknfw5tj9NhL+qzd+i6UP1Q5ZDDB2sgojZVFHNHbOq43SLIMemCbBkeZ043VCIvhYe56LMyvPOKDCSFxHZcOhyV3il6Mm0RbygX1J62wgkUfUms/WvjAhCOzXsaF8w9QwWYvqYlEUBGj4D0McXsVwcgAeWkCcw8hI8ssPAw5K+gRkRLPK7gf7t5xk2guqtoGOBQBKo8bl7wuc95LsSQlEZXtL6xkiUN6Mm6o6fLFL1Rf+E5v6CJHPJR2VarWtoLtSw5EWIG/JDUPM6jOo3lAvxH9pXb3BawoXHUoF4paOeU6+2OdB+K5rgXZ7j64vMWrGSVv62jgkkh4o1uX3dfSPleKsaXZ74RzO8tLJBVodB3BLMNO5VLhJfOqDdFT2qAn4MM/L0WcvztCcT3/yDCeLWEMwIuHQ5U63e3WjXEu1+TDqM1uROvWvrBIZTZzhvV9CYMeSeBBbac3l4aGUDIiTZfUvtoT9LuQt8nP3rt4FW+PD6/vvpQTYIFFsgLSo+De43u9lJrrUB/NEdUdQaSW7jlnsyeiu/eSkiosV70uKKBPoYoAne1QXhiuFLyp1QMAv1ocUD284aPsSae20ytaywKR9R1shUr/HnmuR2S+UUvIL5Q4Xmh8Kn4+G4C85HwneOegMtPS2P10UYggPtixuFTg4nF0WhDwfxSu/chGAE=\"}            }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0     }\n\n"
+      },
+      {
+        "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null,\"stop_details\":null,\"container\":null},\"usage\":{\"input_tokens\":48,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":16,\"output_tokens_details\":{\"thinking_tokens\":16},\"iterations\":[{\"input_tokens\":48,\"output_tokens\":16,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}]},\"context_management\":{\"applied_edits\":[]}  }\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"             }\n\n"
+      }
+    ],
+    "incomplete": true
+  }
+}

@@ -27,10 +27,16 @@ A search item is sent back as it came only when the request goes to the same pro
 
 - `src/provider/openai/testdata/codex_web_search.json` is a real response from the ChatGPT backend (`gpt-6-luna`, the user's `codex` account, one request). It holds one `web_search_call` with `action.query` and no `sources`, then a message with a `url_citation`.
 - Through the built binary, two turns in one session on the same account: the first searched and the client got a `tool_call` and a completed `tool_call_update`. The second request carried the stored `web_search_call` back and the backend accepted it.
+- The `claude` provider over OAuth, on `claude-fable-5-2` (added later the same day, once a Claude account was logged in). `oauth_web_search.json` is a real response: a `server_tool_use` block, a `web_search_tool_result` block with ten results, then cited text. The same two turns through the built binary worked: the search showed as a tool call, and the second request carried both stored blocks back and was accepted.
+
+Recording the Claude scenarios showed two other things:
+
+- The response headers `Anthropic-Organization-Id` and `Anthropic-Workspace-Id` name the account that recorded. The recorder now replaces any header whose name contains `organization`, `workspace` or `account`.
+- `claude-fable-5-2` with adaptive thinking at effort `low` answered the `thinking` scenario without a thinking block. The scenario now asks for `high`.
 
 ## Not verified
 
-- The `claude` provider. No Claude account or Anthropic key was available, so `api_web_search` and `oauth_web_search` in `src/provider/anthropic/replay_test.go` have no recording and are skipped. The definition and the reading of its two block types follow jcode's code, not a response seen here. Whether the Claude OAuth path accepts the tool is unknown.
+- The Anthropic API-key endpoint: `api_web_search` has no recording and is skipped.
 - `api_web_search` for the OpenAI API-key endpoint has no recording either.
 - A `pause_turn` during a long hosted search. The loop already resends on it.
 

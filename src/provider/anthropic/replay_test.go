@@ -136,7 +136,7 @@ func scenarios() []scenario {
 				check: checkToolCall,
 			},
 			scenario{
-				name: ep.prefix + "thinking", scheme: ep.scheme, maxOutput: 4096, effort: "low",
+				name: ep.prefix + "thinking", scheme: ep.scheme, maxOutput: 4096, effort: "high",
 				thinking: anthropic.Thinking{Mode: anthropic.ThinkingAdaptive, Display: "summarized"},
 				prompt:   "Think about which is larger, 2^10 or 10^3, then read the file notes.txt with the read tool.",
 				tools:    []provider.Tool{readTool},

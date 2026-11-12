@@ -129,9 +129,13 @@ func (ex *Exchange) write(path string) error {
 	return nil
 }
 
-// secretWords mark a header or query parameter as holding a credential when
-// its name contains one of them.
-var secretWords = []string{"auth", "cookie", "key", "token", "secret", "password", "credential", "session", "signature"}
+// secretWords mark a header or query parameter as holding a credential, or
+// an id of the account that recorded, when its name contains one of them.
+// A recording is committed, so it must not name whose account made it.
+var secretWords = []string{
+	"auth", "cookie", "key", "token", "secret", "password", "credential", "session", "signature",
+	"organization", "workspace", "account",
+}
 
 // SecretName reports whether a header or query parameter with this name is
 // replaced in a recording.

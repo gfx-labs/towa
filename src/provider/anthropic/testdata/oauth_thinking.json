@@ -1,0 +1,136 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages?beta=true",
+    "header": {
+      "Accept": [
+        "application/json"
+      ],
+      "Anthropic-Beta": [
+        "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,advanced-tool-use-2025-11-20,effort-2025-11-24"
+      ],
+      "Anthropic-Version": [
+        "2023-06-01"
+      ],
+      "Authorization": [
+        "REDACTED"
+      ],
+      "Content-Type": [
+        "application/json"
+      ],
+      "User-Agent": [
+        "acpharness/recording"
+      ],
+      "X-Client-Request-Id": [
+        "d2e90ed3-bacf-44d0-8267-3279080729d2"
+      ]
+    },
+    "body": {
+      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":4096,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Think about which is larger, 2^10 or 10^3, then read the file notes.txt with the read tool.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"read\",\"description\":\"Read a file and return its content.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"stream\":true}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Anthropic-Organization-Id": [
+        "REDACTED"
+      ],
+      "Anthropic-Ratelimit-Unified-7d-Reset": [
+        "1794978000"
+      ],
+      "Anthropic-Ratelimit-Unified-7d-Status": [
+        "allowed"
+      ],
+      "Anthropic-Ratelimit-Unified-7d-Utilization": [
+        "0.36"
+      ],
+      "Anthropic-Ratelimit-Unified-7d_oi-Reset": [
+        "1794978000"
+      ],
+      "Anthropic-Ratelimit-Unified-7d_oi-Status": [
+        "allowed"
+      ],
+      "Anthropic-Ratelimit-Unified-7d_oi-Utilization": [
+        "0.67"
+      ],
+      "Anthropic-Ratelimit-Unified-Fallback-Percentage": [
+        "0.5"
+      ],
+      "Anthropic-Ratelimit-Unified-Overage-Disabled-Reason": [
+        "org_level_disabled"
+      ],
+      "Anthropic-Ratelimit-Unified-Overage-Status": [
+        "rejected"
+      ],
+      "Anthropic-Ratelimit-Unified-Representative-Claim": [
+        "seven_day"
+      ],
+      "Anthropic-Ratelimit-Unified-Reset": [
+        "1794978000"
+      ],
+      "Anthropic-Ratelimit-Unified-Status": [
+        "allowed"
+      ],
+      "Anthropic-Workspace-Id": [
+        "REDACTED"
+      ],
+      "Cache-Control": [
+        "no-cache"
+      ],
+      "Cf-Cache-Status": [
+        "DYNAMIC"
+      ],
+      "Cf-Ray": [
+        "a59462f53cd578e1-ORD"
+      ],
+      "Content-Security-Policy": [
+        "default-src 'none'; frame-ancestors 'none'"
+      ],
+      "Content-Type": [
+        "text/event-stream; charset=utf-8"
+      ],
+      "Date": [
+        "Thu, 12 Nov 2026 09:07:28 GMT"
+      ],
+      "Request-Id": [
+        "req_011Cgxmby63vk6jaRfizehBJ"
+      ],
+      "Server": [
+        "cloudflare"
+      ],
+      "Server-Timing": [
+        "x-originResponse;dur=122"
+      ],
+      "Strict-Transport-Security": [
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      "Traceresponse": [
+        "00-4260065ab44b2353489ccd7ebedc0f7e-7160c6541a7d883e-01"
+      ],
+      "Vary": [
+        "Accept-Encoding"
+      ],
+      "X-Robots-Tag": [
+        "none"
+      ]
+    },
+    "chunks": [
+      {
+        "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-fable-5-2\",\"id\":\"msg_011CgxmbyMSTSu9y8TTHwXyx\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":423,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":8,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"diagnostics\":null,\"context_management\":null}       }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}             }\n\n"
+      },
+      {
+        "text": "event: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"I'm comparing 2\"}    }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"^10 with 10\"}              }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"^3:\"}       }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" 1\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"024 against\"}              }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" 1000, so 2^\"}              }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"10 is the\"}          }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" larger.\"}              }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" Next\"}          }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" I'll\"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" read the file.\"}            }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\\n\\n\"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"CAQSjQUKEAgTGAI4AUIIdGhpbmtpbmcSDHIoWYYePrX0z7kUVxoMDbThsqLKlX7IXAq5IjBJ9iOosR1zjlVdkJURU7D2SFvRRX6BZQ+gYmn9sxPA7yx4WdzUiBpkWKd3i+KUwY4qqgRs+iTx+SEJcuNB8aSMMzRGH8AN1zE9YlbzqI2lbjNOqJ1nWWeHnv4xN8s/88RFoc3TDRRhD3WH/T48vBXdv5zMogVx0rvGPDO6WPwYtJgvzaeCSSnUU8ePnDMLJOul4aTGHDB2Fnw3poWz1+06NOzg5qNkqo6//Zd+gYpPTSd3w6I5r2mo1abZehahPIQCtrQ6ONMgiVDpvDQf7E9qa0hhBZlvmW4uQq9DF3e85FnXPgS0VXbdZWhMSxhC23EHbKdIV93fS1+wYLk7wtY/pGZpNwxzQOVAEjqIDdWr3X9ZAL4gYraXViyhs2gkJLNA5vb9yo2cOP9JxkqT0NqetY00G1pJMI/avUW4f5rZtyHsYYzdMifsw6ulTuU2q5niMb0WF203cXjPV242yVUFsHQefe3tWMfUxtXK2VxeTxaG+lUPfpkxU9bPSprKsonAYxE4GYjYBfhXhdFJLhaYuD2jwgSrBKaO38yt3yqeYx8QXyUWJUxZvGcs6aLXzuuP50vetjYXBYimUpVDbGGvWFO3XJ6bAUznIZCNgdfuPqC0PKlYxZ1c051AZORSUA2htCT2x8UhXTBUfnsR90z0fSfWFTmS+QQi8gmIUpdlvTw96WKEPhh67nR6PRdtS92PJtOp64cpqm0tgiF0erOJ6ghYpTSa/dtDs4RTndoU5ZsB8gvQyIBMTauCNk1X8fTTAGLVqacAUnc6oldlPugFzQGRnADH7L3ll/O7YRgB\"}          }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0         }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}   }\n\n"
+      },
+      {
+        "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"2^10 = 1024\"}          }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\" and\"} }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\" 10^3 = 1\"}     }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"000, so 2^10 \"}               }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"is larger.\"}    }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\" Now reading the\"}         }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\" file.\"}            }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1        }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_013aZ8cgh52wCRZib71we78E\",\"name\":\"read\",\"input\":{},\"caller\":{\"type\":\"direct\"}}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\"}     }\n\n"
+      },
+      {
+        "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\": \\\"note\"} }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"s.txt\\\"}\"}          }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2              }\n\n"
+      },
+      {
+        "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"container\":null},\"usage\":{\"input_tokens\":423,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":124,\"output_tokens_details\":{\"thinking_tokens\":37},\"iterations\":[{\"input_tokens\":423,\"output_tokens\":124,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}]},\"context_management\":{\"applied_edits\":[]} }\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"               }\n\n"
+      }
+    ],
+    "incomplete": true
+  }
+}

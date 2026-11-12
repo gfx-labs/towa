@@ -486,4 +486,4 @@ jobshop (origin/master 2b42e5fd, 2026-11-11) uses `acp-go-sdk` v0.13.5 and calls
 ## Open questions
 
 - Local web search has one backend, DuckDuckGo's HTML page, which challenges an address that searches often. A second backend (SearXNG or a keyed API) is added when that is measured to be a problem on the worker hosts.
-- Hosted web search on the `claude` provider has no recording yet: no Claude account was logged in when it was built.
+- Hosted web search is recorded for the two OAuth backends only. The API-key endpoints of Anthropic and OpenAI have no recording.
