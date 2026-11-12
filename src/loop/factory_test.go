@@ -40,7 +40,7 @@ const recordFactoryUpstream = "ACPHARNESS_FACTORY_WRITE_UPSTREAM"
 
 // factoryModel is the model the recording was made with. A 3b model wrote
 // the wrong content or no file in three of five recordings.
-const factoryModel = "openai/gpt-oss-20b"
+const factoryModel = "qwen3.8-27b"
 
 type processStderr struct {
 	mu     sync.Mutex
