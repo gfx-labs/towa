@@ -86,6 +86,15 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	result = run(t, set, env, "edit", edit)
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 
+	// An edit whose text is not in the file changes nothing, so the read
+	// still stands for the corrected edit that follows.
+	edit["old_string"] = "absent"
+	result = run(t, set, env, "edit", edit)
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+	edit["old_string"], edit["new_string"] = "reread", "corrected"
+	result = run(t, set, env, "edit", edit)
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
+
 	result = run(t, set, env, "todo", map[string]any{
 		"todos": []map[string]any{{"content": "Check files", "status": "in_progress", "activeForm": "Checking files", "confidence": "plausible"}},
 		"plan":  map[string]any{"user_intention": "Check the files", "understands_user_intent": "clear"},
@@ -154,6 +163,16 @@ func TestApplyPatchChangesFilesAndKeepsWhatWasAppliedBeforeAFailure(t *testing.T
 	got, err = os.ReadFile(filepath.Join(env.Cwd, "partial.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "kept\n", string(got))
+
+	// A later hunk moves the file an earlier hunk wrote. The patch is
+	// applied, and the file that is left can be edited.
+	text = "*** Begin Patch\n*** Update File: created.txt\n*** Move to: moved.txt\n@@\n-hello\n+moved\n*** Update File: moved.txt\n*** Move to: final.txt\n@@\n-moved\n+final\n*** End Patch"
+	result = run(t, set, env, "apply_patch", map[string]any{"patch_text": text})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
+	require.NoFileExists(t, filepath.Join(env.Cwd, "moved.txt"))
+	final := filepath.Join(env.Cwd, "final.txt")
+	result = run(t, set, env, "edit", map[string]any{"file_path": final, "old_string": "final", "new_string": "edited"})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
 
 	result = run(t, set, env, "apply_patch", map[string]any{"patch_text": "not a patch"})
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)

@@ -149,7 +149,10 @@ func (t *ReadTracker) write(ctx context.Context, path string, write func() error
 		return err
 	}
 	if err := write(); err != nil {
-		delete(t.files, path)
+		// The read stands: a refused write, such as an edit whose text is
+		// not in the file, changed nothing, and the model corrects it and
+		// tries again. A write that failed part way left another file, which
+		// the next Edit finds by its fingerprint.
 		return err
 	}
 	next, err := snapshot(ctx, path)

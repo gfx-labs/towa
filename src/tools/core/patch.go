@@ -73,9 +73,15 @@ func patchTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 				}
 			}
 			result := textResult(text, applyErr != nil)
-			for _, change := range applied.Changes {
+			// A later hunk can move or delete a file an earlier one wrote, so
+			// only the last change to a path says whether the file is there.
+			last := make(map[string]int, len(applied.Changes))
+			for i, change := range applied.Changes {
+				last[change.Change.Path] = i
+			}
+			for i, change := range applied.Changes {
 				result.Content = append(result.Content, change.Change.Diff())
-				if change.Change.Removed {
+				if change.Change.Removed || last[change.Change.Path] != i {
 					continue
 				}
 				// The session wrote this content, so edit may follow without a read.
