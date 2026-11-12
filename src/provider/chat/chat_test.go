@@ -47,7 +47,7 @@ func openRouter(routing config.OpenRouterRouting) config.Provider {
 	}
 }
 
-// conversation is one turn with reasoning, text, two tool calls and their
+// conversation is one turn with reasoning, text, three tool calls and their
 // results, as the loop stores it.
 func conversation(providerID string) []transcript.Item {
 	return []transcript.Item{
@@ -62,6 +62,7 @@ func conversation(providerID string) []transcript.Item {
 		{ToolResult: &transcript.ToolResult{CallID: "call_1", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
 			{Text: "a.go\n"},
 			{Stored: &transcript.Stored{Hash: "sha256:00", Size: 9000}},
+			{Image: &transcript.Blob{MimeType: "image/png", Data: []byte{4, 5, 6}}},
 		}}},
 		{ToolResult: &transcript.ToolResult{CallID: "call_2", Name: "shell", Outcome: transcript.OutcomeFailed, Parts: []transcript.Part{{Text: "invalid arguments"}}}},
 		{ToolResult: &transcript.ToolResult{CallID: "call_3", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "/work\n"}}}},
@@ -103,9 +104,13 @@ func TestRequestBodyForAPlainEndpoint(t *testing.T) {
 				{"id": "call_2", "type": "function", "function": {"name": "shell", "arguments": "{\"input\":\"{\\\"command\\\":\"}"}},
 				{"id": "call_3", "type": "function", "function": {"name": "shell", "arguments": "{\"command\":\"pwd\"}"}}
 			]},
-			{"role": "tool", "tool_call_id": "call_1", "content": "a.go\n"},
+			{"role": "tool", "tool_call_id": "call_1", "content": "a.go\n\n\n[This result holds content a tool message cannot carry. It is in the user message after the tool results.]"},
 			{"role": "tool", "tool_call_id": "call_2", "content": "invalid arguments"},
 			{"role": "tool", "tool_call_id": "call_3", "content": "/work\n"},
+			{"role": "user", "content": [
+				{"type": "text", "text": "Content of the result of tool call call_1:"},
+				{"type": "image_url", "image_url": {"url": "data:image/png;base64,BAUG"}}
+			]},
 			{"role": "user", "content": [
 				{"type": "text", "text": "and this picture"},
 				{"type": "image_url", "image_url": {"url": "data:image/png;base64,AQID"}}
@@ -157,8 +162,8 @@ func TestRequestRejectsWhatItCannotSend(t *testing.T) {
 		"empty item":      {Model: "m", Items: []transcript.Item{{}}},
 		"empty part":      {Model: "m", Items: []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{}}}}}},
 		"own native item": {Model: "m", Items: []transcript.Item{user, {Native: &transcript.Native{Kind: "x"}, Provider: "test"}}},
-		"image in a result": {Model: "m", Items: []transcript.Item{user, {ToolResult: &transcript.ToolResult{CallID: "c", Parts: []transcript.Part{
-			{Image: &transcript.Blob{MimeType: "image/png", Data: []byte{1}}},
+		"file in a result": {Model: "m", Items: []transcript.Item{user, {ToolResult: &transcript.ToolResult{CallID: "c", Parts: []transcript.Part{
+			{Resource: &transcript.Resource{URI: "file:///a.pdf", MimeType: "application/pdf", Data: []byte{1}}},
 		}}}}},
 		"tool without a name": {Model: "m", Items: []transcript.Item{user}, Tools: []provider.Tool{{Description: "d"}}},
 	}

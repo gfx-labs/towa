@@ -255,6 +255,21 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 		cur = nil
 		text.Reset()
 	}
+	// attached holds what the tool results of the current run returned that
+	// a tool message cannot carry.
+	var attached []wirePart
+	attach := func(i int) *provider.Error {
+		if len(attached) == 0 {
+			return nil
+		}
+		content, err := json.Marshal(attached)
+		if err != nil {
+			return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
+		}
+		out = append(out, wireMessage{Role: "user", Content: content})
+		attached = nil
+		return nil
+	}
 	assistant := func() *wireMessage {
 		if cur == nil {
 			cur = &wireMessage{Role: "assistant"}
@@ -265,6 +280,11 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 	for i, item := range items {
 		if err := item.Validate(); err != nil {
 			return nil, invalid("items[%d]: %v", i, err)
+		}
+		if item.ToolResult == nil {
+			if perr := attach(i); perr != nil {
+				return nil, perr
+			}
 		}
 		mine := item.OpaqueCompatible(c.cfg.ID, origin)
 		switch {
@@ -335,6 +355,7 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 				return nil, invalid("items[%d]: tool result has no call id", i)
 			}
 			var b strings.Builder
+			var binary []wirePart
 			for j, p := range tr.Parts {
 				switch {
 				case p.Stored != nil:
@@ -345,13 +366,26 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 				case p.Link != nil:
 					b.WriteString(linkText(p.Link))
 				case p.Image != nil, p.Audio != nil, p.Resource != nil:
-					// A tool message is text. Moving the content into a
-					// user message would put it between tool results,
-					// which endpoints reject.
-					return nil, invalid("items[%d].parts[%d]: a Chat Completions tool result cannot carry binary content", i, j)
+					part, perr := binaryPart(i, j, p)
+					if perr != nil {
+						return nil, perr
+					}
+					binary = append(binary, part)
 				default:
 					return nil, invalid("items[%d].parts[%d]: part has nothing set", i, j)
 				}
+			}
+			if len(binary) > 0 {
+				// A tool message is text, and an endpoint refuses a user
+				// message between the results of one response's calls.
+				// The content goes in a user message after the last of
+				// them, and each says here and there whose it is.
+				if b.Len() > 0 {
+					b.WriteString("\n\n")
+				}
+				b.WriteString(textAttachedBelow)
+				attached = append(attached, wirePart{Type: "text", Text: fmt.Sprintf(textAttachment, tr.CallID)})
+				attached = append(attached, binary...)
 			}
 			out = append(out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(b.String())})
 		case item.Native != nil:
@@ -361,8 +395,18 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 		}
 	}
 	flush()
+	if perr := attach(len(items)); perr != nil {
+		return nil, perr
+	}
 	return out, nil
 }
+
+// What the model reads in place of content a tool message cannot carry, and
+// ahead of that content in the user message that carries it.
+const (
+	textAttachedBelow = "[This result holds content a tool message cannot carry. It is in the user message after the tool results.]"
+	textAttachment    = "Content of the result of tool call %s:"
+)
 
 // arguments returns the text of a tool call's arguments member, which has to
 // hold a JSON object: Ollama and vLLM parse it and refuse the whole request
@@ -413,29 +457,15 @@ func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Erro
 		case p.Stored != nil:
 		case p.Text != "":
 			wire = append(wire, wirePart{Type: "text", Text: p.Text})
-		case p.Image != nil:
-			plain = false
-			wire = append(wire, imagePart(p.Image.MimeType, p.Image.Data))
-		case p.Audio != nil:
-			format, ok := strings.CutPrefix(p.Audio.MimeType, "audio/")
-			if !ok || format == "" {
-				return nil, invalid("items[%d].parts[%d]: %q is not an audio type", i, j, p.Audio.MimeType)
+		case p.Image != nil, p.Audio != nil, p.Resource != nil && p.Resource.Data != nil:
+			part, perr := binaryPart(i, j, p)
+			if perr != nil {
+				return nil, perr
 			}
 			plain = false
-			wire = append(wire, wirePart{Type: "input_audio", InputAudio: &wireAudio{
-				Data: base64.StdEncoding.EncodeToString(p.Audio.Data), Format: format,
-			}})
+			wire = append(wire, part)
 		case p.Resource != nil:
-			r := p.Resource
-			switch {
-			case r.Data == nil:
-				wire = append(wire, wirePart{Type: "text", Text: r.Text})
-			case strings.HasPrefix(r.MimeType, "image/"):
-				plain = false
-				wire = append(wire, imagePart(r.MimeType, r.Data))
-			default:
-				return nil, invalid("items[%d].parts[%d]: Chat Completions cannot carry a resource of type %q", i, j, r.MimeType)
-			}
+			wire = append(wire, wirePart{Type: "text", Text: p.Resource.Text})
 		case p.Link != nil:
 			wire = append(wire, wirePart{Type: "text", Text: linkText(p.Link)})
 		default:
@@ -457,6 +487,29 @@ func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Erro
 		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
 	}
 	return out, nil
+}
+
+// binaryPart returns the content part of an image, of audio or of a resource
+// that holds an image. A user message is the only one that takes it.
+func binaryPart(i, j int, p transcript.Part) (wirePart, *provider.Error) {
+	switch {
+	case p.Image != nil:
+		return imagePart(p.Image.MimeType, p.Image.Data), nil
+	case p.Audio != nil:
+		format, ok := strings.CutPrefix(p.Audio.MimeType, "audio/")
+		if !ok || format == "" {
+			return wirePart{}, invalid("items[%d].parts[%d]: %q is not an audio type", i, j, p.Audio.MimeType)
+		}
+		return wirePart{Type: "input_audio", InputAudio: &wireAudio{
+			Data: base64.StdEncoding.EncodeToString(p.Audio.Data), Format: format,
+		}}, nil
+	case p.Resource != nil && strings.HasPrefix(p.Resource.MimeType, "image/"):
+		return imagePart(p.Resource.MimeType, p.Resource.Data), nil
+	case p.Resource != nil:
+		return wirePart{}, invalid("items[%d].parts[%d]: Chat Completions cannot carry a resource of type %q", i, j, p.Resource.MimeType)
+	default:
+		return wirePart{}, invalid("items[%d].parts[%d]: part holds no binary content", i, j)
+	}
 }
 
 func imagePart(mimeType string, data []byte) wirePart {

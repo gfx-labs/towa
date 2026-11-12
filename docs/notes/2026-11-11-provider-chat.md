@@ -25,7 +25,7 @@ It covers plain HTTP only, not a WebSocket.
 - A model's reasoning goes back only to the provider that wrote it, in the member it arrived in (`reasoning`, `reasoning_content` or `reasoning_details`). The item's `Opaque` records which. Reasoning from another provider is left out.
 - OpenRouter `reasoning_details` pieces are merged by `index`, with `text`, `summary` and `data` concatenated, and sent back as merged.
 - Tool call arguments that are not valid JSON are stored in a JSON string, as `transcript.ToolCall.Input` allows, and go back to the model unquoted. Changed on 2026-11-12: see `2026-11-12-chat-call-arguments.md`.
-- A tool result with an image, audio or binary resource is an error. A tool message is text, and a user message placed between tool results is rejected by endpoints.
+- A tool result with an image, audio or binary resource is an error. A tool message is text, and a user message placed between tool results is rejected by endpoints. Changed on 2026-11-12: see `2026-11-12-chat-tool-result-images.md`.
 - A `Stored` part is left out. A part with nothing set is an error.
 - `stream_options.include_usage` is sent to every endpoint except OpenRouter, which documents it as having no effect.
 - `Usage.InputTokens` is `prompt_tokens` minus cached and cache write tokens, because the contract says it excludes them. A negative result is an error, not clamped.
