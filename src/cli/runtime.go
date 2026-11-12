@@ -23,6 +23,7 @@ import (
 	"github.com/gfx-labs/acpharness/src/mcp"
 	"github.com/gfx-labs/acpharness/src/models"
 	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
 	"github.com/gfx-labs/acpharness/src/provider/openai"
 	"github.com/gfx-labs/acpharness/src/provider/router"
 	"github.com/gfx-labs/acpharness/src/session"
@@ -310,6 +311,13 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		chain[i].Preparation = &router.Preparation{
 			ContextWindow: entry.Metadata.ContextWindow, MaxOutputTokens: entry.Metadata.MaxOutputTokens,
 			Interruption: agentctx.Interruption, System: system,
+		}
+		hosted, ok, err := hostedsearch.Tool(f.cfg.WebSearch, entry.Provider, entry.Model)
+		if err != nil {
+			return preparedTurn{}, err
+		}
+		if ok {
+			chain[i].Preparation.HostedSearch, chain[i].Preparation.LocalSearch = hosted, extras.NameWebSearch
 		}
 		if i == 0 {
 			result.system = system

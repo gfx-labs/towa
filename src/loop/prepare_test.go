@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"encoding/json/jsontext"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/router"
+	"github.com/gfx-labs/acpharness/src/tools"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
 
@@ -34,4 +36,29 @@ func TestPreparationUsesSelectedEntry(t *testing.T) {
 	selected.ContextWindow = 0
 	_, err = tn.prepareRequest(t.Context(), router.Entry{Preparation: selected}, provider.Request{})
 	require.Error(t, err, "an invalid entry must not reuse the first model's window")
+}
+
+// An entry whose provider runs web search itself gets that tool in place of
+// the session's own, and an entry without it keeps the session's.
+func TestPreparationSwapsTheSearchToolPerEntry(t *testing.T) {
+	read := provider.Tool{Name: "read", InputSchema: jsontext.Value(`{"type":"object"}`)}
+	local := provider.Tool{Name: "websearch", InputSchema: jsontext.Value(`{"type":"object"}`)}
+	hosted := provider.Tool{Name: "web_search", Native: jsontext.Value(`{"type":"web_search"}`), NativeAPI: provider.NativeAPIResponses}
+	prepare := func(session []provider.Tool, entry router.Preparation) []provider.Tool {
+		var set tools.Set
+		for _, spec := range session {
+			set.Tools = append(set.Tools, tools.Tool{Spec: spec})
+		}
+		tn := &turn{l: &Loop{o: Options{Now: time.Now}}, started: time.Now(), model: Resolved{Interruption: "i", Tools: set}}
+		entry.ContextWindow, entry.MaxOutputTokens = 2048, 128
+		// The request arrives holding what the entry before it was sent.
+		req, err := tn.prepareRequest(t.Context(), router.Entry{Preparation: &entry}, provider.Request{Tools: []provider.Tool{hosted}})
+		require.NoError(t, err)
+		return req.Tools
+	}
+	with := router.Preparation{HostedSearch: hosted, LocalSearch: "websearch"}
+	require.Equal(t, []provider.Tool{read, hosted}, prepare([]provider.Tool{read, local}, with))
+	require.Equal(t, []provider.Tool{read, local}, prepare([]provider.Tool{read, local}, router.Preparation{}))
+	// A session with search turned off does not get the provider's.
+	require.Equal(t, []provider.Tool{read}, prepare([]provider.Tool{read}, with))
 }

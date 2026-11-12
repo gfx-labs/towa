@@ -173,6 +173,8 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 		case item.ToolCall != nil:
 			call := m.ToolCall(*item.ToolCall)
 			return []acp.SessionUpdate{{ToolCall: &call}}
+		case item.Native != nil:
+			return HostedSearch(item)
 		}
 	case e.Usage != nil:
 		r.Usage = e.Usage

@@ -7,6 +7,7 @@ import (
 	"github.com/gfx-labs/acpharness/pkg/acp"
 	"github.com/gfx-labs/acpharness/src/compact"
 	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
 	"github.com/gfx-labs/acpharness/src/provider/router"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
@@ -17,11 +18,14 @@ type turnLimitError struct{ key string }
 
 func (e *turnLimitError) Error() string { return "loop: the turn reached " + e.key }
 
-func (tn *turn) contextItems(ctx context.Context, name, interruption string, origin transcript.Origin) ([]transcript.Item, error) {
+func (tn *turn) contextItems(ctx context.Context, name, interruption string, origin transcript.Origin, hosted bool) ([]transcript.Item, error) {
 	items, err := compact.Items(tn.entries, name, origin)
 	if err != nil {
 		return nil, err
 	}
+	// A provider's search items go back only to the request that can hold
+	// them. After a fallback or a model switch they are sent as text.
+	items = hostedsearch.Portable(items, name, origin, hosted)
 	items, repairs, err := Conversation(items, interruption)
 	if err != nil {
 		return nil, err
@@ -34,12 +38,16 @@ func (tn *turn) contextItems(ctx context.Context, name, interruption string, ori
 
 func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req provider.Request) (provider.Request, error) {
 	window, interruption := tn.model.ContextSize, tn.model.Interruption
+	hosted := false
 	if selected := entry.Preparation; selected != nil {
 		if selected.ContextWindow <= 0 || selected.MaxOutputTokens <= 0 {
 			return provider.Request{}, errors.New("loop: selected entry needs positive context and output allowances")
 		}
 		window, interruption = selected.ContextWindow, selected.Interruption
 		req.System, req.MaxOutputTokens = selected.System, selected.MaxOutputTokens
+		// From the session's tools each time: after a fallback req holds
+		// what the entry before was sent.
+		req.Tools, hosted = searchTools(tn.model.Tools.Specs(), *selected)
 	}
 	if window > 0 {
 		tn.mapper.ContextSize = func(string) (int, bool) { return int(window), true }
@@ -56,7 +64,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		}
 	}
 	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
-	items, err := tn.contextItems(ctx, name, interruption, origin)
+	items, err := tn.contextItems(ctx, name, interruption, origin, hosted)
 	if err != nil {
 		var unreadable *compact.UnreadableError
 		if tn.compactor == nil || !errors.As(err, &unreadable) {
@@ -76,7 +84,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		if err := tn.applyCompaction(ctx, effects); err != nil {
 			return provider.Request{}, err
 		}
-		req.Items, err = tn.contextItems(ctx, name, interruption, origin)
+		req.Items, err = tn.contextItems(ctx, name, interruption, origin, hosted)
 		if err != nil {
 			return provider.Request{}, err
 		}
@@ -88,6 +96,25 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		return provider.Request{}, &turnLimitError{key: key}
 	}
 	return req, nil
+}
+
+// searchTools returns the tools for an entry: the session's, with the
+// entry's hosted search in place of the local search tool. It reports
+// whether the hosted tool is among them.
+func searchTools(specs []provider.Tool, entry router.Preparation) ([]provider.Tool, bool) {
+	if len(entry.HostedSearch.Native) == 0 {
+		return specs, false
+	}
+	out := make([]provider.Tool, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Name != entry.LocalSearch {
+			out = append(out, spec)
+		}
+	}
+	if len(out) == len(specs) {
+		return specs, false
+	}
+	return append(out, entry.HostedSearch), true
 }
 
 func (tn *turn) applyCompaction(ctx context.Context, effects []transcript.Item) error {

@@ -91,7 +91,7 @@ func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 	assert.Equal(t, []any{"agent_thought_chunk"}, kinds(transcript.Item{Thinking: &transcript.Thinking{Text: "hm"}}))
 	assert.Empty(t, kinds(transcript.Item{Thinking: &transcript.Thinking{}}), "reasoning only the provider can read has nothing to show")
 	assert.Empty(t, kinds(transcript.Item{Interrupted: &transcript.Interrupted{}}))
-	assert.Empty(t, kinds(transcript.Item{Native: &transcript.Native{Kind: "web_search"}}))
+	assert.Empty(t, kinds(transcript.Item{Native: &transcript.Native{Kind: "compaction"}}))
 
 	usage := transcript.Usage{
 		Model: "opus", InputTokens: 10, CacheReadTokens: 5000, CacheWriteTokens: 200, OutputTokens: 90,

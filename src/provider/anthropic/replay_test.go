@@ -16,9 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/src/auth"
+	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/httpclient"
 	"github.com/gfx-labs/acpharness/src/provider"
 	"github.com/gfx-labs/acpharness/src/provider/anthropic"
+	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
 	"github.com/gfx-labs/acpharness/src/provider/providertest"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
@@ -76,13 +78,53 @@ var readTool = provider.Tool{
 	InputSchema: jsontext.Value(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 }
 
+// checkHostedSearch expects the provider to have searched: a use and its
+// result, both kept whole and paired by id, and an answer after them.
+func checkHostedSearch(t *testing.T, events []provider.Event, err error) {
+	require.NoError(t, err)
+	started, done := map[string]bool{}, map[string]bool{}
+	var answer strings.Builder
+	for _, ev := range events {
+		if ev.Item == nil {
+			continue
+		}
+		if ev.Item.Text != nil {
+			answer.WriteString(ev.Item.Text.Text)
+		}
+		if search, ok := hostedsearch.Read(*ev.Item); ok {
+			if search.Started {
+				require.NotEmpty(t, search.Query, "the streamed input was put back into the block")
+				started[search.ID] = true
+			}
+			if search.Done {
+				require.False(t, search.Failed)
+				done[search.ID] = true
+			}
+		}
+	}
+	require.NotEmpty(t, started, "the response holds a search")
+	require.Equal(t, started, done, "every search has its result")
+	require.NotEmpty(t, answer.String())
+	require.Equal(t, provider.StopEndTurn, events[len(events)-1].Stop)
+}
+
 func scenarios() []scenario {
+	searchTool, ok, err := hostedsearch.Tool(config.WebSearch{Enabled: true, Hosted: true, HostedMaxUses: 1}, config.ProviderClaude, "")
+	if err != nil || !ok {
+		panic("the claude provider has a hosted search tool")
+	}
 	var out []scenario
 	for _, ep := range []struct {
 		prefix string
 		scheme auth.Scheme
 	}{{"api_", auth.SchemeAPIKey}, {"oauth_", auth.SchemeOAuth}} {
 		out = append(out,
+			scenario{
+				name: ep.prefix + "web_search", scheme: ep.scheme, maxOutput: 1024,
+				prompt: "Search the web for the Agent Client Protocol and reply with the address of its website.",
+				tools:  []provider.Tool{searchTool},
+				check:  checkHostedSearch,
+			},
 			scenario{
 				name: ep.prefix + "text", scheme: ep.scheme, maxOutput: 256,
 				prompt: "Reply with the single word: ready",

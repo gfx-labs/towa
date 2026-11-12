@@ -15,8 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/acpharness/src/auth"
+	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/httpclient"
 	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
 	"github.com/gfx-labs/acpharness/src/provider/openai"
 	"github.com/gfx-labs/acpharness/src/provider/providertest"
 	"github.com/gfx-labs/acpharness/src/transcript"
@@ -68,13 +70,68 @@ var readTool = provider.Tool{
 var patchTool = provider.Tool{NativeAPI: provider.NativeAPIResponses, Native: jsontext.Value(
 	`{"type":"custom","name":"apply_patch","description":"Apply a patch. The input is the patch text."}`)}
 
+// checkHostedSearch expects the provider to have searched: an item that is
+// kept whole, that reads as a finished search, and an answer after it.
+func checkHostedSearch(t *testing.T, events []provider.Event, err error) {
+	require.NoError(t, err)
+	var searches int
+	var answer strings.Builder
+	var items []transcript.Item
+	for _, ev := range events {
+		if ev.Item == nil {
+			continue
+		}
+		items = append(items, *ev.Item)
+		if ev.Item.Text != nil {
+			answer.WriteString(ev.Item.Text.Text)
+		}
+		if search, ok := hostedsearch.Read(*ev.Item); ok {
+			searches++
+			require.NotEmpty(t, search.ID)
+			require.True(t, search.Done)
+			require.False(t, search.Failed)
+			require.NotEmpty(t, search.Output)
+		}
+	}
+	require.Positive(t, searches, "the response holds a search")
+	require.NotEmpty(t, answer.String())
+	require.Equal(t, provider.StopEndTurn, events[len(events)-1].Stop)
+
+	// A request that does not declare the hosted tool, as after a fallback
+	// to another provider, gets the search as text and no item of this API.
+	portable := hostedsearch.Portable(items, "another-provider", transcript.Origin{Model: "m", Account: "a"}, false)
+	var standIns int
+	for _, item := range portable {
+		_, hosted := hostedsearch.Read(item)
+		require.False(t, hosted)
+		if item.Text != nil && strings.HasPrefix(item.Text.Text, "["+hostedsearch.Name+" for ") {
+			standIns++
+			require.Empty(t, item.Opaque)
+		}
+	}
+	require.Equal(t, searches, standIns)
+	// The request that made them, with the tool declared, gets them back whole.
+	same := hostedsearch.Portable(items, items[0].Provider, *items[0].Origin, true)
+	require.Equal(t, items, same)
+}
+
 func scenarios() []scenario {
+	searchTool, ok, err := hostedsearch.Tool(config.WebSearch{Enabled: true, Hosted: true}, config.ProviderCodex, "")
+	if err != nil || !ok {
+		panic("the codex provider has a hosted search tool")
+	}
 	var out []scenario
 	for _, ep := range []struct {
 		prefix string
 		scheme auth.Scheme
 	}{{"api_", auth.SchemeAPIKey}, {"codex_", auth.SchemeOAuth}} {
 		out = append(out,
+			scenario{
+				name: ep.prefix + "web_search", scheme: ep.scheme, effort: "low",
+				prompt: "Search the web for the Agent Client Protocol and reply with the address of its website.",
+				tools:  []provider.Tool{searchTool},
+				check:  checkHostedSearch,
+			},
 			scenario{
 				name: ep.prefix + "text", scheme: ep.scheme, effort: "low",
 				prompt: "Reply with the single word: ready",

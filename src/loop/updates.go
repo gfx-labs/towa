@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
 	"github.com/gfx-labs/acpharness/src/tools"
 	"github.com/gfx-labs/acpharness/src/transcript"
 )
@@ -24,7 +25,8 @@ type Mapper struct {
 }
 
 // Updates returns the updates for one item, in order. Items a client is not
-// shown give none: Native, ModelSwitch, Compaction and Interrupted.
+// shown give none: ModelSwitch, Compaction, Interrupted, and a Native item
+// that is not a provider's web search.
 func (m Mapper) Updates(item transcript.Item) ([]acp.SessionUpdate, error) {
 	if err := item.Validate(); err != nil {
 		return nil, err
@@ -59,12 +61,45 @@ func (m Mapper) Updates(item transcript.Item) ([]acp.SessionUpdate, error) {
 			return nil, err
 		}
 		return []acp.SessionUpdate{{ToolCallUpdate: &update}}, nil
+	case item.Native != nil:
+		return HostedSearch(item), nil
 	case item.Usage != nil:
 		if update, ok := m.Usage(*item.Usage); ok {
 			return []acp.SessionUpdate{{UsageUpdate: &update}}, nil
 		}
 	}
 	return nil, nil
+}
+
+// HostedSearch shows a web search the provider ran as a tool call: the
+// update that announces it, the one that ends it, or both when one item
+// holds the whole search. Any other item gives none.
+func HostedSearch(item transcript.Item) []acp.SessionUpdate {
+	ev, ok := hostedsearch.Read(item)
+	if !ok {
+		return nil
+	}
+	var out []acp.SessionUpdate
+	if ev.Started {
+		name, title := hostedsearch.Name, "Search the web"
+		if ev.Query != "" {
+			title += ": " + ev.Query
+		}
+		out = append(out, acp.SessionUpdate{ToolCall: &acp.SessionUpdateToolCall{
+			ToolCallId: acp.ToolCallId(ev.ID), Name: &name, Title: title, Kind: acp.ToolKindSearch,
+			Status: acp.ToolCallStatusInProgress, RawInput: map[string]string{"query": ev.Query},
+		}})
+	}
+	if ev.Done {
+		status := acp.ToolCallStatusCompleted
+		if ev.Failed {
+			status = acp.ToolCallStatusFailed
+		}
+		out = append(out, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+			ToolCallId: acp.ToolCallId(ev.ID), Status: &status, Content: []acp.ToolCallContent{tools.TextContent(ev.Output)},
+		}})
+	}
+	return out
 }
 
 // TextChunk is text the model wrote to the user.

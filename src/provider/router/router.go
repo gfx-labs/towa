@@ -36,6 +36,12 @@ type Preparation struct {
 	MaxOutputTokens int64
 	Interruption    string
 	System          []provider.SystemBlock
+	// HostedSearch, when it holds a native definition, is the entry's
+	// provider-run web search. It is sent in place of the tool named
+	// LocalSearch, and only when the session has that tool, so a session
+	// without search does not get one this way.
+	HostedSearch provider.Tool
+	LocalSearch  string
 }
 
 // String returns the entry as a chain names it: provider:account/model.
