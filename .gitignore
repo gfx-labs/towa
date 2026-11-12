@@ -1,2 +1,2 @@
-# Output of go build ./cmd/acpharness.
-/acpharness
+# Output of go build ./cmd/acph.
+/acph

@@ -42,10 +42,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	binary = filepath.Join(dir, "acpharness")
-	// Built from the repository root: cmd/acpharness is in the root module,
+	binary = filepath.Join(dir, "acph")
+	// Built from the repository root: cmd/acph is in the root module,
 	// and go build refuses a package outside the module it runs in.
-	build := exec.Command("go", "build", "-o", binary, "./cmd/acpharness")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/acph")
 	build.Dir = filepath.Join("..", "..")
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
@@ -162,7 +162,7 @@ func (c *client) WaitForTerminalExit(context.Context, acp.WaitForTerminalExitReq
 	return acp.WaitForTerminalExitResponse{}, acp.NewMethodNotFound(acp.ClientMethodTerminalWaitForExit)
 }
 
-// agent is one running "acpharness serve" and what crossed its pipes.
+// agent is one running "acph serve" and what crossed its pipes.
 type agent struct {
 	t *testing.T
 	// sent is what the client wrote and received what the agent wrote.
@@ -207,11 +207,11 @@ func start(t *testing.T) *agent {
 		select {
 		case err := <-done:
 			if err != nil {
-				t.Errorf("acpharness serve ended with %v\nstderr:\n%s", err, stderr.String())
+				t.Errorf("acph serve ended with %v\nstderr:\n%s", err, stderr.String())
 			}
 		case <-time.After(30 * time.Second):
 			_ = cmd.Process.Kill()
-			t.Errorf("acpharness serve did not end after its standard input closed\nstderr:\n%s", stderr.String())
+			t.Errorf("acph serve did not end after its standard input closed\nstderr:\n%s", stderr.String())
 		}
 		if t.Failed() || os.Getenv(envWire) != "" {
 			t.Logf("client sent:\n%s", strings.Join(a.sent.lines(), "\n"))

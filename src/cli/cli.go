@@ -1,6 +1,6 @@
 // Package cli is the acpharness command line: its commands, its flags and
 // the wiring from the resolved configuration to a served connection.
-// cmd/acpharness only calls Run.
+// cmd/acph only calls Run.
 package cli
 
 import (
@@ -119,10 +119,10 @@ func run(ctx context.Context, args []string, h Host, env commandEnv) error {
 	// either, whatever the rest of the command line or the files hold.
 	printed := false
 	parsed, loaded, err := config.Parse(sources(h), &line, &line.Flags, args[1:],
-		kong.Name("acpharness"),
+		kong.Name("acph"),
 		kong.Description("A coding agent that speaks the Agent Client Protocol.\n\n"+
 			"Every setting is a config key, and every key is a flag below: --limits.max_wall=30m sets\n"+
-			"limits.max_wall. \"acpharness config\" lists each key with its value and where the value\n"+
+			"limits.max_wall. \"acph config\" lists each key with its value and where the value\n"+
 			"comes from. A key is set by, later ones winning:\n\n"+
 			"  1. "+filepath.Join(h.SystemDir, "config.yaml")+"\n"+
 			"  2. $$XDG_CONFIG_HOME/acpharness/config.yaml, or ~/.config/acpharness/config.yaml\n"+

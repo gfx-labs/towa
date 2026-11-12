@@ -45,7 +45,7 @@ Packages:
 
 | package | role |
 |---|---|
-| `cmd/acpharness` | a shim that calls `src/cli` |
+| `cmd/acph` | a shim that calls `src/cli` |
 | `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
 | `pkg/acp/harness` | what acpharness adds to ACP messages under `_meta.acpharness`, as types a client imports |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
@@ -77,7 +77,7 @@ Packages:
 
 ## Configuration
 
-One typed config struct is the source of every setting. Each key is a field with its name, default, help and constraints in struct tags, and kong turns each field into a flag, so `acpharness --help` lists every key. Values are layered in this order, each later layer overriding earlier:
+One typed config struct is the source of every setting. Each key is a field with its name, default, help and constraints in struct tags, and kong turns each field into a flag, so `acph --help` lists every key. Values are layered in this order, each later layer overriding earlier:
 
 1. Built-in defaults, from the `default` tags.
 2. `/etc/acpharness/config.{yaml,yml,json}`.
@@ -93,7 +93,7 @@ Nothing is guessed. These are errors that name the file or the variable: a key t
 
 `go-playground/validator/v10` checks field constraints through `validate` tags after decoding. Configuration-specific rules, such as account references, endpoint policies and listener safety, remain explicit checks. Direct section validators use the same field constraints as the loader.
 
-`acpharness config` prints the resolved config with secrets redacted and the source of each key.
+`acph config` prints the resolved config with secrets redacted and the source of each key.
 
 Sketch. The examples in this document are YAML. A JSON file with the same keys loads the same way:
 
@@ -203,9 +203,9 @@ Model metadata (context window, max output) comes from a pinned table plus provi
 - Accounts without a credential (`none`): for a configured endpoint that takes no key, such as a model server on the local network. No `Authorization` header is sent, on the chat and the responses client and for embeddings. The built-in `claude` and `codex` providers refuse the kind, since both always take a credential. A refusal from such an endpoint is an auth stop, as there is nothing to refresh (`docs/notes/2026-11-12-keyless-accounts.md`).
 - Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no entry in `auth.json`, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
 - Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
-- `acpharness hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
-- `acpharness login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
-- A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `acpharness login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
+- `acph hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
+- `acph login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
+- A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `acph login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
 - Refresh: take an `flock` on the account's lock file (`account.<id>.lock`, not `auth.json`, since the rename that writes the file would leave a lock on the old inode), re-read the account, refresh only if the token is still expired, write, release. Hundreds of processes share one refresh, and the refresh of one account does not wait for another's token request. Every write of `auth.json` takes `auth.json.lock` for its read and its write, so that two accounts written at once both survive, and replaces the file atomically (temp file and rename). A read takes no lock.
 - Models: `models` is one ordered list of `provider:account/model`, each optionally with `#effort` (`docs/notes/2026-11-12-flat-models.md`). A session selects an entry by its text and starts with the first. The selected entry's chain is itself and every entry listed after it, so a fallback can reach another account or another model. An entry's effort is sent with a request to that entry, and an entry without one sends none. The router tries the next entry on rate limit, quota exhaustion, auth failure or overload, after retries on the current entry are exhausted. Fallback moves are reported to the client.
 - Retry: exponential backoff with jitter, honoring `retry-after` and provider reset headers. Policy in config.
@@ -463,7 +463,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 ## Release
 
-- Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`.
+- Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`. The binary is `acph`, built from `cmd/acph`. Only the command is short: the config and state directories, the `ACPHARNESS_` environment prefix, the `_meta` key and the names sent to providers stay `acpharness`.
 - release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
 - Dependencies: `alecthomas/kong`, `goccy/go-yaml`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`, `JohannesKaufmann/html-to-markdown/v2` for webfetch. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 

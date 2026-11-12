@@ -209,8 +209,8 @@ telemetry:
 	cfgDir := filepath.Join(home, "config", "acpharness")
 	require.NoError(t, os.MkdirAll(cfgDir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(configuration), 0o600))
-	binary := filepath.Join(t.TempDir(), "acpharness")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "./cmd/acpharness")
+	binary := filepath.Join(t.TempDir(), "acph")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "./cmd/acph")
 	build.Dir = repo
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, "build: %s", output)

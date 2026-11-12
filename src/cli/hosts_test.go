@@ -90,7 +90,7 @@ mcp:
 		},
 	}
 	// A config key is a flag, before or after the command.
-	require.NoError(t, run(t.Context(), []string{"acpharness", "--config", file, "--telemetry.otel", "hosts", "--websearch.enabled=false", "--webfetch.enabled"}, h, env))
+	require.NoError(t, run(t.Context(), []string{"acph", "--config", file, "--telemetry.otel", "hosts", "--websearch.enabled=false", "--webfetch.enabled"}, h, env))
 
 	// The authorize and token endpoints share a host, which is one line.
 	// The proxied codex account goes to the login endpoint and lists no
@@ -147,7 +147,7 @@ jev:
 `), 0o600))
 	var stdout, stderr bytes.Buffer
 	h := Host{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, Environ: []string{"XDG_STATE_HOME=" + dir}}
-	require.NoError(t, Run(t.Context(), []string{"acpharness", "--config", file, "hosts"}, h))
+	require.NoError(t, Run(t.Context(), []string{"acph", "--config", file, "hosts"}, h))
 	keys := map[string]int{}
 	for line := range strings.Lines(stdout.String()) {
 		_, key, ok := strings.Cut(strings.TrimSuffix(line, "\n"), "\t")

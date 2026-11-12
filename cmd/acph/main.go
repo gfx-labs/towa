@@ -1,4 +1,4 @@
-// Command acpharness is a coding agent that speaks the Agent Client Protocol.
+// Command acph is the acpharness binary. It is a coding agent that speaks the Agent Client Protocol.
 // The command line lives in src/cli.
 package main
 
@@ -17,7 +17,7 @@ func main() {
 	err := cli.Run(ctx, os.Args, cli.OSHost())
 	stop()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "acpharness:", err)
+		fmt.Fprintln(os.Stderr, "acph:", err)
 		os.Exit(1)
 	}
 }

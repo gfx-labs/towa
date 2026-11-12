@@ -85,7 +85,7 @@ accounts:
 				"XDG_STATE_HOME=" + filepath.Join(dir, "state"),
 			},
 		}
-		err := run(t.Context(), append([]string{"acpharness"}, args...), h, env)
+		err := run(t.Context(), append([]string{"acph"}, args...), h, env)
 		return stdout.String(), err
 	}
 	file := filepath.Join(dir, "state", "acpharness", "auth", "auth.json")

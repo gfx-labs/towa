@@ -45,7 +45,7 @@ type LoginRequiredError struct {
 }
 
 func (e *LoginRequiredError) Error() string {
-	return fmt.Sprintf("mcp: server %q needs an OAuth login: %v: log in with \"acpharness mcp login %s\"", e.Server, e.Err, e.Server)
+	return fmt.Sprintf("mcp: server %q needs an OAuth login: %v: log in with \"acph mcp login %s\"", e.Server, e.Err, e.Server)
 }
 
 func (e *LoginRequiredError) Unwrap() error { return e.Err }

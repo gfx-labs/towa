@@ -5,7 +5,7 @@ A Go coding agent that speaks ACP. Go 1.27.3, module `github.com/gfx-labs/acphar
 - Check: `go build ./... && go vet ./... && go test -race ./... && golangci-lint run ./...` (golangci-lint v2.15.0, config `.golangci.yml`). `mise install` provides both tools.
 - Linux is the platform. macOS is a headless build target: `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./...` must pass, and code that only one of them can run goes in a `_linux.go` or `_darwin.go` file. `CGO_ENABLED=0 go build ./...` must pass.
 - Packages live in `src/`. No `internal/`. A package moves to `pkg/` when an outside caller needs it. `pkg/acp` is there because ACP clients import it.
-- `cmd/acpharness/main.go` only calls `src/cli`. Commands, flags and wiring go in `src/cli`.
+- `cmd/acph/main.go` only calls `src/cli`. The binary is `acph`. Commands, flags and wiring go in `src/cli`.
 - `pkg/acp/*_gen.go` are generated from `pkg/acp/schema` by `tools/acpgen`. Change the generator or the schema files, then run `go generate ./pkg/acp`. Never edit a generated file. `tools/acpgen` is its own module: check it with `go vet ./... && go test ./...` in that directory.
 - Keep the dependency list short. Record why each dependency was added in `docs/notes/`.
 - Limits come from configuration, a protocol or a measurement, never an unexplained constant. Report an invalid state as an error. Do not truncate, clamp or fall back silently.

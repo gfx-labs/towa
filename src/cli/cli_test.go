@@ -29,7 +29,7 @@ func TestServeAnswersAClientOnStdio(t *testing.T) {
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- cli.Run(context.Background(), []string{"acpharness", "--log-level", "info"}, cli.Host{
+		done <- cli.Run(context.Background(), []string{"acph", "--log-level", "info"}, cli.Host{
 			Stdin:   stdin,
 			Stdout:  stdout,
 			Stderr:  &stderr,

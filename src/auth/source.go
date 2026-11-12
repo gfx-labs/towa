@@ -45,7 +45,7 @@ type LoginRequiredError struct {
 }
 
 func (e *LoginRequiredError) Error() string {
-	return fmt.Sprintf("account %q: the token endpoint refused the stored %s login (%s) at %s: log in again with \"acpharness login %s --account %s\"",
+	return fmt.Sprintf("account %q: the token endpoint refused the stored %s login (%s) at %s: log in again with \"acph login %s --account %s\"",
 		e.Account, e.Provider, e.Code, e.RejectedAt.Format(time.RFC3339), e.Provider, e.Account)
 }
 
@@ -254,7 +254,7 @@ func (s *AccountSource) refresh(ctx context.Context, a config.Account, keep func
 func (s *AccountSource) load(a config.Account) (Tokens, error) {
 	t, err := s.opts.Store.Load(a.ID)
 	if errors.Is(err, ErrNotLoggedIn) {
-		return Tokens{}, fmt.Errorf("%w: log in with \"acpharness login %s --account %s\"", err, a.Provider, a.ID)
+		return Tokens{}, fmt.Errorf("%w: log in with \"acph login %s --account %s\"", err, a.Provider, a.ID)
 	}
 	if err != nil {
 		return Tokens{}, err

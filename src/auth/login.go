@@ -41,7 +41,7 @@ type LoginOptions struct {
 	// TokenTimeout bounds the token request.
 	TokenTimeout time.Duration
 	// Later records a browser or manual login before its page is shown, so
-	// that a later run of "acpharness login <provider> --code" can finish
+	// that a later run of "acph login <provider> --code" can finish
 	// it. It may be nil, and then the user is not told of that way.
 	Later func(login *Login) error
 }
@@ -55,7 +55,7 @@ func (opts LoginOptions) later(login *Login, what string) (string, error) {
 	if err := opts.Later(login); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("A later run can also finish this login, given %s:\n\n  acpharness login %s --code '...'\n\n", what, opts.Flow.Provider), nil
+	return fmt.Sprintf("A later run can also finish this login, given %s:\n\n  acph login %s --code '...'\n\n", what, opts.Flow.Provider), nil
 }
 
 // RunLogin takes the user through one authorization and returns the tokens.
@@ -140,7 +140,7 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 	case <-timeout.C:
 		result.err = fmt.Errorf("the browser did not come back within %s", opts.CallbackTimeout)
 		if hint != "" {
-			result.err = fmt.Errorf("%w: the login can still be finished with \"acpharness login %s --code '<the address the browser ended on>'\"", result.err, opts.Flow.Provider)
+			result.err = fmt.Errorf("%w: the login can still be finished with \"acph login %s --code '<the address the browser ended on>'\"", result.err, opts.Flow.Provider)
 		}
 	case <-ctx.Done():
 		result.err = context.Cause(ctx)
