@@ -111,10 +111,15 @@ models:
 # The third entry is a gateway's own id, which the built-in table does not
 # know. These two keys give the figures of every such model.
 #
-# A newer version of a model family the table has (claude-opus-6, when the
-# table stops at claude-opus-5-5) needs neither key: it takes the figures of
-# the family's newest row, and serve logs that it did. A key that is set
-# outranks that guess.
+# A model of claude or codex that the table does not know needs neither key.
+# At start towa reads the account's model list from the provider (Anthropic's
+# /v1/models, the Codex backend's /models) and keeps it in models.json in the
+# state directory for model_list_max_age_seconds. A figure the list does not
+# give is guessed from the name: a newer version of a family the table has
+# (claude-opus-6, when the table stops at claude-opus-5-5) takes the figures
+# of the family's newest row. serve logs where each such model's figures came
+# from. The order is: the table, a key that is set, the provider's list, the
+# name.
 model_context_window: 1000000
 model_max_output_tokens: 128000
 

@@ -210,16 +210,21 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 		return err
 	}
 	registry := &session.Registry{}
-	if selected, err := models.Select(loaded.Config.Models, unlistedModel(loaded.Config), ""); err == nil {
+	if selected, err := models.Select(loaded.Config.Models, factory.unlisted, ""); err == nil {
 		for _, entry := range selected.Entries {
+			if entry.Listed {
+				tel.Logger.Info("model is not in the built-in table, its figures are from the provider's model list",
+					"model", entry.Model, "account", entry.Account,
+					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
+			}
 			if entry.GuessedFrom != "" {
-				tel.Logger.Info("model is not in the built-in table, its figures are guessed from its name",
+				tel.Logger.Info("model is not in the built-in table, a figure is guessed from its name",
 					"model", entry.Model, "from", entry.GuessedFrom,
 					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
 			}
 		}
 	}
-	if err := session.AddModels(registry, loaded.Config.Models, unlistedModel(loaded.Config)); err != nil {
+	if err := session.AddModels(registry, loaded.Config.Models, factory.unlisted); err != nil {
 		return errors.Join(err, factory.Close())
 	}
 	host, err := session.NewHost(session.Options{

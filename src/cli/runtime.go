@@ -37,11 +37,14 @@ import (
 )
 
 type runtimeFactory struct {
-	cfg        config.Config
-	host       Host
-	tel        *telemetry.Telemetry
-	client     *http.Client
-	providers  *Providers
+	cfg       config.Config
+	host      Host
+	tel       *telemetry.Telemetry
+	client    *http.Client
+	providers *Providers
+	// unlisted is where the figures of a model the built-in table does not
+	// have come from. It is resolved once, when the process starts.
+	unlisted   models.Unlisted
 	store      *dir.Store
 	pool       *mcp.Pool
 	mcpOptions mcpRuntimeOptions
@@ -85,6 +88,11 @@ func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *tele
 	if err != nil {
 		return nil, err
 	}
+	f.unlisted, err = unlistedModels(ctx, cfg, h, f.providers, tel.Logger, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	f.providers.lists.Store(&f.unlisted.Lists)
 	root, err := cfg.Store.Dir(h.Environ)
 	if err != nil {
 		return nil, err
@@ -255,7 +263,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	if reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
-	selected, err := models.Select(f.cfg.Models, unlistedModel(f.cfg), turn.Model)
+	selected, err := models.Select(f.cfg.Models, f.unlisted, turn.Model)
 	if err != nil {
 		return preparedTurn{}, err
 	}
@@ -406,12 +414,6 @@ func toolLines(set tools.Set, hostedSearch bool) []string {
 		lines = append(lines, tool.Guidance...)
 	}
 	return lines
-}
-
-// unlistedModel returns the configured figures of a model the built-in
-// table does not have.
-func unlistedModel(cfg config.Config) models.Metadata {
-	return models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}
 }
 
 func (f *runtimeFactory) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, error) {

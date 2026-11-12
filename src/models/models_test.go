@@ -28,26 +28,26 @@ func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 
 	// The gateway's name is not in the table, so no model that can fall
 	// back to it is usable until the configuration says what it is.
-	_, err := models.Select(list, models.Metadata{}, "")
+	_, err := models.Select(list, models.Unlisted{}, "")
 	var unknown *models.MetadataError
 	require.ErrorAs(t, err, &unknown)
 	require.Equal(t, list[2], unknown.Entry)
 	require.Equal(t, []string{config.KeyModelContextWindow, config.KeyModelMaxOutputTokens}, unknown.Missing)
 
 	// The first two entries alone resolve from the table.
-	direct, err := models.Select(list[:2], models.Metadata{}, "")
+	direct, err := models.Select(list[:2], models.Unlisted{}, "")
 	require.NoError(t, err)
 	require.Positive(t, direct.Entries[0].Metadata.ContextWindow)
 
 	// The configured figures are those of a model the table does not
 	// have. A model the table has keeps the table's.
-	unlisted := models.Metadata{ContextWindow: 150_000, MaxOutputTokens: 30_000}
+	unlisted := models.Unlisted{Configured: models.Metadata{ContextWindow: 150_000, MaxOutputTokens: 30_000}}
 	whole, err := models.Select(list, unlisted, "")
 	require.NoError(t, err)
 	require.Equal(t, list[0], whole.Name)
 	require.Len(t, whole.Entries, 3)
 	require.Equal(t, direct.Entries[0].Metadata, whole.Entries[0].Metadata)
-	require.Equal(t, unlisted, whole.Entries[2].Metadata)
+	require.Equal(t, unlisted.Configured, whole.Entries[2].Metadata)
 	// Each entry has its own effort, and one without sends none.
 	require.Equal(t, []string{"high", "", "low"}, []string{whole.Entries[0].Effort, whole.Entries[1].Effort, whole.Entries[2].Effort})
 
@@ -85,7 +85,7 @@ func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 // A model that came out after the table was written works by its name.
 func TestSelectGuessesANewModelFromItsName(t *testing.T) {
 	figures := func(model string) (models.Metadata, string, error) {
-		m, err := models.Select([]string{"claude:work/" + model}, models.Metadata{}, "")
+		m, err := models.Select([]string{"claude:work/" + model}, models.Unlisted{}, "")
 		if err != nil {
 			return models.Metadata{}, "", err
 		}
@@ -125,10 +125,75 @@ func TestSelectGuessesANewModelFromItsName(t *testing.T) {
 	}
 
 	// A configured figure outranks the guess, and the other is still guessed.
-	set, err := models.Select([]string{"claude:work/claude-opus-6"}, models.Metadata{ContextWindow: 300_000}, "")
+	set, err := models.Select([]string{"claude:work/claude-opus-6"}, models.Unlisted{Configured: models.Metadata{ContextWindow: 300_000}}, "")
 	require.NoError(t, err)
 	require.Equal(t, models.Metadata{ContextWindow: 300_000, MaxOutputTokens: newest.MaxOutputTokens}, set.Entries[0].Metadata)
 	require.Equal(t, "claude-opus-5-5", set.Entries[0].GuessedFrom)
+}
+
+// A provider's model list gives the figures of a model the table does not
+// have, and is kept in a file between starts.
+func TestSelectTakesAFigureFromTheProvidersList(t *testing.T) {
+	// What Anthropic's list gave on 2026-11-12 for a model the table does
+	// not have and for one it has, and what the Codex backend's gave, which
+	// has no output limit.
+	lists := models.Lists{
+		"claude:work": {FetchedAtUnixMs: 1794504428000, Models: map[string]models.Listed{
+			"claude-opus-4-5-20251101": {ContextWindow: 200_000, MaxOutputTokens: 64_000},
+			"claude-opus-4-6":          {ContextWindow: 1_000_000, MaxOutputTokens: 128_000},
+		}},
+		"codex:chatgpt": {FetchedAtUnixMs: 1794504428000, Models: map[string]models.Listed{
+			"gpt-6.1-sol": {ContextWindow: 500_000},
+			"gpt-5.6-sol": {ContextWindow: 272_000},
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "state", "models.json")
+	none, err := models.LoadLists(path)
+	require.NoError(t, err)
+	require.Empty(t, none)
+	require.NoError(t, lists.Save(path))
+	kept, err := models.LoadLists(path)
+	require.NoError(t, err)
+	require.Equal(t, lists, kept)
+
+	entry := func(unlisted models.Unlisted, name string) (models.Entry, error) {
+		m, err := models.Select([]string{name}, unlisted, "")
+		if err != nil {
+			return models.Entry{}, err
+		}
+		return m.Entries[0], nil
+	}
+	fromLists := models.Unlisted{Lists: kept}
+
+	// An older model is not guessed, and the list names it with its date.
+	_, err = entry(models.Unlisted{}, "claude:work/claude-opus-4-5")
+	var unknown *models.MetadataError
+	require.ErrorAs(t, err, &unknown)
+	old, err := entry(fromLists, "claude:work/claude-opus-4-5")
+	require.NoError(t, err)
+	require.Equal(t, models.Metadata{ContextWindow: 200_000, MaxOutputTokens: 64_000}, old.Metadata)
+	require.True(t, old.Listed)
+	require.Empty(t, old.GuessedFrom)
+
+	// The list is the account's: another account's says nothing.
+	_, err = entry(fromLists, "claude:other/claude-opus-4-5")
+	require.ErrorAs(t, err, &unknown)
+
+	// The table outranks the list for a model it has.
+	tabled, err := entry(fromLists, "claude:work/claude-opus-4-6")
+	require.NoError(t, err)
+	require.EqualValues(t, 200_000, tabled.Metadata.ContextWindow)
+	require.False(t, tabled.Listed)
+
+	// A figure the list does not give is guessed, and one nothing gives is
+	// asked for by its key.
+	_, err = entry(fromLists, "codex:chatgpt/gpt-5.6-sol")
+	require.ErrorAs(t, err, &unknown)
+	require.Equal(t, []string{config.KeyModelMaxOutputTokens}, unknown.Missing)
+	fromLists.Configured.MaxOutputTokens = 100_000
+	both, err := entry(fromLists, "codex:chatgpt/gpt-5.6-sol")
+	require.NoError(t, err)
+	require.Equal(t, models.Metadata{ContextWindow: 272_000, MaxOutputTokens: 100_000}, both.Metadata)
 }
 
 // Select from a real config file and from the flag, as the wiring calls it.
@@ -156,13 +221,13 @@ providers:
 	loaded, err := config.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	cfg := loaded.Config
-	unlisted := models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}
+	unlisted := models.Unlisted{Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}}
 
 	first, err := models.Select(cfg.Models, unlisted, "")
 	require.NoError(t, err)
 	require.Equal(t, "claude-opus-4-7", first.Entries[0].Model)
 	require.Equal(t, "medium", first.Entries[0].Effort)
-	require.Equal(t, unlisted, first.Entries[1].Metadata)
+	require.Equal(t, unlisted.Configured, first.Entries[1].Metadata)
 
 	// A flag lists the models separated by commas, and replaces the file's.
 	loaded, err = config.Load(config.Sources{Files: []string{path}}, "--models", "zai:main/glm-5#high,claude:work/claude-opus-4-7")

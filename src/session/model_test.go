@@ -23,7 +23,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 			return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
 		}, func(o *session.Options) {
 			o.Registry = &session.Registry{}
-			require.NoError(t, session.AddModels(o.Registry, configured, models.Metadata{}))
+			require.NoError(t, session.AddModels(o.Registry, configured, models.Unlisted{}))
 		})
 		modelOf := func(options []acp.SessionConfigOption) (acp.SessionConfigValueId, []acp.SessionConfigValueId) {
 			for _, o := range options {
@@ -108,7 +108,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 func TestAddModelsWithoutAUsableDefault(t *testing.T) {
 	// No model: nothing is registered, and the agent has no model option.
 	none := &session.Registry{}
-	require.NoError(t, session.AddModels(none, nil, models.Metadata{}))
+	require.NoError(t, session.AddModels(none, nil, models.Unlisted{}))
 	require.NoError(t, none.AddConfigOption(session.ConfigOption{
 		ID: session.ModelOption, Name: "free", Choices: []session.Choice{{Value: "x", Name: "x"}}, Default: session.Value{ID: "x"},
 	}))
@@ -117,6 +117,6 @@ func TestAddModelsWithoutAUsableDefault(t *testing.T) {
 	// is listed: the first model can fall back to it.
 	unknown := []string{"claude:work/claude-opus-4-7", "zai:main/glm-5"}
 	var missing *models.MetadataError
-	require.ErrorAs(t, session.AddModels(&session.Registry{}, unknown, models.Metadata{}), &missing)
-	require.NoError(t, session.AddModels(&session.Registry{}, unknown, models.Metadata{ContextWindow: 1000, MaxOutputTokens: 100}))
+	require.ErrorAs(t, session.AddModels(&session.Registry{}, unknown, models.Unlisted{}), &missing)
+	require.NoError(t, session.AddModels(&session.Registry{}, unknown, models.Unlisted{Configured: models.Metadata{ContextWindow: 1000, MaxOutputTokens: 100}}))
 }

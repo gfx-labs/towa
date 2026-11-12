@@ -29,7 +29,7 @@ const ModelOption acp.SessionConfigId = "model"
 // With no model configured there is nothing to choose, and nothing is
 // registered. The wiring calls this only once the turn selects its chain
 // from loop.Turn.Model: registering it is what advertises the option.
-func AddModels(r *Registry, configured []string, unlisted models.Metadata) error {
+func AddModels(r *Registry, configured []string, unlisted models.Unlisted) error {
 	if len(configured) == 0 {
 		return nil
 	}

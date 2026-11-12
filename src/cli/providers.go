@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gfx-labs/towa/src/auth"
@@ -21,6 +22,10 @@ type Providers struct {
 	Credentials auth.Source
 	clients     map[string]provider.Provider
 	responses   []*openai.Client
+	// lists are the providers' model lists. They are read with the clients
+	// this holds, so they are set after it is built, and a request reads
+	// them for what the table does not say about its model.
+	lists atomic.Pointer[models.Lists]
 }
 
 // NewProviders builds clients from resolved configuration. client is the
@@ -57,7 +62,12 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 		}
 	}()
 
-	thinking, err := claudeThinking(cfg.Claude)
+	thinking, err := claudeThinking(cfg.Claude, func() models.Lists {
+		if lists := p.lists.Load(); lists != nil {
+			return *lists
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -132,9 +142,10 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 }
 
 // claudeThinking returns the thinking parameter of a request to each Claude
-// model. A model the table marks as without adaptive thinking is sent none:
-// it answers the parameter with an HTTP 400.
-func claudeThinking(cfg config.Claude) (func(model string) anthropic.Thinking, error) {
+// model. A model the table or a provider's model list marks as without
+// adaptive thinking is sent none: it answers the parameter with an HTTP 400.
+// lists returns the model lists read so far.
+func claudeThinking(cfg config.Claude, lists func() models.Lists) (func(model string) anthropic.Thinking, error) {
 	var thinking anthropic.Thinking
 	switch cfg.Thinking {
 	case config.ClaudeThinkingAdaptive:
@@ -144,7 +155,7 @@ func claudeThinking(cfg config.Claude) (func(model string) anthropic.Thinking, e
 		return nil, fmt.Errorf("providers: claude.thinking %q is not known", cfg.Thinking)
 	}
 	return func(model string) anthropic.Thinking {
-		if !models.AdaptiveThinking(model) {
+		if !lists().AdaptiveThinking(config.ProviderClaude, model) {
 			return anthropic.Thinking{}
 		}
 		return thinking

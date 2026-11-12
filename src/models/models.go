@@ -23,26 +23,27 @@ type Metadata struct {
 	NoAdaptiveThinking bool
 }
 
-// AdaptiveThinking reports whether a model takes the adaptive thinking
-// parameter. A model with no row is read from the row its name points to,
-// so claude-haiku-4-5-20251001 is refused it as claude-haiku-4-5 is. A model
-// no row speaks for is taken to: the API refuses the request by name if it
-// does not.
-func AdaptiveThinking(model string) bool {
-	meta, listed := builtin[model]
-	if !listed {
-		meta, _, _ = guess(model)
-	}
-	return !meta.NoAdaptiveThinking
-}
-
 // Entry is one parsed chain entry with its metadata.
 type Entry struct {
 	config.ChainEntry
 	Metadata Metadata
+	// Listed says a figure came from the provider's model list.
+	Listed bool
 	// GuessedFrom is the table row a figure was taken from, when the model
 	// has no row of its own and its name pointed to one.
 	GuessedFrom string
+}
+
+// Unlisted is where the figures of a model the built-in table does not have
+// come from. A figure is taken from the first that gives it: the
+// configuration, the provider's model list, then the row the model's name
+// points to (see guess).
+type Unlisted struct {
+	// Configured are the configuration's figures, which are those of every
+	// such model. A zero figure is one that is not set.
+	Configured Metadata
+	// Lists are the model lists read from providers.
+	Lists Lists
 }
 
 // Model is a selected model, resolved.
@@ -94,13 +95,13 @@ func (e *ProviderError) Error() string {
 // Select resolves the model a session chose from the configured list. An
 // empty name selects the first. The model's chain is the chosen entry and
 // every entry listed after it. A model the built-in table does not have
-// takes the figures in unlisted, where a zero figure is one that is not set,
-// and for a figure that is not set the one its name points to (see guess).
-// What the configuration says outranks a guess.
+// takes its figures from unlisted. The table outranks a provider's list:
+// Anthropic's lists 1M for claude-opus-4-6, which has it only with a beta
+// this client does not send.
 //
 // It is called when a model is selected, so that a model nothing is known
 // about fails then and not in the middle of a turn.
-func Select(configured []string, unlisted Metadata, name string) (Model, error) {
+func Select(configured []string, unlisted Unlisted, name string) (Model, error) {
 	if len(configured) == 0 {
 		return Model{}, &NoModelError{}
 	}
@@ -119,18 +120,25 @@ func Select(configured []string, unlisted Metadata, name string) (Model, error) 
 		}
 		meta, listed := builtin[parsed.Model]
 		var guessedFrom string
+		var fromList bool
 		if !listed {
-			var guessed Metadata
-			guessed, guessedFrom, _ = guess(parsed.Model)
-			meta = unlisted
-			if meta.ContextWindow == 0 {
-				meta.ContextWindow = guessed.ContextWindow
-			}
-			if meta.MaxOutputTokens == 0 {
-				meta.MaxOutputTokens = guessed.MaxOutputTokens
-			}
-			if meta == unlisted {
-				guessedFrom = ""
+			meta = unlisted.Configured
+			list, _ := unlisted.Lists.Lookup(parsed)
+			guessed, row, _ := guess(parsed.Model)
+			for _, figure := range []struct {
+				to              *int64
+				listed, guessed int64
+			}{
+				{&meta.ContextWindow, list.ContextWindow, guessed.ContextWindow},
+				{&meta.MaxOutputTokens, list.MaxOutputTokens, guessed.MaxOutputTokens},
+			} {
+				switch {
+				case *figure.to != 0:
+				case figure.listed != 0:
+					*figure.to, fromList = figure.listed, true
+				case figure.guessed != 0:
+					*figure.to, guessedFrom = figure.guessed, row
+				}
 			}
 		}
 		var missing []string
@@ -143,7 +151,7 @@ func Select(configured []string, unlisted Metadata, name string) (Model, error) 
 		if len(missing) > 0 {
 			return Model{}, &MetadataError{Entry: raw, Missing: missing}
 		}
-		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, GuessedFrom: guessedFrom})
+		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, Listed: fromList, GuessedFrom: guessedFrom})
 	}
 	return m, nil
 }
