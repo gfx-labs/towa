@@ -82,6 +82,55 @@ func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 	require.ErrorAs(t, err, &none)
 }
 
+// A model that came out after the table was written works by its name.
+func TestSelectGuessesANewModelFromItsName(t *testing.T) {
+	figures := func(model string) (models.Metadata, string, error) {
+		m, err := models.Select([]string{"claude:work/" + model}, models.Metadata{}, "")
+		if err != nil {
+			return models.Metadata{}, "", err
+		}
+		return m.Entries[0].Metadata, m.Entries[0].GuessedFrom, nil
+	}
+	for model, row := range map[string]string{
+		"claude-opus-6":            "claude-opus-5-5", // a newer version of a known family
+		"claude-opus-5-5-20261001": "claude-opus-5-5", // a known model with its release date
+		"claude-haiku-6-1":         "claude-haiku-5-5",
+		"gpt-7-sol":                "gpt-6.1-sol",
+		"gpt-6.5-luna":             "gpt-6-luna",
+	} {
+		want, from, err := figures(row)
+		require.NoError(t, err)
+		require.Empty(t, from)
+		got, from, err := figures(model)
+		require.NoError(t, err, model)
+		require.Equal(t, want, got, model)
+		require.Equal(t, row, from, model)
+	}
+
+	// A family the table does not have takes what the vendor's newest
+	// models agree on.
+	newest, _, err := figures("claude-opus-5-5")
+	require.NoError(t, err)
+	got, from, err := figures("claude-zephyr-6")
+	require.NoError(t, err)
+	require.Equal(t, newest, got)
+	require.NotEmpty(t, from)
+
+	// Nothing says an older model, another vendor's model or a name
+	// without a version has the figures of a row.
+	for _, model := range []string{"claude-opus-4-5", "claude-3-7-sonnet", "glm-5", "claude-opus-latest"} {
+		_, _, err := figures(model)
+		var unknown *models.MetadataError
+		require.ErrorAs(t, err, &unknown, model)
+	}
+
+	// A configured figure outranks the guess, and the other is still guessed.
+	set, err := models.Select([]string{"claude:work/claude-opus-6"}, models.Metadata{ContextWindow: 300_000}, "")
+	require.NoError(t, err)
+	require.Equal(t, models.Metadata{ContextWindow: 300_000, MaxOutputTokens: newest.MaxOutputTokens}, set.Entries[0].Metadata)
+	require.Equal(t, "claude-opus-5-5", set.Entries[0].GuessedFrom)
+}
+
 // Select from a real config file and from the flag, as the wiring calls it.
 func TestSelectFromAConfigFileAndAFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")

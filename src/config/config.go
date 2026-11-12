@@ -34,10 +34,11 @@ type Config struct {
 	// that an entry cannot take falls back to the entries listed after it.
 	Models []string `name:"models" group:"models" placeholder:"MODEL" help:"Models a session can select, in order: provider:account/model, optionally with #effort (claude:work/claude-opus-5-5#medium). Comma separated as a flag, a list in a file. A session starts with the first, and a request an entry cannot take falls back to the entries after it. Without #effort none is sent and the provider's default applies."`
 	// ModelContextWindow and ModelMaxOutputTokens are the figures of a model the
-	// built-in table in src/models does not have. Zero is not set: such a
-	// model is then refused when it is selected.
-	ModelContextWindow   int64              `name:"model_context_window" group:"models" default:"0" validate:"gte=0" help:"Context size in tokens of a model the built-in table does not know. 0 is not set, and such a model is refused."`
-	ModelMaxOutputTokens int64              `name:"model_max_output_tokens" group:"models" default:"0" validate:"gte=0" help:"Most tokens one response may hold, for a model the built-in table does not know. 0 is not set, and such a model is refused."`
+	// built-in table in src/models does not have. Zero is not set: the figure
+	// is then guessed from the model's name, and a model whose name says
+	// nothing is refused when it is selected.
+	ModelContextWindow   int64              `name:"model_context_window" group:"models" default:"0" validate:"gte=0" help:"Context size in tokens of a model the built-in table does not know. 0 is not set: a newer version of a known model family (claude-opus-6) then takes that family's figure, and any other unknown model is refused."`
+	ModelMaxOutputTokens int64              `name:"model_max_output_tokens" group:"models" default:"0" validate:"gte=0" help:"Most tokens one response may hold, for a model the built-in table does not know. 0 is not set: a newer version of a known model family then takes that family's figure, and any other unknown model is refused."`
 	Telemetry            Telemetry          `embed:"" prefix:"telemetry." group:"telemetry"`
 	Auth                 Auth               `embed:"" prefix:"auth." group:"auth"`
 	Accounts             []Account          `name:"accounts" type:"table" group:"accounts" placeholder:"YAML" help:"Accounts without a stored login: one a proxy holds, one an API key backs, or one whose endpoint takes no credential (kind none). id, provider, kind. Written in a config file."`

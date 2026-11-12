@@ -34,6 +34,9 @@ func AdaptiveThinking(model string) bool {
 type Entry struct {
 	config.ChainEntry
 	Metadata Metadata
+	// GuessedFrom is the table row a figure was taken from, when the model
+	// has no row of its own and its name pointed to one.
+	GuessedFrom string
 }
 
 // Model is a selected model, resolved.
@@ -84,8 +87,10 @@ func (e *ProviderError) Error() string {
 
 // Select resolves the model a session chose from the configured list. An
 // empty name selects the first. The model's chain is the chosen entry and
-// every entry listed after it. unlisted holds the figures of a model the
-// built-in table does not have, and a zero figure is one that is not set.
+// every entry listed after it. A model the built-in table does not have
+// takes the figures in unlisted, where a zero figure is one that is not set,
+// and for a figure that is not set the one its name points to (see guess).
+// What the configuration says outranks a guess.
 //
 // It is called when a model is selected, so that a model nothing is known
 // about fails then and not in the middle of a turn.
@@ -107,8 +112,20 @@ func Select(configured []string, unlisted Metadata, name string) (Model, error) 
 			return Model{}, fmt.Errorf("models: %w", err)
 		}
 		meta, listed := builtin[parsed.Model]
+		var guessedFrom string
 		if !listed {
+			var guessed Metadata
+			guessed, guessedFrom, _ = guess(parsed.Model)
 			meta = unlisted
+			if meta.ContextWindow == 0 {
+				meta.ContextWindow = guessed.ContextWindow
+			}
+			if meta.MaxOutputTokens == 0 {
+				meta.MaxOutputTokens = guessed.MaxOutputTokens
+			}
+			if meta == unlisted {
+				guessedFrom = ""
+			}
 		}
 		var missing []string
 		if meta.ContextWindow == 0 {
@@ -120,7 +137,7 @@ func Select(configured []string, unlisted Metadata, name string) (Model, error) 
 		if len(missing) > 0 {
 			return Model{}, &MetadataError{Entry: raw, Missing: missing}
 		}
-		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta})
+		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, GuessedFrom: guessedFrom})
 	}
 	return m, nil
 }

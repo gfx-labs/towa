@@ -23,6 +23,7 @@ import (
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/hosts"
 	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/models"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/openai"
 	"github.com/gfx-labs/towa/src/session"
@@ -209,6 +210,15 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 		return err
 	}
 	registry := &session.Registry{}
+	if selected, err := models.Select(loaded.Config.Models, unlistedModel(loaded.Config), ""); err == nil {
+		for _, entry := range selected.Entries {
+			if entry.GuessedFrom != "" {
+				tel.Logger.Info("model is not in the built-in table, its figures are guessed from its name",
+					"model", entry.Model, "from", entry.GuessedFrom,
+					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
+			}
+		}
+	}
 	if err := session.AddModels(registry, loaded.Config.Models, unlistedModel(loaded.Config)); err != nil {
 		return errors.Join(err, factory.Close())
 	}

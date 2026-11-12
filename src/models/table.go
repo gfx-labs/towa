@@ -1,9 +1,11 @@
 package models
 
 // builtin holds the models whose figures were read from a source, by the
-// provider's own model id. A model that is not here needs its figures in
-// the configuration (model_context_window and model_max_output_tokens).
-// Add a row only with the source it was read from.
+// provider's own model id. A model that is not here takes the figures its
+// name points to (see guess), so a new version of a family works without a
+// row, and otherwise needs them in the configuration (model_context_window
+// and model_max_output_tokens). Add a row only with the source it was read
+// from, and add one when a new model's figures differ from its family's.
 //
 // A name a gateway gives a model ("anthropic/claude-opus-4.7" on
 // OpenRouter) is a different id and is not matched: the window that counts

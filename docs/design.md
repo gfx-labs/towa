@@ -110,6 +110,11 @@ models:
 
 # The third entry is a gateway's own id, which the built-in table does not
 # know. These two keys give the figures of every such model.
+#
+# A newer version of a model family the table has (claude-opus-6, when the
+# table stops at claude-opus-5-5) needs neither key: it takes the figures of
+# the family's newest row, and serve logs that it did. A key that is set
+# outranks that guess.
 model_context_window: 1000000
 model_max_output_tokens: 128000
 
