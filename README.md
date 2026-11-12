@@ -12,10 +12,6 @@ these are meant to be set per run by a caller, another llm/program/scheduler/wha
 
 for instance, ask your llm to setup a provider with you, and then run a turn using acphost or another light weight acp cli client.
 
-## requirements
-
-your system needs ripgrep installed. it's much better than maintaining my own grep.
-
 ## key features
 
 - like jcode, built to run many sessions per host. one process can serve many connections over stdio, a unix socket or tcp with mtls. an idle session wakes no goroutine.
