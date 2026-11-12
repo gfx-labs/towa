@@ -18,11 +18,6 @@ type OpenAI struct {
 	// transport is websocket. No source gives a number. It depends on how
 	// many sessions one process serves.
 	MaxIdleSockets int `name:"max_idle_sockets" default:"0" validate:"required_if=Transport websocket,gte=0" help:"WebSocket connections kept open between requests. It must be set when openai.transport is websocket."`
-	// CompactThreshold asks the server to compact a conversation itself
-	// once it holds this many tokens. Zero leaves server-side compaction
-	// off. It is no longer supported: validation refuses a value that is
-	// not zero and names the compaction keys that replace it.
-	CompactThreshold int64 `name:"compact_threshold" default:"0" validate:"gte=0" help:"No longer supported. Use compaction.openai_native_threshold_tokens with compaction.openai_native."`
 	// ParallelToolCalls lets the model ask for several tools in one
 	// response. jcode sends parallel_tool_calls false on every Responses
 	// request (crates/jcode-provider-openai-runtime/src/lib.rs,
