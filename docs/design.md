@@ -351,6 +351,7 @@ The prompt is built from named sections in a fixed order: the instructions (buil
 - Skills: directories with `SKILL.md`, listed by name and description in the system prompt and loaded on demand by a `skill` tool.
 - Extra files and directories from config or `_meta`.
 - All of it is read when the session opens, and every turn uses that copy. The copy is in memory only: `session/new`, `session/load`, `session/resume` and `session/fork` each read the files again, so a loaded or resumed session continues with changed rules. Between two opens the prompt stays the same from turn to turn, which keeps the provider's cached prefix.
+- The system prompt built from it is kept on the session's runtime as well, one for model entries whose web search is the provider's own and one for the rest. It is built again only when one of its inputs differs from what the kept one was built from, which happens when the session's MCP tools arrive.
 
 ## Sessions and storage
 

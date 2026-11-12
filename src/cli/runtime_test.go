@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"uuid"
@@ -20,6 +21,7 @@ import (
 	"github.com/gfx-labs/towa/src/loop"
 	"github.com/gfx-labs/towa/src/mcp"
 	"github.com/gfx-labs/towa/src/models"
+	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/telemetry"
 	"github.com/gfx-labs/towa/src/tools"
@@ -154,7 +156,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		}
 		loaded, err := factory.loadContext(turn)
 		require.NoError(t, err)
-		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{}, loaded)
+		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{}, loaded, &promptCache{})
 		require.NoError(t, err)
 		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
@@ -210,7 +212,7 @@ func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
 	}
 	projectContext := func(r *sessionRuntime) string {
 		turn := loop.Turn{SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model}
-		prepared, err := factory.prepare(t.Context(), turn, r.frozen, r.reads, r.loaded)
+		prepared, err := factory.prepare(t.Context(), turn, r.frozen, r.reads, r.loaded, &r.prompts)
 		require.NoError(t, err)
 		for _, block := range prepared.system {
 			if block.Name == agentctx.SectionProjectContext {
@@ -350,4 +352,43 @@ func TestAFallbackSendsTheNextEntrysEffort(t *testing.T) {
 	require.Equal(t, []string{"first#high", "second#", "third#low"}, efforts(run("")))
 	// A model chosen further down starts there and does not go back up.
 	require.Equal(t, []string{"second#", "third#low"}, efforts(run("local:key/second")))
+}
+
+func TestPromptIsBuiltAgainOnlyWhenItsInputsChange(t *testing.T) {
+	t.Parallel()
+	var cache promptCache
+	prompt := agentctx.Prompt{Instructions: "be brief", ToolLines: []string{"read before editing"}, WorkDir: "/work", AdditionalDirs: []string{"/other"}}
+	text := func(blocks []provider.SystemBlock) string {
+		var b strings.Builder
+		for _, block := range blocks {
+			b.WriteString(block.Text)
+		}
+		return b.String()
+	}
+	first, err := cache.build(false, prompt)
+	require.NoError(t, err)
+	again, err := cache.build(false, prompt)
+	require.NoError(t, err)
+	require.Same(t, &first[0], &again[0])
+
+	// The session's MCP tools arrive after its first prompt was built.
+	prompt.ToolLines = []string{"read before editing", "ask the tracker for issues"}
+	changed, err := cache.build(false, prompt)
+	require.NoError(t, err)
+	require.Contains(t, text(changed), "ask the tracker for issues")
+
+	// A kept prompt does not follow a caller that reuses its slice.
+	dirs := []string{"/other"}
+	prompt.AdditionalDirs = dirs
+	_, err = cache.build(false, prompt)
+	require.NoError(t, err)
+	dirs[0] = "/elsewhere"
+	moved, err := cache.build(false, prompt)
+	require.NoError(t, err)
+	require.Contains(t, text(moved), "/elsewhere")
+
+	// Provider-run web search has its own prompt.
+	hosted, err := cache.build(true, prompt)
+	require.NoError(t, err)
+	require.NotSame(t, &moved[0], &hosted[0])
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -66,7 +67,9 @@ type sessionRuntime struct {
 	// sections as they were when the session opened. Every turn uses them,
 	// so a file edited during the session does not change the prompt, and
 	// with it the provider's cached prefix, until a new session.
-	loaded         *agentctx.Loaded
+	loaded *agentctx.Loaded
+	// prompts keeps the system prompt built from loaded between turns.
+	prompts        promptCache
 	mapper         loop.Mapper
 	compactor      *compact.Controller
 	compactorModel string
@@ -182,7 +185,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 			return nil, err
 		}
 		r.loaded = loaded
-		prepared, err := f.prepare(ctx, base, nil, r.reads, r.loaded)
+		prepared, err := f.prepare(ctx, base, nil, r.reads, r.loaded, &r.prompts)
 		if err != nil {
 			return nil, err
 		}
@@ -196,7 +199,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 	}
 	r.manager, r.frozen = manager, frozen
 	if len(f.cfg.Models) != 0 {
-		prepared, err := f.prepare(ctx, base, frozen, r.reads, r.loaded)
+		prepared, err := f.prepare(ctx, base, frozen, r.reads, r.loaded, &r.prompts)
 		if err != nil {
 			return nil, errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 		}
@@ -229,7 +232,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 			selected := turn
 			selected.Model = model
 			var err error
-			prepared, err = f.prepare(ctx, selected, r.frozen, r.reads, r.loaded)
+			prepared, err = f.prepare(ctx, selected, r.frozen, r.reads, r.loaded, &r.prompts)
 			return prepared.resolved, err
 		},
 		Store: f.store, System: func(context.Context, loop.Turn) ([]provider.SystemBlock, error) { return prepared.system, nil },
@@ -280,7 +283,41 @@ func (f *runtimeFactory) loadContext(turn loop.Turn) (*agentctx.Loaded, error) {
 	})
 }
 
-func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *core.ReadTracker, loaded *agentctx.Loaded) (preparedTurn, error) {
+// promptCache keeps the system prompts one session has built. A session's
+// prompt differs between model entries only in whether web search is the
+// provider's own, so there is one place for each. A prompt is built again
+// when anything it is made from differs from what the kept one was made
+// from, which is the case once: when the session's MCP tools arrive.
+type promptCache struct {
+	plain, hosted *builtPrompt
+}
+
+type builtPrompt struct {
+	from   agentctx.Prompt
+	system []provider.SystemBlock
+}
+
+func (c *promptCache) build(hosted bool, p agentctx.Prompt) ([]provider.SystemBlock, error) {
+	kept := &c.plain
+	if hosted {
+		kept = &c.hosted
+	}
+	if b := *kept; b != nil && b.from.Instructions == p.Instructions && b.from.Tools == p.Tools &&
+		slices.Equal(b.from.ToolLines, p.ToolLines) && b.from.Loaded == p.Loaded && b.from.WorkDir == p.WorkDir &&
+		slices.Equal(b.from.AdditionalDirs, p.AdditionalDirs) && b.from.SkillTool == p.SkillTool &&
+		reflect.DeepEqual(b.from.Client, p.Client) {
+		return b.system, nil
+	}
+	system, err := agentctx.Build(p)
+	if err != nil {
+		return nil, err
+	}
+	p.AdditionalDirs = slices.Clone(p.AdditionalDirs)
+	*kept = &builtPrompt{from: p, system: system}
+	return system, nil
+}
+
+func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *core.ReadTracker, loaded *agentctx.Loaded, prompts *promptCache) (preparedTurn, error) {
 	if reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
@@ -292,7 +329,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	if err != nil {
 		return preparedTurn{}, err
 	}
-	if loaded == nil {
+	if loaded == nil || prompts == nil {
 		return preparedTurn{}, errors.New("session context is required")
 	}
 	env := tools.Env{SessionID: turn.SessionID, Cwd: turn.Cwd, Dirs: slices.Clone(turn.Dirs)}
@@ -334,7 +371,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		if err != nil {
 			return preparedTurn{}, err
 		}
-		system, err := agentctx.Build(agentctx.Prompt{
+		system, err := prompts.build(hasHosted, agentctx.Prompt{
 			Instructions: loaded.Instructions, Tools: agentctx.ToolGuidance,
 			ToolLines: toolLines(assembled.Set, hasHosted), Loaded: loaded,
 			WorkDir: turn.Cwd, AdditionalDirs: turn.Dirs, SkillTool: skillTool, Client: turn.SystemPrompt,
