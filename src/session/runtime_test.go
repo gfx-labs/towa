@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/session"
-	"github.com/gfx-labs/acpharness/src/store/dir"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/session"
+	"github.com/gfx-labs/towa/src/store/dir"
 	"github.com/stretchr/testify/require"
 )
 

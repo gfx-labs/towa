@@ -1,4 +1,4 @@
-module github.com/gfx-labs/acpharness/tools/conformance
+module github.com/gfx-labs/towa/tools/conformance
 
 go 1.27.3
 

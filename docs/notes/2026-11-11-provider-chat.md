@@ -73,7 +73,7 @@ Pooling the encoded body would save one 18 kB allocation of the 174 kB a request
 - Classification: bodies quoted from OpenRouter's errors and limits documentation, and one OpenAI context length body. Each case names its source.
 - A cut-off stream and a cancelled one: a real server that drops the connection.
 - Config: a TOML file through `config.Load` to the request body.
-- Replay: three recordings from Ollama 0.24.0 (`llama3.2:3b`) on the build machine, made with `ACPHARNESS_RECORD_OLLAMA=1 go test ./src/provider/chat -run TestRecord -count=1`. Four requests were sent.
+- Replay: three recordings from Ollama 0.24.0 (`llama3.2:3b`) on the build machine, made with `TOWA_RECORD_OLLAMA=1 go test ./src/provider/chat -run TestRecord -count=1`. Four requests were sent.
 
 The Ollama recordings show that the client reads a real server's Chat Completions stream: text deltas, a tool call, the usage chunk, `[DONE]`, and a 404 error body. They show nothing about OpenRouter. Ollama sent the tool call's arguments in one delta, so assembling arguments from several deltas has no recorded test.
 

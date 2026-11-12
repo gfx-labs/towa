@@ -1,6 +1,6 @@
-// Package cli is the acpharness command line: its commands, its flags and
+// Package cli is the towa command line: its commands, its flags and
 // the wiring from the resolved configuration to a served connection.
-// cmd/acph only calls Run.
+// cmd/towa only calls Run.
 package cli
 
 import (
@@ -18,15 +18,15 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hosts"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/openai"
-	"github.com/gfx-labs/acpharness/src/session"
-	"github.com/gfx-labs/acpharness/src/telemetry"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hosts"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/openai"
+	"github.com/gfx-labs/towa/src/session"
+	"github.com/gfx-labs/towa/src/telemetry"
 )
 
 // Host is what the program takes from the machine it runs on.
@@ -51,7 +51,7 @@ func OSHost() Host {
 			return errors.Join(os.Stdin.Close(), os.Stdout.Close())
 		},
 		Environ:   os.Environ(),
-		SystemDir: "/etc/acpharness",
+		SystemDir: "/etc/towa",
 	}
 }
 
@@ -119,15 +119,15 @@ func run(ctx context.Context, args []string, h Host, env commandEnv) error {
 	// either, whatever the rest of the command line or the files hold.
 	printed := false
 	parsed, loaded, err := config.Parse(sources(h), &line, &line.Flags, args[1:],
-		kong.Name("acph"),
+		kong.Name("towa"),
 		kong.Description("A coding agent that speaks the Agent Client Protocol.\n\n"+
 			"Every setting is a config key, and every key is a flag below: --limits.max_wall=30m sets\n"+
-			"limits.max_wall. \"acph config\" lists each key with its value and where the value\n"+
+			"limits.max_wall. \"towa config\" lists each key with its value and where the value\n"+
 			"comes from. A key is set by, later ones winning:\n\n"+
 			"  1. "+filepath.Join(h.SystemDir, "config.yaml")+"\n"+
-			"  2. $$XDG_CONFIG_HOME/acpharness/config.yaml, or ~/.config/acpharness/config.yaml\n"+
+			"  2. $$XDG_CONFIG_HOME/towa/config.yaml, or ~/.config/towa/config.yaml\n"+
 			"  3. the files in "+config.EnvFiles+" (separated like PATH), then each --config file\n"+
-			"  4. the environment: ACPHARNESS_LIMITS__MAX_WALL=30m sets limits.max_wall\n"+
+			"  4. the environment: TOWA_LIMITS__MAX_WALL=30m sets limits.max_wall\n"+
 			"  5. the flags\n\n"+
 			"A config file is YAML, and may also be config.yml or config.json. The keys that hold tables\n"+
 			"(accounts, providers, hooks, mcp.servers, context.sections) are written in a file.\n"+
@@ -173,9 +173,9 @@ func sources(h Host) config.Sources {
 	// The user's config directory, by the XDG rule. Without XDG_CONFIG_HOME
 	// and HOME there is no such directory, so that layer is empty.
 	if dir := lookup(h.Environ, "XDG_CONFIG_HOME"); dir != "" {
-		src.UserDir = filepath.Join(dir, "acpharness")
+		src.UserDir = filepath.Join(dir, "towa")
 	} else if home := lookup(h.Environ, "HOME"); home != "" {
-		src.UserDir = filepath.Join(home, ".config", "acpharness")
+		src.UserDir = filepath.Join(home, ".config", "towa")
 	}
 	return src
 }

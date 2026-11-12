@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/models"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/models"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // client stands for a provider's client. Chain only passes it on.

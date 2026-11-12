@@ -8,12 +8,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/agentctx"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/skill"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/agentctx"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/skill"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Skill loads one of the session's listed skills. An empty, non-nil list is

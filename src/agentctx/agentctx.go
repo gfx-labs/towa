@@ -13,8 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 const (

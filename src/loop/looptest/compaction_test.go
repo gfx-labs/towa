@@ -11,18 +11,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/compact"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/provider/router"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/compact"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/provider/router"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // This reuses the real summary exchange. Recording makes only one new main
@@ -30,7 +30,7 @@ import (
 func TestCompactedTurn(t *testing.T) {
 	scenario := Scenario{Name: "compacted_turn", Requests: 1, Model: Model, Prompt: "Reply with OK.", MaxOutputTokens: 256}
 	var f *Fixture
-	if os.Getenv("ACPHARNESS_RECORD_COMPACTED_TURN") != "" {
+	if os.Getenv("TOWA_RECORD_COMPACTED_TURN") != "" {
 		f = build(t, scenario, OllamaBase, func(next http.RoundTripper) *sequence {
 			return &sequence{recorders: []*providertest.Recorder{{Next: next, Path: RecordingPath(scenario, 1)}}}
 		})

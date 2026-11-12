@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop"
 )
 
 // ModeOption is the id of the config option that holds the session's mode.
@@ -105,7 +105,7 @@ type CommandCall struct {
 	SetOption func(ctx context.Context, id acp.SessionConfigId, value Value) error
 }
 
-// Override is one key a client may set under _meta.acpharness on
+// Override is one key a client may set under _meta.towa on
 // session/new. A key that no Override names is rejected.
 type Override struct {
 	Key string
@@ -122,7 +122,7 @@ type OverrideEffect struct {
 }
 
 // Registry holds what packages add to sessions: config options, slash
-// commands and _meta.acpharness override keys. Fill it before NewAgent,
+// commands and _meta.towa override keys. Fill it before NewAgent,
 // which copies it.
 type Registry struct {
 	options   []ConfigOption
@@ -166,7 +166,7 @@ func (r *Registry) AddCommand(c Command) error {
 	return nil
 }
 
-// AddOverride allows a key under _meta.acpharness on session/new.
+// AddOverride allows a key under _meta.towa on session/new.
 func (r *Registry) AddOverride(o Override) error {
 	switch {
 	case o.Key == "":
@@ -381,7 +381,7 @@ func modeOption(start acp.SessionConfigValueId) ConfigOption {
 	}
 }
 
-// modeOverride lets session/new choose the mode in _meta.acpharness.mode.
+// modeOverride lets session/new choose the mode in _meta.towa.mode.
 func modeOverride() Override {
 	return Override{Key: string(ModeOption), Parse: func(value jsontext.Value) (OverrideEffect, error) {
 		var mode string

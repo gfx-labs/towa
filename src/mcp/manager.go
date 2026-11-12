@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // ErrClosed is returned for a use of a Manager after Close.

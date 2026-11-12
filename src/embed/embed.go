@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // ErrDisabled says the configuration names no embeddings endpoint.

@@ -2,15 +2,15 @@
 
 2026-11-11
 
-This finishes step 1 of the implementation order. `acpharness` (or `acpharness serve`) serves ACP on standard input and output with `initialize`, `session/new`, `session/prompt`, `session/cancel` and `session/close`. The turn is `loop.Stub`, which has no model: it says so and repeats the prompt's text.
+This finishes step 1 of the implementation order. `towa` (or `towa serve`) serves ACP on standard input and output with `initialize`, `session/new`, `session/prompt`, `session/cancel` and `session/close`. The turn is `loop.Stub`, which has no model: it says so and repeats the prompt's text.
 
 ## Config (`src/config`)
 
-- Layers, later over earlier: defaults, `/etc/acpharness/config.*`, `$XDG_CONFIG_HOME/acpharness/config.*` (or `~/.config`), files in `ACPHARNESS_CONFIG` then `--config`, `ACPHARNESS_*` environment, flags, `--set key=value`.
+- Layers, later over earlier: defaults, `/etc/towa/config.*`, `$XDG_CONFIG_HOME/towa/config.*` (or `~/.config`), files in `TOWA_CONFIG` then `--config`, `TOWA_*` environment, flags, `--set key=value`.
 - `Config` holds only the sections some code reads. Today that is `telemetry`. A section is added with the code that uses it.
 - A key that `Config` does not have is an error from any layer, including a mistyped environment variable. So is a value of the wrong type. koanf's default decoder is weakly typed and ignores unknown keys, so `Load` passes its own decoder config: `ErrorUnused`, and only string-to-type hooks (environment and `--set` values are text).
 - A listed file that is missing is an error. A system or user directory without a config file is not. Two config files in one directory is an error, since neither can be said to win.
-- `acpharness config` prints each key, its value and the layer that set it.
+- `towa config` prints each key, its value and the layer that set it.
 - Flags reach config through koanf's `cliflagv3` provider, which yields only flags that were given. `config.FlagKeys` maps a flag name to its key.
 
 ## Telemetry (`src/telemetry`)
@@ -33,10 +33,10 @@ SIGINT or SIGTERM cancels `Serve`, which cancels running turns, writes their ans
 
 ## Measurements
 
-Linux amd64, Go 1.27.3, `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/acpharness`, commit after `ac8ed24`:
+Linux amd64, Go 1.27.3, `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/towa`, commit after `ac8ed24`:
 
 - Binary: 17,887,392 bytes.
-- One idle process (`acpharness --log-level error`, stdin open, no session, OTel off), from `/proc/<pid>/status` and `smaps_rollup` after 1 s: RSS 17,276 kB, of which 4,588 kB is anonymous memory and 12,688 kB is file-backed pages of the binary. 7 threads. Only one process was measured. File-backed pages are normally shared between processes running the same file, so further processes should cost about the anonymous part each, but that has not been measured.
+- One idle process (`towa --log-level error`, stdin open, no session, OTel off), from `/proc/<pid>/status` and `smaps_rollup` after 1 s: RSS 17,276 kB, of which 4,588 kB is anonymous memory and 12,688 kB is file-backed pages of the binary. 7 threads. Only one process was measured. File-backed pages are normally shared between processes running the same file, so further processes should cost about the anonymous part each, but that has not been measured.
 
 These are a first reading, not the footprint benchmark of step 11. The size of the OTel and koanf dependencies in those numbers has not been separated out yet.
 

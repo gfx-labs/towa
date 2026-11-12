@@ -11,14 +11,14 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/mcp"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/gate"
-	"github.com/gfx-labs/acpharness/src/tools/repair"
-	"github.com/gfx-labs/acpharness/src/toolset"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/mcp"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/gate"
+	"github.com/gfx-labs/towa/src/tools/repair"
+	"github.com/gfx-labs/towa/src/toolset"
 )
 
 // strict is a schema that refuses a member it does not declare, as the
@@ -73,7 +73,7 @@ func mcpTools(t *testing.T, toolName string) []tools.Tool {
 		Config:        loaded.Config.MCP,
 		Servers:       []mcp.Server{{Name: "remote", Transport: config.MCPTransportStreamableHTTP, URL: ts.URL, Direct: true}},
 		HTTPClient:    httpclient.New(),
-		ClientName:    "acpharness-test",
+		ClientName:    "towa-test",
 		ClientVersion: "0",
 	})
 	require.NoError(t, err)

@@ -13,14 +13,14 @@
         "application/json"
       ],
       "User-Agent": [
-        "acpharness/recording"
+        "towa/recording"
       ],
       "X-Api-Key": [
         "REDACTED"
       ]
     },
     "body": {
-      "text": "{\"model\":\"acpharness-no-such-model\",\"max_tokens\":16,\"system\":[{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Reply with the single word: ready\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"stream\":true}"
+      "text": "{\"model\":\"towa-no-such-model\",\"max_tokens\":16,\"system\":[{\"type\":\"text\",\"text\":\"You are towa, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Reply with the single word: ready\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"stream\":true}"
     }
   },
   "response": {
@@ -44,7 +44,7 @@
     },
     "chunks": [
       {
-        "text": "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model 'acpharness-no-such-model' not found\"},\"request_id\":\"req_b9f59656130bb92ea56ef22f\"}\n"
+        "text": "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model 'towa-no-such-model' not found\"},\"request_id\":\"req_b9f59656130bb92ea56ef22f\"}\n"
       }
     ]
   }

@@ -14,26 +14,26 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
-	"github.com/gfx-labs/acpharness/src/provider/openai"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedsearch"
+	"github.com/gfx-labs/towa/src/provider/openai"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Recordings are made from a real account and never written by hand:
 //
-//	ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=... go test ./src/provider/openai -run TestExchange/api_
-//	ACPHARNESS_RECORD_OPENAI=1 ACPHARNESS_CODEX_TOKEN=... ACPHARNESS_CODEX_ACCOUNT_ID=... \
+//	TOWA_RECORD_OPENAI=1 OPENAI_API_KEY=... go test ./src/provider/openai -run TestExchange/api_
+//	TOWA_RECORD_OPENAI=1 TOWA_CODEX_TOKEN=... TOWA_CODEX_ACCOUNT_ID=... \
 //	    go test ./src/provider/openai -run TestExchange/codex_
 //
-// ACPHARNESS_OPENAI_MODEL and ACPHARNESS_CODEX_MODEL name the models, and a
-// replay reads the model back from the recording. ACPHARNESS_OPENAI_BASE_URL
+// TOWA_OPENAI_MODEL and TOWA_CODEX_MODEL name the models, and a
+// replay reads the model back from the recording. TOWA_OPENAI_BASE_URL
 // points the API key scenarios at another Responses-compatible server, and
-// ACPHARNESS_OPENAI_EFFORT, when set, replaces their reasoning effort: an
+// TOWA_OPENAI_EFFORT, when set, replaces their reasoning effort: an
 // empty value sends none, for a model that has no reasoning.
 // Without the record variable a scenario replays its file, and is skipped
 // when the file does not exist.
@@ -42,8 +42,8 @@ import (
 // from OpenAI: see docs/notes/2026-11-11-provider-openai.md for what that
 // does and does not show.
 const (
-	recordEnv     = "ACPHARNESS_RECORD_OPENAI"
-	cacheKey      = "acpharness-recording"
+	recordEnv     = "TOWA_RECORD_OPENAI"
+	cacheKey      = "towa-recording"
 	accountInTest = "recorded"
 )
 
@@ -159,7 +159,7 @@ func scenarios() []scenario {
 			require.Equal(t, provider.StopMaxTokens, events[len(events)-1].Stop)
 		},
 	}, scenario{
-		name: "api_unknown_model", scheme: auth.SchemeAPIKey, model: "acpharness-no-such-model",
+		name: "api_unknown_model", scheme: auth.SchemeAPIKey, model: "towa-no-such-model",
 		prompt: "Reply with the single word: ready",
 		check: func(t *testing.T, events []provider.Event, err error) {
 			var perr *provider.Error
@@ -169,7 +169,7 @@ func scenarios() []scenario {
 			require.Equal(t, provider.Fail, perr.Class)
 			require.Equal(t, provider.ReasonRequest, perr.Reason)
 			require.NotZero(t, perr.Status)
-			require.Contains(t, perr.Message, "acpharness-no-such-model", "the message is the server's own")
+			require.Contains(t, perr.Message, "towa-no-such-model", "the message is the server's own")
 		},
 	})
 }
@@ -242,9 +242,9 @@ func TestExchange(t *testing.T) {
 		t.Run(s.name, func(t *testing.T) {
 			path := filepath.Join("testdata", s.name+".json")
 			cred := auth.Credential{Account: accountInTest, Scheme: s.scheme, Token: providertest.Redacted}
-			model := os.Getenv("ACPHARNESS_OPENAI_MODEL")
+			model := os.Getenv("TOWA_OPENAI_MODEL")
 			if s.scheme == auth.SchemeOAuth {
-				model = os.Getenv("ACPHARNESS_CODEX_MODEL")
+				model = os.Getenv("TOWA_CODEX_MODEL")
 				cred.ChatGPTAccountID = providertest.Redacted
 			}
 			httpClient := httpclient.New()
@@ -253,8 +253,8 @@ func TestExchange(t *testing.T) {
 			case recording:
 				cred.Token = os.Getenv("OPENAI_API_KEY")
 				if s.scheme == auth.SchemeOAuth {
-					cred.Token = os.Getenv("ACPHARNESS_CODEX_TOKEN")
-					cred.ChatGPTAccountID = os.Getenv("ACPHARNESS_CODEX_ACCOUNT_ID")
+					cred.Token = os.Getenv("TOWA_CODEX_TOKEN")
+					cred.ChatGPTAccountID = os.Getenv("TOWA_CODEX_ACCOUNT_ID")
 				}
 				if cred.Token == "" || model == "" {
 					t.Skip("the credential or the model for this endpoint is not in the environment")
@@ -263,8 +263,8 @@ func TestExchange(t *testing.T) {
 					model = s.model
 				}
 				if s.scheme == auth.SchemeAPIKey {
-					cfg.BaseURL = os.Getenv("ACPHARNESS_OPENAI_BASE_URL")
-					if effort, ok := os.LookupEnv("ACPHARNESS_OPENAI_EFFORT"); ok {
+					cfg.BaseURL = os.Getenv("TOWA_OPENAI_BASE_URL")
+					if effort, ok := os.LookupEnv("TOWA_OPENAI_EFFORT"); ok {
 						s.effort = effort
 					}
 				}

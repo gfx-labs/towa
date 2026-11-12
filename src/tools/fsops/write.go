@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // Change is what a write, an edit or a remove did to one file.

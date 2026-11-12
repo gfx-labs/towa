@@ -5,9 +5,9 @@ import (
 	"testing"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/session"
-	"github.com/gfx-labs/acpharness/src/store/dir"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/session"
+	"github.com/gfx-labs/towa/src/store/dir"
 	"github.com/stretchr/testify/require"
 )
 

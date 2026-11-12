@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // wire encodes updates as the connection does and decodes them as a client

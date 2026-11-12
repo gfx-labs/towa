@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/filelock"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/filelock"
 )
 
 // Handler serves one connection and returns when the client hangs up or ctx

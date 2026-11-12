@@ -7,8 +7,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Embedder turns texts into vectors, one per input and in the same order.

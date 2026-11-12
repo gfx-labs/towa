@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // apiError is the error object of an error body or of an error event.

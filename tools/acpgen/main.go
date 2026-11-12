@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/emit"
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/emit"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
 )
 
 func main() {

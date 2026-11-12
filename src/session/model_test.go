@@ -8,10 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/models"
-	"github.com/gfx-labs/acpharness/src/session"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/models"
+	"github.com/gfx-labs/towa/src/session"
 )
 
 func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
@@ -48,7 +48,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 		require.Equal(t, acp.SessionConfigValueId("claude:work/claude-opus-4-7"), current)
 		require.Equal(t, []acp.SessionConfigValueId{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}, choices)
 
-		w.Send(request(`"second"`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"codex:work/gpt-6.1-sol"}}}`))
+		w.Send(request(`"second"`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"model":"codex:work/gpt-6.1-sol"}}}`))
 		got, _ := w.Await(`"second"`)
 		var second acp.NewSessionResponse
 		require.NoError(t, json.Unmarshal(got[`"second"`].Result, &second))
@@ -89,7 +89,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 		w.Send(
 			request(`6`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"glm"}`),
 			request(`7`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"sonnet"}`),
-			request(`8`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"glm"}}}`),
+			request(`8`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"model":"glm"}}}`),
 		)
 		got, _ = w.Await(`6`, `7`, `8`)
 		for _, n := range []string{`6`, `7`, `8`} {

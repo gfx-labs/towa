@@ -24,12 +24,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
-// Scope is the instrumentation scope name of acpharness's tracer, meter and
+// Scope is the instrumentation scope name of towa's tracer, meter and
 // exported logs.
-const Scope = "github.com/gfx-labs/acpharness"
+const Scope = "github.com/gfx-labs/towa"
 
 // Telemetry holds what the program logs, traces and measures with.
 type Telemetry struct {
@@ -95,7 +95,7 @@ func (t *Telemetry) startOTel(ctx context.Context, cfg config.Telemetry, version
 	// come last, so a host can rename the service.
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
-			attribute.String("service.name", "acpharness"),
+			attribute.String("service.name", "towa"),
 			attribute.String("service.version", version),
 		),
 		resource.WithFromEnv(),

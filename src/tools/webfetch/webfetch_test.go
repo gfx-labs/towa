@@ -11,15 +11,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/tools/webfetch"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/tools/webfetch"
 )
 
 // limits are far above what any fixture needs, so that a test of one limit
 // sets only that one.
 func limits() config.WebFetch {
-	return config.WebFetch{Timeout: time.Minute, MaxBodyBytes: 1 << 20, MaxResultBytes: 1 << 20, UserAgent: "acpharness-test"}
+	return config.WebFetch{Timeout: time.Minute, MaxBodyBytes: 1 << 20, MaxResultBytes: 1 << 20, UserAgent: "towa-test"}
 }
 
 // site serves the fixtures under testdata as a web server would, and the
@@ -161,7 +161,7 @@ func TestTextTypesComeBackAsTheyAre(t *testing.T) {
 		{"/guess", "café\n", "text/plain", "windows-1252", false, true, webfetch.FormatText},
 		{"/untyped", "just some text with no type at all\n", "text/plain", "windows-1252", true, true, webfetch.FormatText},
 		{"/untyped-html", "# Sniffed\n", "text/html", "windows-1252", true, true, webfetch.FormatMarkdown},
-		{"/user-agent", "acpharness-test", "text/plain", "windows-1252", false, true, webfetch.FormatText},
+		{"/user-agent", "towa-test", "text/plain", "windows-1252", false, true, webfetch.FormatText},
 	}
 	for _, c := range cases {
 		t.Run(c.path, func(t *testing.T) {

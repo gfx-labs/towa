@@ -1,6 +1,6 @@
 package tools
 
-import "github.com/gfx-labs/acpharness/pkg/acp"
+import "github.com/gfx-labs/towa/pkg/acp"
 
 // TextContent returns text as content for the client.
 func TextContent(text string) acp.ToolCallContent {

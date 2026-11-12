@@ -26,9 +26,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 var compressions = []dir.Compression{dir.CompressionNone, dir.CompressionZstd}
@@ -129,17 +129,17 @@ func logFile(t *testing.T, s *dir.Store, id uuid.UUID) string {
 // The environment variables that turn the test binary into the second
 // process of TestMovedSessionContinues.
 const (
-	envMovedRoot    = "ACPHARNESS_TEST_MOVED_ROOT"
-	envMovedSession = "ACPHARNESS_TEST_MOVED_SESSION"
-	envMovedBlob    = "ACPHARNESS_TEST_MOVED_BLOB"
+	envMovedRoot    = "TOWA_TEST_MOVED_ROOT"
+	envMovedSession = "TOWA_TEST_MOVED_SESSION"
+	envMovedBlob    = "TOWA_TEST_MOVED_BLOB"
 )
 
 // The environment variables that turn the test binary into the process of
 // TestFailedAppendLeavesNoTornRecord, whose file size limit is lowered.
 const (
-	envLimitRoot    = "ACPHARNESS_TEST_LIMIT_ROOT"
-	envLimitSession = "ACPHARNESS_TEST_LIMIT_SESSION"
-	envLimitBytes   = "ACPHARNESS_TEST_LIMIT_BYTES"
+	envLimitRoot    = "TOWA_TEST_LIMIT_ROOT"
+	envLimitSession = "TOWA_TEST_LIMIT_SESSION"
+	envLimitBytes   = "TOWA_TEST_LIMIT_BYTES"
 )
 
 // movedReport is what the second process says it found.

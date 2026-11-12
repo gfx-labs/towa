@@ -25,8 +25,8 @@ import (
 	"syscall"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/filelock"
-	"github.com/gfx-labs/acpharness/src/store"
+	"github.com/gfx-labs/towa/src/filelock"
+	"github.com/gfx-labs/towa/src/store"
 )
 
 // File names in a session's directory.

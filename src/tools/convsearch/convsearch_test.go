@@ -10,10 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/tools/convsearch"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/tools/convsearch"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 var start = time.Date(2026, time.November, 11, 9, 0, 0, 0, time.UTC)

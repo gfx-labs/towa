@@ -8,10 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/embed"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/embed"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider/providertest"
 )
 
 // The recordings are of an Ollama server answering with a chat model. They
@@ -20,11 +20,11 @@ const (
 	recordedOK      = "testdata/embeddings_ok.json"
 	recordedRefused = "testdata/embeddings_unknown_model.json"
 	// The variables that make TestRecord run against a live endpoint.
-	envRecordURL   = "ACPHARNESS_EMBED_RECORD_URL"
-	envRecordModel = "ACPHARNESS_EMBED_RECORD_MODEL"
+	envRecordURL   = "TOWA_EMBED_RECORD_URL"
+	envRecordModel = "TOWA_EMBED_RECORD_MODEL"
 	// The inputs and the model names are part of the recorded requests.
 	recordedModel = "llama3.2:3b"
-	unknownModel  = "acpharness-no-such-model"
+	unknownModel  = "towa-no-such-model"
 )
 
 var recordedInputs = []string{"a red bicycle", "the sea at night"}

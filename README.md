@@ -1,6 +1,6 @@
-# acpharness
+# towa
 
-acpharness is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode and https://github.com/vercel-labs/fx, designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
+towa is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode and https://github.com/vercel-labs/fx, designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
 
 there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
@@ -21,7 +21,7 @@ your system needs ripgrep installed. it's much better than maintaining my own gr
 - like jcode, built to run many sessions per host. one process can serve many connections over stdio, a unix socket or tcp with mtls. an idle session wakes no goroutine.
 - claude and codex subscription support, along with chat completions and responses api.
 - models are one ordered list of `provider:account/model#effort` entries, comma separated as a flag. on a rate limit, exhausted quota, auth failure or overload the next entry in the list takes the request, and the client is told.
-- a proxy can hold the credentials. the harness sends a placeholder and never sees the token, every http client honours `HTTPS_PROXY`, and `acph hosts` prints each host the config will contact, for an egress allowlist.
+- a proxy can hold the credentials. the harness sends a placeholder and never sees the token, every http client honours `HTTPS_PROXY`, and `towa hosts` prints each host the config will contact, for an egress allowlist.
 - an session log is append-only, with reactive compression which compaction adds a summary and deletes nothing, so `conversation_search` can still read what was compacted away, and a parent can read its subagents' sessions.
 - a tool result over the token budget comes back as a summary with its size. the model asks again to get all of it.
 - mcp servers sit behind one `mcp` tool with list, search and call, so their schemas stay out of the prompt. a server the client adds for the session gets its tools by name.
@@ -32,6 +32,6 @@ your system needs ripgrep installed. it's much better than maintaining my own gr
 
 ## funny numbers
 
-as a result of doing very little, acpharness is rather lightweight.
+as a result of doing very little, towa is rather lightweight.
 - one process with one empty session measured about <50 MB, with new empty sessions costing <64kb. know that this is purely synthetic.
 - idle sessions not in turn use almost no measurable cycles

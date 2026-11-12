@@ -85,7 +85,7 @@ The conversation is plain text in one user message, with no tools, as both upstr
 
 The constants in `prompt_checkpoint.go` and `prompt_short.go` are copied exactly and carry source comments. The optional conversation-search sentence is held separately and added only when `ConversationSearch` is true. Checkpoint results use Pi's 2,000 UTF-16-unit cap. Short results use jcode's 500-byte cap. Their original layouts remain unchanged before the whole-conversation budget cut. Pi's optional focus instructions and read/modified file lists are not built.
 
-`TestPromptsMatchTheirSources` compares prompt bytes with those exact commits when `ACPHARNESS_PI_REPO` and `ACPHARNESS_JCODE_REPO` point to the source checkouts. Without them it skips rather than substituting hand-written source fixtures.
+`TestPromptsMatchTheirSources` compares prompt bytes with those exact commits when `TOWA_PI_REPO` and `TOWA_JCODE_REPO` point to the source checkouts. Without them it skips rather than substituting hand-written source fixtures.
 
 ## Native compaction and portability
 
@@ -134,8 +134,8 @@ nice -n 10 go test -race ./src/compact/... -count=1
 nice -n 10 mise exec -- golangci-lint run ./src/compact/... ./src/config/...
 CGO_ENABLED=0 nice -n 10 go build ./src/compact/...
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 nice -n 10 go build ./src/compact/...
-ACPHARNESS_PI_REPO=/home/a/.jcode/scratch/pi-src \
-ACPHARNESS_JCODE_REPO=/home/a/repo/github.com/1jehuang/jcode \
+TOWA_PI_REPO=/home/a/.jcode/scratch/pi-src \
+TOWA_JCODE_REPO=/home/a/repo/github.com/1jehuang/jcode \
     nice -n 10 go test ./src/compact -run TestPromptsMatchTheirSources -count=1
 ```
 

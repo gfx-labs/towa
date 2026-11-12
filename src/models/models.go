@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/router"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/router"
 )
 
 // Metadata is what is known about one chain entry's model.

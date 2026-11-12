@@ -21,8 +21,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // Limits of a choice question, which are the decisions API's own.

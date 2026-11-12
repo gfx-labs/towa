@@ -19,14 +19,14 @@
         "application/json"
       ],
       "User-Agent": [
-        "acpharness/recording"
+        "towa/recording"
       ],
       "X-Client-Request-Id": [
         "d2e90ed3-bacf-44d0-8267-3279080729d2"
       ]
     },
     "body": {
-      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":4096,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Think about which is larger, 2^10 or 10^3, then read the file notes.txt with the read tool.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"read\",\"description\":\"Read a file and return its content.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"stream\":true}"
+      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":4096,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are towa, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Think about which is larger, 2^10 or 10^3, then read the file notes.txt with the read tool.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"read\",\"description\":\"Read a file and return its content.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"stream\":true}"
     }
   },
   "response": {

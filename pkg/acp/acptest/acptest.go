@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp"
 )
 
 // Wire is the client's end of a connection to an agent.

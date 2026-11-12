@@ -5,8 +5,8 @@ import (
 	"encoding/json/v2"
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 type compactBody struct {

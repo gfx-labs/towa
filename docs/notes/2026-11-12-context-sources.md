@@ -17,4 +17,4 @@
 - Inline text appears in the prompt as `Contents of context.agents_text[i]` and counts against both size limits.
 - The global file moved from `~/.agents/AGENTS.md` to `~/AGENTS.md`, which is where the user keeps it.
 - A configured path that is missing is an error, a missing default is not: the user named the configured one on purpose.
-- `_meta.acpharness.context_files` from `session/new` are appended to `agents`.
+- `_meta.towa.context_files` from `session/new` are appended to `agents`.

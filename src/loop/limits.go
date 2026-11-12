@@ -3,10 +3,10 @@ package loop
 import (
 	"time"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Spent is what a turn has used so far.

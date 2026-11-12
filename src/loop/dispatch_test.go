@@ -17,14 +17,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hooks"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/batch"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hooks"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/batch"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // took is how long each test tool works before it touches its file.

@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
-	"github.com/gfx-labs/acpharness/tools/acpgen/util"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/util"
 )
 
 // WriteConstantsJen writes the version and method constants to constants_gen.go.

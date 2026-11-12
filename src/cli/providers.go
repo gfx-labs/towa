@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/chat"
-	"github.com/gfx-labs/acpharness/src/provider/openai"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/chat"
+	"github.com/gfx-labs/towa/src/provider/openai"
 )
 
 // Providers holds the process's clients and credential source. Its Client
@@ -66,7 +66,7 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 	p.clients[config.ProviderClaude] = claude
 	responsesConfig := openai.Config{
 		HTTPClient: client, BaseURL: openai.DefaultBaseURL, CodexBaseURL: openai.DefaultCodexBaseURL,
-		Provider: openai.ProviderAPI, UserAgent: "acpharness/" + version(),
+		Provider: openai.ProviderAPI, UserAgent: "towa/" + version(),
 		Transport: openai.Transport(cfg.OpenAI.Transport), MaxIdleSockets: cfg.OpenAI.MaxIdleSockets,
 		ParallelToolCalls: cfg.OpenAI.ParallelToolCalls,
 		ErrorBodyBytes:    cfg.OpenAI.ErrorBodyBytes,
@@ -98,7 +98,7 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 		}
 		switch endpoint.Kind {
 		case config.ProviderChat:
-			c, err := chat.New(chat.Config{HTTPClient: client, Provider: endpoint, UserAgent: "acpharness/" + version()})
+			c, err := chat.New(chat.Config{HTTPClient: client, Provider: endpoint, UserAgent: "towa/" + version()})
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", at, err)
 			}

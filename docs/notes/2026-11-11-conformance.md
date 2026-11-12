@@ -2,7 +2,7 @@
 
 2026-11-11
 
-`tools/conformance` checks the actual `acpharness serve` binary with `github.com/coder/acp-go-sdk` v0.13.5. It is a separate module and imports no acpharness package. Root dependencies are unchanged.
+`tools/conformance` checks the actual `towa serve` binary with `github.com/coder/acp-go-sdk` v0.13.5. It is a separate module and imports no towa package. Root dependencies are unchanged.
 
 ## Run
 
@@ -11,13 +11,13 @@ go -C tools/conformance vet ./...
 go -C tools/conformance test -race -count=1 ./...
 ```
 
-`TestMain` builds `./cmd/acpharness` once from the repository root. Building `../../cmd/acpharness` while inside the nested module is not supported by Go. `ACPHARNESS_CONFORMANCE_BINARY=<absolute path>` tests another built binary instead. `ACPHARNESS_CONFORMANCE_WIRE=1` with `-v` prints both directions of each conversation, including the raw bytes that failed a check.
+`TestMain` builds `./cmd/towa` once from the repository root. Building `../../cmd/towa` while inside the nested module is not supported by Go. `TOWA_CONFORMANCE_BINARY=<absolute path>` tests another built binary instead. `TOWA_CONFORMANCE_WIRE=1` with `-v` prints both directions of each conversation, including the raw bytes that failed a check.
 
 Every subprocess gets private `HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME`, an explicit config file and a temporary working directory. Session working directories exist and belong to the test. No real token store is read, no login occurs, and no provider request is made.
 
 ## Runtime migration
 
-The first recording checked the Stub implementation. The real runtime now opens the store and creates a session without a configured model. A prompt must fail with a structured harness request stop, not echo the prompt or claim `end_turn`. The SDK tests check the JSON-RPC error code and `data.acpharness.stop.kind`, not error wording.
+The first recording checked the Stub implementation. The real runtime now opens the store and creates a session without a configured model. A prompt must fail with a structured harness request stop, not echo the prompt or claim `end_turn`. The SDK tests check the JSON-RPC error code and `data.towa.stop.kind`, not error wording.
 
 The approved golden changes are the implemented runtime capabilities, removal of the Stub text/result, the typed prompt error, and a successful empty `session/list` result instead of Method not found. The list request filters to a fixed directory that no test session uses, so no new timestamp or path normalization is needed. `TestNewSession` separately lists the actual created sessions and checks their IDs and directories.
 
@@ -30,7 +30,7 @@ The initial runtime probe observed this untyped prompt error:
 That untyped error does not satisfy the migrated tests. Commit `089ad34` maps the model-selection error to a request stop. The actual binary now sends:
 
 ```
-{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"Internal error","data":{"acpharness":{"stop":{"kind":"request","message":"models: no model is configured"}},"error":"turn stopped: request: loop: resolving model \"\": models: no model is configured"}}}
+{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"Internal error","data":{"towa":{"stop":{"kind":"request","message":"models: no model is configured"}},"error":"turn stopped: request: loop: resolving model \"\": models: no model is configured"}}}
 ```
 
 The golden was regenerated only after coordinator review of the capability/error/list delta and a passing typed-error transport check.
@@ -93,7 +93,7 @@ The CLI's existing stdio acceptance test also uses private state and a real work
 After approval of an intentional wire change:
 
 ```
-ACPHARNESS_CONFORMANCE_UPDATE=1 go -C tools/conformance test -run '^TestWire$' ./...
+TOWA_CONFORMANCE_UPDATE=1 go -C tools/conformance test -run '^TestWire$' ./...
 git diff -- tools/conformance/testdata/wire.golden
 ```
 

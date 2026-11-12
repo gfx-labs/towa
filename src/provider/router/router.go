@@ -10,9 +10,9 @@ import (
 	"iter"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // Entry is one step of a model's chain.

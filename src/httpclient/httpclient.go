@@ -1,7 +1,7 @@
-// Package httpclient builds the HTTP client for every request acpharness
+// Package httpclient builds the HTTP client for every request towa
 // sends: providers, OAuth, remote MCP, webfetch, embeddings, Jev and OTLP.
 //
-// acpharness may run where the only way out is a proxy that also holds the
+// towa may run where the only way out is a proxy that also holds the
 // credentials. A transport built by hand has no proxy set and ignores
 // HTTPS_PROXY, so one such client anywhere fails there. The lint
 // configuration forbids http.Transport, http.DefaultTransport,

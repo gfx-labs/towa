@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
 )
 
 // emitUnionFiles runs the types and helpers emitters for schemaJSON into a

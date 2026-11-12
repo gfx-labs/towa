@@ -4,7 +4,7 @@
 
 ## Scope and fixed build
 
-Actual `cmd/acpharness`, built from `git archive` of **45ace318ef1a5606f2657a8e2ad5ac650ec4509f**, not the concurrently changing checkout. No application edits, injected runtime, Stub, prompt turns, provider requests, MCP server, new dependency or persistent benchmark seam.
+Actual `cmd/towa`, built from `git archive` of **45ace318ef1a5606f2657a8e2ad5ac650ec4509f**, not the concurrently changing checkout. No application edits, injected runtime, Stub, prompt turns, provider requests, MCP server, new dependency or persistent benchmark seam.
 
 - Host: Linux `6.12.115+deb13.1-amd64`, amd64, Intel Core i9-14900, 32 online logical CPUs, `/proc/meminfo` MemTotal 131616692 KiB. Scratch filesystem: btrfs. Other work was running on the host. No CPU pinning, cache eviction or frequency control.
 - Toolchain: Go 1.27.3 linux/amd64, `CGO_ENABLED=0`, `GOAMD64=v1`, empty `GOEXPERIMENT`. Build: `go build -trimpath`, no race detector, no stripped symbols or other linker flags.
@@ -17,7 +17,7 @@ Exact build and driver commands, from this repository, with a fresh scratch dire
 scratch="$JCODE_SCRATCH_DIR/runtime-footprint"
 mkdir -p "$scratch/source"
 git archive 45ace318ef1a5606f2657a8e2ad5ac650ec4509f | tar -x -C "$scratch/source"
-(cd "$scratch/source" && nice -n 10 env CGO_ENABLED=0 go build -trimpath -o ../acpharness ./cmd/acpharness)
+(cd "$scratch/source" && nice -n 10 env CGO_ENABLED=0 go build -trimpath -o ../towa ./cmd/towa)
 cd "$scratch"
 uv run --offline python measure.py --audit > audit-output.jsonl
 uv run --offline python measure.py > output.jsonl
@@ -38,7 +38,7 @@ Each process receives one JSON-RPC `initialize`, waits for its acknowledgement, 
 
 Session request IDs run from 1 through the requested session count. No `session/prompt` or tool call is sent. All returned session IDs must be unique. Before sampling and again after clean shutdown, the driver verifies an exact directory-ID match, every `meta.json` ID/cwd/model (`idle`), and every `log.jsonl.zst` file. There is no replacement response or fallback if setup fails.
 
-The child environment is replaced, not extended: `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, a dummy `IDLE_DUMMY_KEY=not-a-real-key`, and fresh absolute HOME, TMPDIR and all of XDG_CONFIG_HOME, XDG_STATE_HOME, XDG_CACHE_HOME, XDG_DATA_HOME and XDG_RUNTIME_DIR. Process cwd and session cwd are the same empty `<run>/work`. No proxy, credential, ACPHARNESS or OTel environment is inherited. `/etc/acpharness` was absent. The explicit config is `<run>/config.json`, with this content apart from the absolute store path and dynamically allocated loopback trap port:
+The child environment is replaced, not extended: `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, a dummy `IDLE_DUMMY_KEY=not-a-real-key`, and fresh absolute HOME, TMPDIR and all of XDG_CONFIG_HOME, XDG_STATE_HOME, XDG_CACHE_HOME, XDG_DATA_HOME and XDG_RUNTIME_DIR. Process cwd and session cwd are the same empty `<run>/work`. No proxy, credential, TOWA or OTel environment is inherited. `/etc/towa` was absent. The explicit config is `<run>/config.json`, with this content apart from the absolute store path and dynamically allocated loopback trap port:
 
 ```json
 {
@@ -65,7 +65,7 @@ The child environment is replaced, not extended: `PATH=/usr/bin:/bin`, `LANG=C.U
 }
 ```
 
-The driver launches `[<scratch>/acpharness, --config, <run>/config.json, serve]` directly with `subprocess.Popen`, that environment, and cwd `<run>/work`. Core generic tools and the normal model/router/runtime assembly are real. The configured context/output sizes are explicit idle-workload inputs, not measured metadata for an actual model. Extras, compaction, embeddings, exports, hooks and MCP servers are disabled, not removed from the binary.
+The driver launches `[<scratch>/towa, --config, <run>/config.json, serve]` directly with `subprocess.Popen`, that environment, and cwd `<run>/work`. Core generic tools and the normal model/router/runtime assembly are real. The configured context/output sizes are explicit idle-workload inputs, not measured metadata for an actual model. Extras, compaction, embeddings, exports, hooks and MCP servers are disabled, not removed from the binary.
 
 ## Sampling and checks
 
@@ -122,9 +122,9 @@ Exact commands, with fresh comparison directories and that scratch caller presen
 scratch="$JCODE_SCRATCH_DIR/runtime-footprint"
 comparison="$scratch/validator-comparison"
 mkdir -p "$comparison/old" "$comparison/new" "$comparison/source"
-cp "$scratch/acpharness" "$comparison/old/acpharness"
+cp "$scratch/towa" "$comparison/old/towa"
 git archive c9c09c4f29b6b63697dc260b535b493230578216 | tar -x -C "$comparison/source"
-(cd "$comparison/source" && nice -n 10 env CGO_ENABLED=0 GOPROXY=off GOSUMDB=off go build -trimpath -o ../new/acpharness ./cmd/acpharness)
+(cd "$comparison/source" && nice -n 10 env CGO_ENABLED=0 GOPROXY=off GOSUMDB=off go build -trimpath -o ../new/towa ./cmd/towa)
 cd "$comparison"
 uv run --offline python compare.py > output.jsonl
 ```

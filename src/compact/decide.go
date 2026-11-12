@@ -3,8 +3,8 @@ package compact
 import (
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Action is what to do about the context before the next request.

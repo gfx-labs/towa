@@ -6,14 +6,14 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop/looptest"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/subagent"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/convsearch"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop/looptest"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/subagent"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/convsearch"
 	"github.com/stretchr/testify/require"
 )
 

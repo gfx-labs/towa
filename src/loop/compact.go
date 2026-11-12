@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/compact"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
-	"github.com/gfx-labs/acpharness/src/provider/router"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/compact"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedsearch"
+	"github.com/gfx-labs/towa/src/provider/router"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // turnLimitError carries a limit through a router's preparation callback.

@@ -14,7 +14,7 @@ models:
 ```
 
 ```
-acpharness --models claude:work/claude-opus-5-5#medium,codex:chatgpt/gpt-6.1-sol
+towa --models claude:work/claude-opus-5-5#medium,codex:chatgpt/gpt-6.1-sol
 ```
 
 - An entry is `provider:account/model`, optionally followed by `#effort`. The effort is the text after the last `#`. A provider's model name may hold `/`, `:` and `@`, so none of those could mark it.

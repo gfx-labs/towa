@@ -13,9 +13,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hooks"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hooks"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // long is a timeout no passing test reaches.

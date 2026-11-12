@@ -6,14 +6,14 @@ The user asked for kong as the command line, with the config as one nested struc
 
 ## What changed for a user
 
-- Every key is a flag with the key's own name: `--limits.max_wall=30m`. `acpharness --help` is 462 lines, and each of the 153 keys that `acpharness config` prints was found in it as a flag.
+- Every key is a flag with the key's own name: `--limits.max_wall=30m`. `towa --help` is 462 lines, and each of the 153 keys that `towa config` prints was found in it as a flag.
 - `--set` is gone. `--set limits.max_wall=30m` is now `--limits.max_wall=30m`.
 - `--log-level` and `--log-format` stay as second names of `telemetry.logs.stderr.level` and `.format`.
 - Config files are `config.yaml`, `config.yml` or `config.json`. TOML is no longer read. A `config.toml` left in a config directory is an error that names it, and so is a listed `.toml` file. It is not skipped, because a skipped file would silently drop every setting in it.
-- Environment names did not change: `ACPHARNESS_LIMITS__MAX_WALL`.
+- Environment names did not change: `TOWA_LIMITS__MAX_WALL`.
 - A list table (`accounts`, `providers`, `hooks`, `mcp.servers`, `context.sections`) is one key. In a file it is YAML. As a flag or an environment variable it is one line of YAML. A later layer that sets it replaces the earlier layer's list whole, as on master (checked with `hooks` in two files on both builds).
 - `models` is a table of named entries, and each file adds to it by name, as on master: two files that each define one model give two models, and a later file can change one member of an earlier file's model. The first version of this change replaced `models` whole with the last file's. The comparison with master on two `--config` files found it, and `TestEachFileAddsToTheModels` fails on that version.
-- `models` as a flag or an environment variable is the whole table as one line of YAML, and replaces what the files gave. On master `--set models.opus.context_window=5` and `ACPHARNESS_MODELS__OPUS__CONTEXT_WINDOW=5` set one member of one model. Both are now errors: the name is not a key. The user has not confirmed this.
+- `models` as a flag or an environment variable is the whole table as one line of YAML, and replaces what the files gave. On master `--set models.opus.context_window=5` and `TOWA_MODELS__OPUS__CONTEXT_WINDOW=5` set one member of one model. Both are now errors: the name is not a key. The user has not confirmed this.
 - A file's text is read the way a flag's text is. So `yes` and `no` now set a boolean in a file, which master refused, and a quoted number still sets a number, as on master.
 - `--manual`, `--device` and `--code` of `login` exclude each other in the parser.
 
@@ -27,7 +27,7 @@ The resolved defaults are the same. A dump of every field of the default `Config
 
 The loader adds what kong does not have:
 
-- An unknown name is an error in every layer. kong reports an unknown flag. The loader checks every name in every file and every `ACPHARNESS_*` variable against the keys, and names the file or the variable.
+- An unknown name is an error in every layer. kong reports an unknown flag. The loader checks every name in every file and every `TOWA_*` variable against the keys, and names the file or the variable.
 - A value in a file that is not text must have the key's type. YAML reads an unquoted `0600` as the number 384, so a number is not taken for a key that holds text, and a bare number is not taken for a duration. A key that holds a list must be given a list.
 - A file nests its sections. A dotted name (`limits.max_wall: 30m`) is an error: it is the flag's spelling, and it would otherwise have been accepted as known and then never read.
 - A file with a second YAML document, a missing listed file, two config files in one directory and an extension other than `.yaml`, `.yml` or `.json` are errors.
@@ -35,7 +35,7 @@ The loader adds what kong does not have:
 
 Tables decode through `encoding/json/v2` with unknown members rejected and durations as text.
 
-`Loaded.Values` holds each key's value as JSON text and `Loaded.Origin` the layer it came from, which is what `acpharness config` prints.
+`Loaded.Values` holds each key's value as JSON text and `Loaded.Origin` the layer it came from, which is what `towa config` prints.
 
 ## Dependencies
 
@@ -66,12 +66,12 @@ Run against the real loader from scratch programs, not kept as tests. Every row 
 | `Limits:` for `limits:` | error: names match by exact case |
 | a `null` value, an empty section, an empty file, a file of comments | sets nothing |
 | `global_dir: ""` in a file | replaces a default that is not empty |
-| `ACPHARNESS_CONTEXT__EXTRA_FILES=` | an empty list, over the file's list |
-| `ACPHARNESS_TELEMETRY__OTLE=1` | error naming the variable |
+| `TOWA_CONTEXT__EXTRA_FILES=` | an empty list, over the file's list |
+| `TOWA_TELEMETRY__OTLE=1` | error naming the variable |
 | `--config broken.yaml --help` | prints help, exit 0 |
 | `--config broken.yaml config` | error with the file and position, exit 1 |
 
-An `ACPHARNESS_*` variable that is not a key was already an error on master (`ACPHARNESS_RECORD_OLLAMA=1 acpharness config` fails there too), so the recording flags of the tests are no new restriction. `ACPHARNESS_CONFIG` is the one exempt name.
+An `TOWA_*` variable that is not a key was already an error on master (`TOWA_RECORD_OLLAMA=1 towa config` fails there too), so the recording flags of the tests are no new restriction. `TOWA_CONFIG` is the one exempt name.
 
 ## Cost
 
@@ -88,8 +88,8 @@ Whole process, `hyperfine -N --warmup 30 --runs 300`:
 
 | command | old | new |
 | --- | --- | --- |
-| `acpharness config` | 8.1 ± 0.5 ms | 10.9 ± 0.8 ms |
-| `acpharness --version` | 6.1 ± 0.7 ms | 10.3 ± 0.9 ms |
+| `towa config` | 8.1 ± 0.5 ms | 10.9 ± 0.8 ms |
+| `towa --version` | 6.1 ± 0.7 ms | 10.3 ± 0.9 ms |
 
 Idle footprint with the driver of `2026-11-11-runtime-footprint.md` (its `measure.py` with the two removed model keys taken out of its config, its `compare.py` unchanged), five interleaved pairs per session count:
 
@@ -109,7 +109,7 @@ Start is about 1.8 ms later. The RSS ranges overlap, so this table does not show
 
 So about 1.5 MB more with no session open. This was not measured with sessions open and huge pages off.
 
-Where the time goes, from a CPU profile of 2,000 runs of `acpharness --version` in one process. Of the 5.27 s sampled inside `cli.Run`:
+Where the time goes, from a CPU profile of 2,000 runs of `towa --version` in one process. Of the 5.27 s sampled inside `cli.Run`:
 
 | part | seconds |
 | --- | --- |

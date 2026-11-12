@@ -9,13 +9,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/session"
-	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/acptest"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/session"
+	"github.com/gfx-labs/towa/src/tools"
 )
 
 func request(id, method, params string) string {
@@ -210,7 +210,7 @@ func TestAskModeAsksBeforeAToolThatWritesOrExecutes(t *testing.T) {
 			permitted <- got
 			return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
 		})
-		id := string(create(t, w, `{}`, `,"_meta":{"acpharness":{"mode":"ask"}}`).SessionId)
+		id := string(create(t, w, `{}`, `,"_meta":{"towa":{"mode":"ask"}}`).SessionId)
 
 		w.Send(prompt(`1`, id, "go"))
 		p := awaitPermission(t, w)
@@ -254,7 +254,7 @@ func TestCancelledTurnEndsItsPermissionRequest(t *testing.T) {
 	t.Run("session/cancel withdraws the request", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			w := serve(t, asks)
-			id := string(create(t, w, `{}`, `,"_meta":{"acpharness":{"mode":"ask"}}`).SessionId)
+			id := string(create(t, w, `{}`, `,"_meta":{"towa":{"mode":"ask"}}`).SessionId)
 			w.Send(prompt(`1`, id, "go"))
 			p := awaitPermission(t, w)
 
@@ -270,7 +270,7 @@ func TestCancelledTurnEndsItsPermissionRequest(t *testing.T) {
 	t.Run("the client's cancelled outcome ends the turn as cancelled", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			w := serve(t, asks)
-			id := string(create(t, w, `{}`, `,"_meta":{"acpharness":{"mode":"ask"}}`).SessionId)
+			id := string(create(t, w, `{}`, `,"_meta":{"towa":{"mode":"ask"}}`).SessionId)
 			w.Send(prompt(`1`, id, "go"))
 			p := awaitPermission(t, w)
 
@@ -320,7 +320,7 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 		w.Send(request(`"new"`, "session/new", `{"cwd":"/work","additionalDirectories":["/lib"],`+
 			`"systemPrompt":{"mode":"append","content":[{"type":"text","text":"be brief"}]},`+
 			`"mcpServers":[{"type":"http","name":"docs","url":"https://mcp.example/","headers":[]}],`+
-			`"_meta":{"acpharness":{"cwd_suffix":"/sub","context_files":["notes.md"],"skills_dirs":["~/skills"]},"traceparent":"00-x"}}`))
+			`"_meta":{"towa":{"cwd_suffix":"/sub","context_files":["notes.md"],"skills_dirs":["~/skills"]},"traceparent":"00-x"}}`))
 		got, _ = w.Await(`"new"`)
 		require.Nil(t, got[`"new"`].Error)
 		var created acp.NewSessionResponse
@@ -345,10 +345,10 @@ func TestSessionNewFieldsReachTheTurn(t *testing.T) {
 			`4`:  `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[]}}`,
 			`5`:  `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"image","data":"","mimeType":"image/png"}]}}`,
 			`6`:  `{"cwd":"/work","mcpServers":[{"type":"sse","name":"docs","url":"https://mcp.example/","headers":[]}]}`,
-			`7`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"model":"opus"}}}`,
-			`8`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"mode":"yolo"}}}`,
-			`9`:  `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"cwd_suffix":7}}}`,
-			`10`: `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"context_files":[""]}}}`,
+			`7`:  `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"model":"opus"}}}`,
+			`8`:  `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"mode":"yolo"}}}`,
+			`9`:  `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"cwd_suffix":7}}}`,
+			`10`: `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"context_files":[""]}}}`,
 		}
 		for n, params := range refused {
 			w.Send(request(n, "session/new", params))
@@ -366,7 +366,7 @@ func TestUnsupportedSessionFieldsAndContentAreRefused(t *testing.T) {
 		refused := map[string]string{
 			`1`: request(`1`, "session/new", `{"cwd":"/work","mcpServers":[],"additionalDirectories":["/lib"]}`),
 			`2`: request(`2`, "session/new", `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"text","text":"x"}]}}`),
-			`4`: request(`4`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"acpharness":{"skills_dirs":["/s"]}}}`),
+			`4`: request(`4`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"skills_dirs":["/s"]}}}`),
 			`3`: request(`3`, "session/prompt", `{"sessionId":"`+id+`","prompt":[{"type":"image","data":"","mimeType":"image/png"}]}`),
 		}
 		for n, line := range refused {

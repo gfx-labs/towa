@@ -14,7 +14,7 @@
       ]
     },
     "body": {
-      "text": "{\"model\":\"llama3.2:3b\",\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"input\":[{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Reply with the single word: ready\"}]}],\"tools\":[],\"tool_choice\":\"auto\",\"parallel_tool_calls\":false,\"store\":false,\"stream\":true,\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"acpharness-recording\"}"
+      "text": "{\"model\":\"llama3.2:3b\",\"instructions\":\"You are a coding agent under test. Follow the user's request exactly.\",\"input\":[{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Reply with the single word: ready\"}]}],\"tools\":[],\"tool_choice\":\"auto\",\"parallel_tool_calls\":false,\"store\":false,\"stream\":true,\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"towa-recording\"}"
     }
   },
   "response": {

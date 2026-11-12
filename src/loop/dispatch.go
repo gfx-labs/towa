@@ -10,14 +10,14 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hooks"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/batch"
-	"github.com/gfx-labs/acpharness/src/tools/gate"
-	"github.com/gfx-labs/acpharness/src/tools/repair"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hooks"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/batch"
+	"github.com/gfx-labs/towa/src/tools/gate"
+	"github.com/gfx-labs/towa/src/tools/repair"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Settle decides the result of a call that was dispatched: tool.Run was

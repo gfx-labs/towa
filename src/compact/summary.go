@@ -9,10 +9,10 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // SummaryInput is what a summary request is built from.

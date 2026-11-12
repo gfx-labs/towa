@@ -4,8 +4,8 @@ import (
 	"encoding/json/v2"
 	"testing"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/acptest"
 	"github.com/stretchr/testify/require"
 )
 

@@ -11,8 +11,8 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/filelock"
-	"github.com/gfx-labs/acpharness/src/store"
+	"github.com/gfx-labs/towa/src/filelock"
+	"github.com/gfx-labs/towa/src/store"
 )
 
 // indexDir holds only derived data. A moved session needs none of it.

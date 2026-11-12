@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hosts"
-	"github.com/gfx-labs/acpharness/src/jev"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hosts"
+	"github.com/gfx-labs/towa/src/jev"
 )
 
 // hostsEnv is what the hosts command takes from the packages that own a

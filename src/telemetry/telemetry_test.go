@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/telemetry"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/telemetry"
 )
 
 // With OTel on, a span, a measurement and a log record made before Shutdown

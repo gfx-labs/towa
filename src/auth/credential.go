@@ -1,4 +1,4 @@
-// Package auth holds the accounts acpharness can use and hands out their
+// Package auth holds the accounts towa can use and hands out their
 // credentials.
 package auth
 

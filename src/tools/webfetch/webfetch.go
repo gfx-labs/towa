@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/net/html/charset"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // Kind says why a fetch was refused or failed in a way the model can act

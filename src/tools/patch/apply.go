@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools/fsops"
 )
 
 // Applied is a committed filesystem change and its patch operation.

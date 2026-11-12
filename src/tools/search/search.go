@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/fsops"
 )
 
 // stderrKeep is how much of rg's error output is kept. rg reports a bad

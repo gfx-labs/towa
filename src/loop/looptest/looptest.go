@@ -26,25 +26,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hooks"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/chat"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/provider/router"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hooks"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/chat"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/provider/router"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // EnvRecord names the variable that must be set for the recordings to be
 // made again from the Ollama server.
-const EnvRecord = "ACPHARNESS_RECORD_OLLAMA"
+const EnvRecord = "TOWA_RECORD_OLLAMA"
 
 // Facts of the recorded server.
 const (
@@ -95,7 +95,7 @@ var (
 		Files:  map[string]string{"notes.txt": "The launch code is 7421.\n"},
 	}
 	// UnknownModel: the server answers 404 for a model it does not have.
-	UnknownModel = Scenario{Name: "unknown_model", Requests: 1, Model: "acpharness-no-such-model", Prompt: "hi"}
+	UnknownModel = Scenario{Name: "unknown_model", Requests: 1, Model: "towa-no-such-model", Prompt: "hi"}
 )
 
 // Fixture is a loop wired to a scenario's recordings.
@@ -231,7 +231,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 	client, err := chat.New(chat.Config{
 		HTTPClient: httpClient,
 		Provider:   config.Provider{ID: ProviderID, Kind: config.ProviderChat, BaseURL: base},
-		UserAgent:  "acpharness/test",
+		UserAgent:  "towa/test",
 	})
 	fail(err)
 

@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/webfetch"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/webfetch"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // WebFetch fetches text or converts HTML to Markdown using the supplied client.

@@ -1,5 +1,5 @@
-// Package harness defines what acpharness adds to ACP messages under the
-// "acpharness" key of _meta, and under the same key in the data of an error
+// Package harness defines what towa adds to ACP messages under the
+// "towa" key of _meta, and under the same key in the data of an error
 // response. A client imports it to read those additions as types.
 package harness
 
@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp"
 )
 
-// Key is the name acpharness uses in _meta and in error data.
-const Key = "acpharness"
+// Key is the name towa uses in _meta and in error data.
+const Key = "towa"
 
 // StopKind says why a turn stopped, from a fixed list. A client decides what
 // to do from it and never from the text of an error.
@@ -89,7 +89,7 @@ type Move struct {
 	WaitSeconds float64 `json:"waitSeconds,omitzero"`
 }
 
-// Addition is what acpharness puts under Key. At most one field is set.
+// Addition is what towa puts under Key. At most one field is set.
 type Addition struct {
 	Stop *Stop `json:"stop,omitzero"`
 	Move *Move `json:"move,omitzero"`

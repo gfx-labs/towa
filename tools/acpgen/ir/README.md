@@ -4,7 +4,7 @@
 
 Package `ir` holds the generator's intermediate representation of ACP methods.
 `BuildMethodGroups` links each wire method on the agent or client side to its Go Request, Response, and Notification type names and to the interface binding the emitter puts it in.
-It also provides schema type helpers (`PrimaryType`, `IsNullResponse`) and naming helpers used by `github.com/gfx-labs/acpharness/tools/acpgen/emit`.
+It also provides schema type helpers (`PrimaryType`, `IsNullResponse`) and naming helpers used by `github.com/gfx-labs/towa/tools/acpgen/emit`.
 The package imports only `sort`, `strings`, and the sibling `load` and `util` packages, and it does no I/O.
 
 ## Interface

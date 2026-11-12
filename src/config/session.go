@@ -4,7 +4,7 @@ package config
 type Session struct {
 	// Mode is the mode a new session starts in. A client changes it for one
 	// session with session/set_mode, session/set_config_option or the mode
-	// key of _meta.acpharness on session/new.
+	// key of _meta.towa on session/new.
 	Mode string `name:"mode" default:"auto" validate:"oneof=auto ask" help:"Mode a new session starts in: auto runs every tool call, ask asks the client before one that writes or executes."`
 	// ListPageSize is the most sessions one session/list response holds.
 	// Zero means every session in one response, which is the default: no

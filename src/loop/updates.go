@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/provider/hostedsearch"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Mapper turns transcript items into the session updates that show them to

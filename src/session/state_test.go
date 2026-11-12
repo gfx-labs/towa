@@ -5,9 +5,9 @@ import (
 	"encoding/json/v2"
 	"testing"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/session"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/session"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +20,7 @@ func TestStoredSessionRetainsTurnSettings(t *testing.T) {
 		require.NoError(t, o.Registry.AddConfigOption(session.ConfigOption{ID: "style", Name: "Style", Default: session.Value{ID: "short"}, Choices: []session.Choice{{Value: "short", Name: "Short"}, {Value: "long", Name: "Long"}}}))
 	}
 	first := pod(t, root, adjust)
-	first.Send(initialize, request(`1`, "session/new", `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"text","text":"be brief"}]},"_meta":{"acpharness":{"context_files":["notes.md"],"skills_dirs":["/skills"],"mode":"ask"}},"configOptions":[{"configId":"style","value":"long"}]}`))
+	first.Send(initialize, request(`1`, "session/new", `{"cwd":"/work","mcpServers":[],"systemPrompt":{"mode":"append","content":[{"type":"text","text":"be brief"}]},"_meta":{"towa":{"context_files":["notes.md"],"skills_dirs":["/skills"],"mode":"ask"}},"configOptions":[{"configId":"style","value":"long"}]}`))
 	got, _ := first.Await(`"init"`, `1`)
 	require.Nil(t, got[`1`].Error)
 	var created acp.NewSessionResponse

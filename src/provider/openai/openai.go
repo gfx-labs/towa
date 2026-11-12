@@ -19,8 +19,8 @@ import (
 	"github.com/gfx-labs/sse"
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // Endpoints and the values the Codex backend expects.
@@ -33,7 +33,7 @@ const (
 	DefaultCodexBaseURL = "https://chatgpt.com/backend-api/codex"
 	// Originator is the originator header of an OAuth request. jcode's probe
 	// of 2026-11-05 found the backend accepts any value.
-	Originator = "acpharness"
+	Originator = "towa"
 	// DefaultErrorBodyBytes is how much of an error response is read when
 	// Config.ErrorBodyBytes is zero. An error body is a JSON object of a few
 	// hundred bytes. A gateway's HTML error page is the large case.

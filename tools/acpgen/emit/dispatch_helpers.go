@@ -4,7 +4,7 @@
 package emit
 
 import (
-	"github.com/gfx-labs/acpharness/tools/acpgen/ir"
+	"github.com/gfx-labs/towa/tools/acpgen/ir"
 )
 
 // invInvalid: return invalid params with compact json-like message

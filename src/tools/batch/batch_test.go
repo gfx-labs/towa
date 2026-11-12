@@ -12,12 +12,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/batch"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
-	"github.com/gfx-labs/acpharness/src/tools/shell"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/batch"
+	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/tools/shell"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // session dispatches batch calls to the real capabilities, the way the loop

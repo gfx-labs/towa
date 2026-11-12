@@ -18,7 +18,7 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // Kind says why a search was refused or failed in a way the model can act

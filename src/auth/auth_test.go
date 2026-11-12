@@ -22,16 +22,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
 )
 
-// The variables that make the test binary act as one acpharness process
+// The variables that make the test binary act as one towa process
 // asking for a credential.
 const (
-	envChildDir = "ACPHARNESS_AUTH_TEST_DIR"
-	envChildURL = "ACPHARNESS_AUTH_TEST_TOKEN_URL"
+	envChildDir = "TOWA_AUTH_TEST_DIR"
+	envChildURL = "TOWA_AUTH_TEST_TOKEN_URL"
 )
 
 func TestMain(m *testing.M) {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp"
 )
 
 // The benchmarks go through a connection, so they count everything a message

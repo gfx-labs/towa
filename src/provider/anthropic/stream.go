@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // streamEvent is the data of one server-sent event. The type is read from

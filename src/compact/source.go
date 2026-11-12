@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Source is an immutable snapshot to summarize. It holds references to the

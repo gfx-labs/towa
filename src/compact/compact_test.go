@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 func TestBoundedSummaryRequest(t *testing.T) {
@@ -367,7 +367,7 @@ func TestSummaryTextRefusesWhatCannotStandForTheEntries(t *testing.T) {
 // The prompts are copies. This compares them with the commits they were
 // copied from, read with git, when the checkouts are named:
 //
-//	ACPHARNESS_PI_REPO=~/.jcode/scratch/pi-src ACPHARNESS_JCODE_REPO=~/repo/github.com/1jehuang/jcode \
+//	TOWA_PI_REPO=~/.jcode/scratch/pi-src TOWA_JCODE_REPO=~/repo/github.com/1jehuang/jcode \
 //	    go test ./src/compact -run TestPromptsMatchTheirSources
 func TestPromptsMatchTheirSources(t *testing.T) {
 	const (
@@ -381,9 +381,9 @@ func TestPromptsMatchTheirSources(t *testing.T) {
 	}
 
 	t.Run("pi", func(t *testing.T) {
-		repo := os.Getenv("ACPHARNESS_PI_REPO")
+		repo := os.Getenv("TOWA_PI_REPO")
 		if repo == "" {
-			t.Skip("ACPHARNESS_PI_REPO does not name a checkout of earendil-works/pi")
+			t.Skip("TOWA_PI_REPO does not name a checkout of earendil-works/pi")
 		}
 		compaction := show(repo, piCommit, "packages/coding-agent/src/core/compaction/compaction.ts")
 		utils := show(repo, piCommit, "packages/coding-agent/src/core/compaction/utils.ts")
@@ -400,9 +400,9 @@ func TestPromptsMatchTheirSources(t *testing.T) {
 	})
 
 	t.Run("jcode", func(t *testing.T) {
-		repo := os.Getenv("ACPHARNESS_JCODE_REPO")
+		repo := os.Getenv("TOWA_JCODE_REPO")
 		if repo == "" {
-			t.Skip("ACPHARNESS_JCODE_REPO does not name a checkout of 1jehuang/jcode")
+			t.Skip("TOWA_JCODE_REPO does not name a checkout of 1jehuang/jcode")
 		}
 		core := show(repo, jcodeCommit, "crates/jcode-compaction-core/src/lib.rs")
 		base := show(repo, jcodeCommit, "crates/jcode-base/src/compaction.rs")

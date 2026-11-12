@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // streamEvent is one event of a response, from either transport.

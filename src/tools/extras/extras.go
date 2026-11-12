@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Names identify extras to the toolset's collision and disable checks.

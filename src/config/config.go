@@ -1,10 +1,10 @@
-// Package config resolves acpharness's configuration from its layers into
+// Package config resolves towa's configuration from its layers into
 // one typed struct. The rest of the program reads only that struct.
 //
 // A key is a field with kong tags: its name, its default and its help. A
 // section is an embedded struct whose prefix is the section's name and a
 // dot. Limits.MaxWall is the key limits.max_wall: the flag
-// --limits.max_wall, the variable ACPHARNESS_LIMITS__MAX_WALL, and max_wall
+// --limits.max_wall, the variable TOWA_LIMITS__MAX_WALL, and max_wall
 // under limits in a file. A key of type "table" holds a list or a map of
 // structs. kong has no flags for the fields of those structs, so they name
 // their keys with json tags and encoding/json/v2 decodes them.

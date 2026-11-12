@@ -12,8 +12,8 @@ import (
 	"unicode/utf8"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Field says which kind of entry a piece of text is from.

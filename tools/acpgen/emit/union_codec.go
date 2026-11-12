@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/ir"
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
-	"github.com/gfx-labs/acpharness/tools/acpgen/util"
+	"github.com/gfx-labs/towa/tools/acpgen/ir"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/util"
 )
 
 // The union codec is written for encoding/json/v2. Upstream wrote it for v1:

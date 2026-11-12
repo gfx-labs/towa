@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"slices"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // Server is one MCP server a session can use, resolved from configuration

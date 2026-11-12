@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // Errors of an AccountSource. Each is wrapped with the account's id.
@@ -45,7 +45,7 @@ type LoginRequiredError struct {
 }
 
 func (e *LoginRequiredError) Error() string {
-	return fmt.Sprintf("account %q: the token endpoint refused the stored %s login (%s) at %s: log in again with \"acph login %s --account %s\"",
+	return fmt.Sprintf("account %q: the token endpoint refused the stored %s login (%s) at %s: log in again with \"towa login %s --account %s\"",
 		e.Account, e.Provider, e.Code, e.RejectedAt.Format(time.RFC3339), e.Provider, e.Account)
 }
 
@@ -91,7 +91,7 @@ func loginRequired(a config.Account, t Tokens, err error) *LoginRequiredError {
 
 // PlaceholderToken is the token sent for a proxy-held account. It is not a
 // secret. The proxy reads the account from it and puts the real one in its place.
-func PlaceholderToken(account string) string { return "acpharness-proxied-" + account }
+func PlaceholderToken(account string) string { return "towa-proxied-" + account }
 
 // Options is what an AccountSource is built from. Every field is required,
 // except that RefreshMargin may be zero and Flows may be empty when no
@@ -254,7 +254,7 @@ func (s *AccountSource) refresh(ctx context.Context, a config.Account, keep func
 func (s *AccountSource) load(a config.Account) (Tokens, error) {
 	t, err := s.opts.Store.Load(a.ID)
 	if errors.Is(err, ErrNotLoggedIn) {
-		return Tokens{}, fmt.Errorf("%w: log in with \"acph login %s --account %s\"", err, a.Provider, a.ID)
+		return Tokens{}, fmt.Errorf("%w: log in with \"towa login %s --account %s\"", err, a.Provider, a.ID)
 	}
 	if err != nil {
 		return Tokens{}, err

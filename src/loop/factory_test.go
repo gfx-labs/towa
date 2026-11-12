@@ -23,20 +23,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/acptest"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
-const recordFactoryWrite = "ACPHARNESS_RECORD_FACTORY_WRITE"
+const recordFactoryWrite = "TOWA_RECORD_FACTORY_WRITE"
 
 // recordFactoryUpstream is the Chat Completions server a recording is made
 // from, such as http://127.0.0.1:1234. It must serve factoryModel.
-const recordFactoryUpstream = "ACPHARNESS_FACTORY_WRITE_UPSTREAM"
+const recordFactoryUpstream = "TOWA_FACTORY_WRITE_UPSTREAM"
 
 // factoryModel is the model the recording was made with, the one tests are
 // recorded from. A 3b model wrote the wrong content or no file in three of
@@ -206,11 +206,11 @@ telemetry:
     stderr:
       level: error
 `, relay.URL+"/v1", "local:local/"+factoryModel, filepath.Join(home, "store"))
-	cfgDir := filepath.Join(home, "config", "acpharness")
+	cfgDir := filepath.Join(home, "config", "towa")
 	require.NoError(t, os.MkdirAll(cfgDir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(configuration), 0o600))
-	binary := filepath.Join(t.TempDir(), "acph")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "./cmd/acph")
+	binary := filepath.Join(t.TempDir(), "towa")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "./cmd/towa")
 	build.Dir = repo
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, "build: %s", output)

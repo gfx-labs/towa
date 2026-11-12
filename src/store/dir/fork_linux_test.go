@@ -11,8 +11,8 @@ import (
 	"testing"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +21,7 @@ import (
 // directory is linked or mounted into the root. This makes os.Link fail
 // with EXDEV on real files, and checks that the content is copied instead.
 func TestForkCopiesBlobsAcrossFilesystems(t *testing.T) {
-	sourceRoot, err := os.MkdirTemp("/dev/shm", "acpharness-fork-")
+	sourceRoot, err := os.MkdirTemp("/dev/shm", "towa-fork-")
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, os.RemoveAll(sourceRoot)) })
 	source := open(t, sourceRoot, dir.CompressionZstd)

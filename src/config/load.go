@@ -22,20 +22,20 @@ import (
 
 // EnvFiles names the environment variable that lists extra config files,
 // separated like PATH.
-const EnvFiles = "ACPHARNESS_CONFIG"
+const EnvFiles = "TOWA_CONFIG"
 
 // Flags are the flags that set the configuration. A command line embeds one
 // beside its commands, and Parse resolves it.
 type Flags struct {
 	// Files are read in order after the files of Sources. Each must exist.
-	Files []string `name:"config" sep:"none" placeholder:"FILE" help:"Read this config file after the system, user and ACPHARNESS_CONFIG files (repeatable)."`
+	Files []string `name:"config" sep:"none" placeholder:"FILE" help:"Read this config file after the system, user and TOWA_CONFIG files (repeatable)."`
 	// The prefix starts every environment variable that sets a key, and
 	// marks a flag as a key. kong does not read the environment itself: the
 	// environment is Sources.Environ, which a test supplies.
-	// ACPHARNESS_TELEMETRY__LOGS__STDERR__LEVEL sets
+	// TOWA_TELEMETRY__LOGS__STDERR__LEVEL sets
 	// telemetry.logs.stderr.level: the rest of the name is lowercased and
 	// "__" separates the levels.
-	Config Config `embed:"" envprefix:"ACPHARNESS_"`
+	Config Config `embed:"" envprefix:"TOWA_"`
 }
 
 // Sources says where each layer comes from. A later layer overrides an

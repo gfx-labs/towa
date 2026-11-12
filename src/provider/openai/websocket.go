@@ -12,8 +12,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // websocketBeta selects version 2 of the Responses WebSocket protocol, the

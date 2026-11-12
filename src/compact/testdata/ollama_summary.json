@@ -13,7 +13,7 @@
         "application/json"
       ],
       "User-Agent": [
-        "acpharness/recording"
+        "towa/recording"
       ],
       "X-Api-Key": [
         "REDACTED"

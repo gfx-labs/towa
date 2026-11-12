@@ -14,8 +14,8 @@ import (
 	"net/url"
 	"slices"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // The standard variables that name where the OTLP exporters send to.

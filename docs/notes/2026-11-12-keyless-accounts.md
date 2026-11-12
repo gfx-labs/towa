@@ -29,7 +29,7 @@ A model server on the local network (LM Studio, Ollama, llama.cpp) takes no key.
 - `auth.SchemeNone` is the credential of such an account. Its token is empty. The chat client, the responses client (HTTP and WebSocket, which share the header) and embeddings send no `Authorization` header for it. An empty `Bearer ` header is not sent, because some servers refuse a malformed one.
 - The built-in `claude` and `codex` providers refuse the kind when the configuration loads. Both always take a credential, and the Anthropic client would have nothing to put in `X-Api-Key`.
 - `Refresh` returns `auth.ErrNoCredential`, so a 401 from such an endpoint is an auth stop after one attempt, as for a static key.
-- `acpharness accounts` shows the state `no credential`, and `login` says the account has no login.
+- `towa accounts` shows the state `no credential`, and `login` says the account has no login.
 
 ## Checked
 

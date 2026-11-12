@@ -4,7 +4,7 @@ package agentctx
 // for every model.
 const (
 	// Instructions is the default text of the prompt section.
-	Instructions = "You are acpharness, a coding agent. Follow the user's instructions and the project rules provided in context.\n\n" +
+	Instructions = "You are towa, a coding agent. Follow the user's instructions and the project rules provided in context.\n\n" +
 		// A session is often run by a program with nobody reading it, where
 		// a question ends the work.
 		"Work until the task is done. Often nobody is watching the session, and a question stops the work until someone answers it. " +

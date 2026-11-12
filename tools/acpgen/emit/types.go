@@ -14,9 +14,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/ir"
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
-	"github.com/gfx-labs/acpharness/tools/acpgen/util"
+	"github.com/gfx-labs/towa/tools/acpgen/ir"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/util"
 )
 
 // splitCamelCase splits a CamelCase string into words.

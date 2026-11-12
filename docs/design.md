@@ -1,6 +1,6 @@
-# acpharness design
+# towa design
 
-acpharness is a Go coding agent that speaks the Agent Client Protocol (ACP). It runs Claude and GPT models over the user's subscriptions and other models over OpenAI-compatible APIs, with one tool set and one system prompt of its own, and adds a small set of jcode harness features. It targets hundreds of concurrent sessions per Linux host, run directly or behind acphost.
+towa is a Go coding agent that speaks the Agent Client Protocol (ACP). It runs Claude and GPT models over the user's subscriptions and other models over OpenAI-compatible APIs, with one tool set and one system prompt of its own, and adds a small set of jcode harness features. It targets hundreds of concurrent sessions per Linux host, run directly or behind acphost.
 
 Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
@@ -45,9 +45,9 @@ Packages:
 
 | package | role |
 |---|---|
-| `cmd/acph` | a shim that calls `src/cli` |
+| `cmd/towa` | a shim that calls `src/cli` |
 | `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
-| `pkg/acp/harness` | what acpharness adds to ACP messages under `_meta.acpharness`, as types a client imports |
+| `pkg/acp/harness` | what towa adds to ACP messages under `_meta.towa`, as types a client imports |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
 | `src/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
 | `src/config` | the typed config, its flags, and the loader for files, environment and flags |
@@ -77,23 +77,23 @@ Packages:
 
 ## Configuration
 
-One typed config struct is the source of every setting. Each key is a field with its name, default, help and constraints in struct tags, and kong turns each field into a flag, so `acph --help` lists every key. Values are layered in this order, each later layer overriding earlier:
+One typed config struct is the source of every setting. Each key is a field with its name, default, help and constraints in struct tags, and kong turns each field into a flag, so `towa --help` lists every key. Values are layered in this order, each later layer overriding earlier:
 
 1. Built-in defaults, from the `default` tags.
-2. `/etc/acpharness/config.{yaml,yml,json}`.
-3. `$XDG_CONFIG_HOME/acpharness/config.{yaml,yml,json}`.
-4. Files listed in `ACPHARNESS_CONFIG` (path list, `:`-separated), and `--config` flags (repeatable).
-5. Environment `ACPHARNESS_*`, `__` as the nesting separator (`ACPHARNESS_LIMITS__MAX_TOOL_CALLS=200`).
+2. `/etc/towa/config.{yaml,yml,json}`.
+3. `$XDG_CONFIG_HOME/towa/config.{yaml,yml,json}`.
+4. Files listed in `TOWA_CONFIG` (path list, `:`-separated), and `--config` flags (repeatable).
+5. Environment `TOWA_*`, `__` as the nesting separator (`TOWA_LIMITS__MAX_TOOL_CALLS=200`).
 6. CLI flags. The flag is the key's own name: `--limits.max_tool_calls=200`.
-7. Per-session overrides from `session/new` `_meta.acpharness` (allowlisted keys only: model, context files, skills dirs, limits, mode, mcp servers, compaction).
+7. Per-session overrides from `session/new` `_meta.towa` (allowlisted keys only: model, context files, skills dirs, limits, mode, mcp servers, compaction).
 
 kong defines the commands and the flags and fills the struct. The loader in `src/config` reads the files with `goccy/go-yaml`, which reads JSON as well, and gives kong each key's value from the files and the environment. The application reads configuration only from the struct. A key that holds a table (`models`, `accounts`, `providers`, `hooks`, `mcp.servers`, `context.sections`) is written as YAML in a file, and as one line of YAML when it is a flag or an environment variable. A list table is one key: a later layer that sets it replaces the earlier layer's list whole. `models` holds named entries, and each file adds to it by name.
 
-Nothing is guessed. These are errors that name the file or the variable: a key the config does not have, a value of the wrong type, a file that does not parse, a listed file that is missing, two config files in one directory, and an `ACPHARNESS_*` variable that is not a key. A file's value must have the key's type, so a number is not taken where a key holds text or a duration.
+Nothing is guessed. These are errors that name the file or the variable: a key the config does not have, a value of the wrong type, a file that does not parse, a listed file that is missing, two config files in one directory, and an `TOWA_*` variable that is not a key. A file's value must have the key's type, so a number is not taken where a key holds text or a duration.
 
 `go-playground/validator/v10` checks field constraints through `validate` tags after decoding. Configuration-specific rules, such as account references, endpoint policies and listener safety, remain explicit checks. Direct section validators use the same field constraints as the loader.
 
-`acph config` prints the resolved config with secrets redacted and the source of each key.
+`towa config` prints the resolved config with secrets redacted and the source of each key.
 
 Sketch. The examples in this document are YAML. A JSON file with the same keys loads the same way:
 
@@ -191,21 +191,21 @@ One streaming interface returning a normalized event stream: text deltas, thinki
 
 Wire clients:
 
-- `anthropic`: Messages API, streaming, OAuth or API key. OAuth identity follows jcode's code and its probe (`docs/ANTHROPIC_OAUTH_IDENTITY_PROBE_2026_11_05.md` in jcode). The one required piece is the `x-anthropic-billing-header` text sent as the first system block (`cc_version=2.1.280; cc_entrypoint=...; cch=33f85;`), which Anthropic strips server-side, with jcode's OAuth beta header set. Without that block, Opus and Sonnet OAuth requests get HTTP 429. jcode sends its own user agent (`jcode/<version>`) and no `x-app`, `X-Stainless-*` or Claude Code session headers, because the probe found none of them are needed. acpharness sends `acpharness/<version>`, and the prompt names the agent as acpharness. jcode's branches differ on `cc_entrypoint` (`sdk-cli` on origin/master 8e11eb23e, `jcode` on build 037163c7b), so step 3 re-runs the probe before choosing.
-- `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with acpharness's own instructions and function tools, as jcode does. jcode's 2026-11-05 probe found the backend accepts any `originator`, so acpharness sends `acpharness`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
+- `anthropic`: Messages API, streaming, OAuth or API key. OAuth identity follows jcode's code and its probe (`docs/ANTHROPIC_OAUTH_IDENTITY_PROBE_2026_11_05.md` in jcode). The one required piece is the `x-anthropic-billing-header` text sent as the first system block (`cc_version=2.1.280; cc_entrypoint=...; cch=33f85;`), which Anthropic strips server-side, with jcode's OAuth beta header set. Without that block, Opus and Sonnet OAuth requests get HTTP 429. jcode sends its own user agent (`jcode/<version>`) and no `x-app`, `X-Stainless-*` or Claude Code session headers, because the probe found none of them are needed. towa sends `towa/<version>`, and the prompt names the agent as towa. jcode's branches differ on `cc_entrypoint` (`sdk-cli` on origin/master 8e11eb23e, `jcode` on build 037163c7b), so step 3 re-runs the probe before choosing.
+- `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with towa's own instructions and function tools, as jcode does. jcode's 2026-11-05 probe found the backend accepts any `originator`, so towa sends `towa`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
 - `chat`: Chat Completions, streaming, for OpenRouter, z.ai, DeepSeek, OpenCode Go and others. OpenRouter extras: provider routing preferences, reasoning parameters, `HTTP-Referer` and `X-OpenRouter-Title` (the header OpenRouter's app attribution page documents).
 
 Model metadata (context window, max output) comes from a pinned table plus provider model listings (`/models` on OpenRouter), with config overrides. An unknown model with no metadata is an error at selection time, not a silent default.
 
 ### Accounts and fallback
 
-- Logins live in one file, `$XDG_STATE_HOME/acpharness/auth/auth.json`, mode 0600, apart from the configuration. It holds every OAuth account by id with its provider and tokens. An account in it needs no `accounts` entry: a login creates it. A model chain may name an account of a built-in provider before its first login, and a turn that reaches it then reports that the account is not logged in and gives the command. `accounts` in the configuration is for what has no stored login: API keys read from the environment and proxy-held accounts. `logout` removes the account's entry.
+- Logins live in one file, `$XDG_STATE_HOME/towa/auth/auth.json`, mode 0600, apart from the configuration. It holds every OAuth account by id with its provider and tokens. An account in it needs no `accounts` entry: a login creates it. A model chain may name an account of a built-in provider before its first login, and a turn that reaches it then reports that the account is not logged in and gives the command. `accounts` in the configuration is for what has no stored login: API keys read from the environment and proxy-held accounts. `logout` removes the account's entry.
 - Accounts without a credential (`none`): for a configured endpoint that takes no key, such as a model server on the local network. No `Authorization` header is sent, on the chat and the responses client and for embeddings. The built-in `claude` and `codex` providers refuse the kind, since both always take a credential. A refusal from such an endpoint is an auth stop, as there is nothing to refresh (`docs/notes/2026-11-12-keyless-accounts.md`).
 - Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no entry in `auth.json`, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
 - Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
-- `acph hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
-- `acph login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
-- A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `acph login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
+- `towa hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
+- `towa login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
+- A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `towa login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
 - Refresh: take an `flock` on the account's lock file (`account.<id>.lock`, not `auth.json`, since the rename that writes the file would leave a lock on the old inode), re-read the account, refresh only if the token is still expired, write, release. Hundreds of processes share one refresh, and the refresh of one account does not wait for another's token request. Every write of `auth.json` takes `auth.json.lock` for its read and its write, so that two accounts written at once both survive, and replaces the file atomically (temp file and rename). A read takes no lock.
 - Models: `models` is one ordered list of `provider:account/model`, each optionally with `#effort` (`docs/notes/2026-11-12-flat-models.md`). A session selects an entry by its text and starts with the first. The selected entry's chain is itself and every entry listed after it, so a fallback can reach another account or another model. An entry's effort is sent with a request to that entry, and an entry without one sends none. The router tries the next entry on rate limit, quota exhaustion, auth failure or overload, after retries on the current entry are exhausted. Fallback moves are reported to the client.
 - Retry: exponential backoff with jitter, honoring `retry-after` and provider reset headers. Policy in config.
@@ -400,17 +400,17 @@ At 10000 sessions, unfiltered `List` took 258 ms warm / 316 ms file-data-cold be
 | mode | `current_mode_update` |
 | usage and cost | `usage_update` (context used, context size, cost) and `usage` on the prompt response |
 | model, mode, thought level | `config_option_update` |
-| active account, fallback, compaction, limit hit | `_meta.acpharness` on the relevant update, and the prompt response `_meta` |
+| active account, fallback, compaction, limit hit | `_meta.towa` on the relevant update, and the prompt response `_meta` |
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 
-ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `acpharness` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
+ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
 
 A chain with one entry does not wait out a rate limit: it reports it. In a pod, the workflow that owns account choice decides whether to wait or move.
 
 ## ACP layer
 
-acpharness implements ACP itself and does not import `coder/acp-go-sdk`.
+towa implements ACP itself and does not import `coder/acp-go-sdk`.
 
 - Why: SDK v0.13.5 (2026-06-02) is generated from schema 0.13.5 and its master still pins that. The spec is at v1.17.0, schema 1.31.0 (2026-11-10). The SDK has no types for stable `compaction_update`, `compaction_summary_chunk`, `notice` and `systemPrompt`, and none for unstable `subagent_update`, `session/status` and `session/options`.
 - Types: generated from the pinned schema files (`schema.json`, `schema.unstable.json`, `meta.json`) by a vendored copy of the SDK's generator (`cmd/generate`, Apache-2.0, about 3,700 lines, one dependency: `dave/jennifer`). We fix the generator where the new schema breaks it.
@@ -463,7 +463,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 ## Release
 
-- Private repo `gfx-labs/acpharness`, Go module `github.com/gfx-labs/acpharness`. The binary is `acph`, built from `cmd/acph`. Only the command is short: the config and state directories, the `ACPHARNESS_` environment prefix, the `_meta` key and the names sent to providers stay `acpharness`.
+- Private repo `gfx-labs/towa`, Go module `github.com/gfx-labs/towa`. The binary is `towa`, built from `cmd/towa`. The same word names the config and state directories, the `TOWA_` environment prefix, the `_meta` key and what is sent to providers. The name is the Towa Organization of Boogiepop Phantom.
 - release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
 - Dependencies: `alecthomas/kong`, `goccy/go-yaml`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`, `JohannesKaufmann/html-to-markdown/v2` for webfetch. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
@@ -473,7 +473,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 - Providers: recorded real responses per provider for the stream parser. Live checks against real subscriptions run by hand behind an env flag, not in CI. No tests against mocked providers.
 - Tools: each tool runs against real files, a real shell and the real `rg` in a temporary directory.
 - Tests use testify, as acphost does.
-- Task quality: about 10 real closed issues from acphost and jobshop, run on acpharness and jcode with the same model, comparing completion, turns, tokens and wall time.
+- Task quality: about 10 real closed issues from acphost and jobshop, run on towa and jcode with the same model, comparing completion, turns, tokens and wall time.
 - Footprint: RSS and CPU for 1, 10 and 200 idle and active sessions, compared with jcode, measured by a reproducible script.
 
 ## Implementation order

@@ -5,10 +5,10 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/todo"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/todo"
 )
 
 func planTool(spec provider.Tool, deps Deps) tools.Tool {

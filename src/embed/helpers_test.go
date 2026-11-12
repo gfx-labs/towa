@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/provider/providertest"
 )
 
 func unmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }

@@ -15,19 +15,19 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/agentctx"
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/jev"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/extras"
-	"github.com/gfx-labs/acpharness/src/tools/repair"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/agentctx"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/jev"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/extras"
+	"github.com/gfx-labs/towa/src/tools/repair"
+	"github.com/gfx-labs/towa/src/transcript"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,7 +110,7 @@ func TestDisabledAndMissingDependenciesAreNotUsableTools(t *testing.T) {
 }
 
 func fetchConfig() config.WebFetch {
-	return config.WebFetch{Enabled: true, Timeout: time.Second, MaxBodyBytes: 1 << 20, MaxResultBytes: 1 << 20, UserAgent: "acpharness-test"}
+	return config.WebFetch{Enabled: true, Timeout: time.Second, MaxBodyBytes: 1 << 20, MaxResultBytes: 1 << 20, UserAgent: "towa-test"}
 }
 
 func TestWebFetchUsesRealHTTPAndReportsCapabilityErrors(t *testing.T) {

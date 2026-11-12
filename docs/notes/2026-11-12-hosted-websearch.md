@@ -4,7 +4,7 @@
 
 ## Decision
 
-Where the model's provider runs web search itself, acpharness uses it, as jcode does by default (`prefer_native`). Our own `websearch` tool stays for every other provider. This reverses part of the 2026-11-11 note, which used only the local tool.
+Where the model's provider runs web search itself, towa uses it, as jcode does by default (`prefer_native`). Our own `websearch` tool stays for every other provider. This reverses part of the 2026-11-11 note, which used only the local tool.
 
 ## Built
 

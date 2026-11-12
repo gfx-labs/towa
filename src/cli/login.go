@@ -8,9 +8,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
 )
 
 // loginEnv is what the account commands take from outside the configuration.
@@ -82,7 +82,7 @@ func (c *loginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env l
 		// The login that printed the page named its account.
 		pending, err = store.LoadPending(provider)
 		if errors.Is(err, auth.ErrNoPendingLogin) {
-			return fmt.Errorf("%w: start one with \"acph login %s --account <id> --manual\"", err, provider)
+			return fmt.Errorf("%w: start one with \"towa login %s --account <id> --manual\"", err, provider)
 		}
 		if err != nil {
 			return err
@@ -146,7 +146,7 @@ func (c *loginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env l
 		if errors.Is(err, auth.ErrNothingPasted) {
 			// Nobody is at this terminal. The page is printed and the
 			// login is recorded, so the later run is how it finishes.
-			_, err = fmt.Fprintf(h.Stdout, "account %s: the %s login is waiting for its code: acph login %s --code '...'\n", id, provider, provider)
+			_, err = fmt.Fprintf(h.Stdout, "account %s: the %s login is waiting for its code: towa login %s --code '...'\n", id, provider, provider)
 			return err
 		}
 		if err != nil {
@@ -253,7 +253,7 @@ func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 		return err
 	}
 	if len(loaded.Config.Accounts) == 0 {
-		_, err = fmt.Fprintln(h.Stderr, "there are no accounts: create one with \"acph login <provider> --account <id>\"")
+		_, err = fmt.Fprintln(h.Stderr, "there are no accounts: create one with \"towa login <provider> --account <id>\"")
 	}
 	return err
 }

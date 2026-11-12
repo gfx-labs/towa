@@ -7,9 +7,9 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // ControllerOptions wires compaction into an existing session owner. No
@@ -278,7 +278,7 @@ func (c *Controller) effects(result *Result, history []transcript.Entry) ([]tran
 				native++
 			}
 		}
-		item.Compaction.Summary += fmt.Sprintf("\n\n[acpharness: summary input omitted %d UTF-8 bytes of text and %d unreadable native items. Full entries remain in stored history.]", bytes, native)
+		item.Compaction.Summary += fmt.Sprintf("\n\n[towa: summary input omitted %d UTF-8 bytes of text and %d unreadable native items. Full entries remain in stored history.]", bytes, native)
 	}
 	var effects []transcript.Item
 	if result.Usage != nil {

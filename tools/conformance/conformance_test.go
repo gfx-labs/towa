@@ -23,7 +23,7 @@ const unknownSession = "no-such-session"
 // makes TestWire write it from the binary under test.
 const (
 	golden    = "testdata/wire.golden"
-	envUpdate = "ACPHARNESS_CONFORMANCE_UPDATE"
+	envUpdate = "TOWA_CONFORMANCE_UPDATE"
 )
 
 func initialize(ctx context.Context, t *testing.T, conn *acp.ClientSideConnection) acp.InitializeResponse {
@@ -59,7 +59,7 @@ func modelSelectionError(t *testing.T, err error) {
 	require.Equal(t, -32603, rejected.Code)
 	data, ok := rejected.Data.(map[string]any)
 	require.True(t, ok, "error data: %#v", rejected.Data)
-	addition, ok := data["acpharness"].(map[string]any)
+	addition, ok := data["towa"].(map[string]any)
 	require.True(t, ok, "error data: %#v", data)
 	stop, ok := addition["stop"].(map[string]any)
 	require.True(t, ok, "harness addition: %#v", addition)
@@ -97,7 +97,7 @@ func TestInitialize(t *testing.T) {
 	resp := initialize(ctx, t, conn)
 	require.Equal(t, acp.ProtocolVersion(acp.ProtocolVersionNumber), resp.ProtocolVersion)
 	require.NotNil(t, resp.AgentInfo)
-	require.Equal(t, "acpharness", resp.AgentInfo.Name)
+	require.Equal(t, "towa", resp.AgentInfo.Name)
 	require.NotEmpty(t, resp.AgentInfo.Version)
 	require.Empty(t, resp.AuthMethods)
 
@@ -181,7 +181,7 @@ func TestMethodNotFound(t *testing.T) {
 // order of members and the spacing do not count.
 //
 // When the agent's output changes on purpose, run the tests once with
-// ACPHARNESS_CONFORMANCE_UPDATE=1 and review the diff of the file.
+// TOWA_CONFORMANCE_UPDATE=1 and review the diff of the file.
 func TestWire(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -205,7 +205,7 @@ func TestWire(t *testing.T) {
 		ValueId: &acp.SetSessionConfigOptionValueId{SessionId: session.SessionId, ConfigId: "mode", Value: "auto"},
 	})
 	require.NoError(t, err)
-	listed, err := conn.ListSessions(ctx, acp.ListSessionsRequest{Cwd: new("/acpharness-conformance-no-such-cwd")})
+	listed, err := conn.ListSessions(ctx, acp.ListSessionsRequest{Cwd: new("/towa-conformance-no-such-cwd")})
 	require.NoError(t, err)
 	require.Empty(t, listed.Sessions)
 	_, err = conn.NewSession(ctx, acp.NewSessionRequest{})

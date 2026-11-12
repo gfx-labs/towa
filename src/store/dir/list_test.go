@@ -8,8 +8,8 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

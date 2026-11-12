@@ -11,8 +11,8 @@ import (
 
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // plainFormat is JSON lines. A record is the lines of the entries of one

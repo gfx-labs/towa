@@ -12,8 +12,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // A record of the compressed log is the JSON lines of one Append as one

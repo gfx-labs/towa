@@ -17,9 +17,9 @@ import (
 
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/acpharness/src/filelock"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/filelock"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // readChunk is the size of the buffer a log is read through. It is not a

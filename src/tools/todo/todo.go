@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Status is how far an item is.

@@ -22,7 +22,7 @@ Matching tries exact lines, trailing-whitespace removal, surrounding-whitespace 
 
 The summary uses upstream's wording and A/M/D grouping (`apply-patch/src/lib.rs:825-840`). Moves list only the destination as modified, while both filesystem changes are retained for client diffs. Parse error wording is ported from the source. Filesystem failures retain the wrapped Go fsops errors. They do not pretend to have Rust's OS error wording.
 
-The adapter deliberately uses the ordered library application rather than upstream's preliminary whole-patch filesystem verification (`apply-patch/src/invocation.rs:180-251`). That preflight would prevent the requested partial application in scenario 015. On failure the result explicitly lists the committed prefix under `Changes applied before the failure:`. That heading is acpharness wording, not an upstream quote. Upstream retains the delta but prints no success summary on failure.
+The adapter deliberately uses the ordered library application rather than upstream's preliminary whole-patch filesystem verification (`apply-patch/src/invocation.rs:180-251`). That preflight would prevent the requested partial application in scenario 015. On failure the result explicitly lists the committed prefix under `Changes applied before the failure:`. That heading is towa wording, not an upstream quote. Upstream retains the delta but prints no success summary on failure.
 
 ## Output and limits
 
@@ -39,7 +39,7 @@ Patch output uses the apply-patch emitter's format, not unified exec's: `Exit co
 - Interactive exec and `write_stdin`: no resumable process or PTY capability exists. Only the upstream one-shot spec is exposed.
 - `view_image`: upstream delegates resizing and high/original detail handling to centralized history preparation (`core/src/tools/handlers/view_image.rs:185-195`). That path is absent here. Chat also rejects binary tool results. The tool is omitted rather than sending different image semantics.
 - `request_user_input`, `request_permissions`, code-mode `exec` and `wait`, clocks, multi-agent tools and attached environment selection are not implemented by this dialect. No invented replacement names or schemas are advertised.
-- Sandbox escalation is refused with an explicit acpharness message. The host supplies isolation. No additional permission grant is implied by a model's argument.
+- Sandbox escalation is refused with an explicit towa message. The host supplies isolation. No additional permission grant is implied by a model's argument.
 - The shared todo checker refuses blank step text and trims whitespace. Upstream accepts it. This adapter reports the shared validation failure rather than silently inventing text. JSON errors use Go's serializer errors, not fabricated serde errors.
 - Filesystem limits and confinement come from cfg.Files. fsops uses atomic file replacement and follows symbolic links, including a delete naming the symlink's target. Those semantics are inherited from the shared capability.
 

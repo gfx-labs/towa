@@ -15,9 +15,9 @@ import (
 	"strings"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/filelock"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/filelock"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // hashPrefix starts every hash, as transcript.Stored defines it.

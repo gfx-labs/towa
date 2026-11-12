@@ -25,20 +25,20 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop/looptest"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop/looptest"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/transcript"
 	"github.com/stretchr/testify/require"
 )
 
 // The process isolation and 30s failure deadline follow httpclient's proxy
 // acceptance tests: Go caches environment proxies and system roots.
 const (
-	proxyTurnChild   = "ACPHARNESS_PROXY_TURN_CHILD"
-	proxyTurnBase    = "ACPHARNESS_PROXY_TURN_BASE"
-	proxyTurnReport  = "ACPHARNESS_PROXY_TURN_REPORT"
+	proxyTurnChild   = "TOWA_PROXY_TURN_CHILD"
+	proxyTurnBase    = "TOWA_PROXY_TURN_BASE"
+	proxyTurnReport  = "TOWA_PROXY_TURN_REPORT"
 	proxyTurnHost    = "provider.invalid"
 	proxyTurnTimeout = 30 * time.Second
 )
@@ -171,7 +171,7 @@ func proxyTurnCertificate(t *testing.T) (string, tls.Certificate) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	now := time.Now()
-	root := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "acpharness turn test CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	root := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "towa turn test CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
 	caDER, err := x509.CreateCertificate(rand.Reader, root, root, &key.PublicKey, key)
 	require.NoError(t, err)
 	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

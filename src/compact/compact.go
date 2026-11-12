@@ -17,8 +17,8 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Values of transcript.Compaction.Mode that are not a configured mode.

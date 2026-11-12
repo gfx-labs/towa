@@ -11,11 +11,11 @@ import (
 	"sync"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Runner runs one turn. *loop.Loop is one.

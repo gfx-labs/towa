@@ -25,7 +25,7 @@
 
 ### Cache breakpoints
 
-Four, which is the API's limit: the last tool acpharness defined, the last system block, the end of the last message and the end of the user message before it. jcode marks the last two assistant messages. Here the second mark sits where the previous request ended, so that a turn with more than twenty blocks of tool calls still finds the earlier entry (the API looks back twenty blocks from a mark). A native tool cannot carry a mark, since it is sent unchanged, so the tools mark is on the last tool that is not native. `Config.CacheTTL` is `5m`, `1h` or empty. `Request.CacheKey` is not used: this API has no cache key.
+Four, which is the API's limit: the last tool towa defined, the last system block, the end of the last message and the end of the user message before it. jcode marks the last two assistant messages. Here the second mark sits where the previous request ended, so that a turn with more than twenty blocks of tool calls still finds the earlier entry (the API looks back twenty blocks from a mark). A native tool cannot carry a mark, since it is sent unchanged, so the tools mark is on the last tool that is not native. `Config.CacheTTL` is `5m`, `1h` or empty. `Request.CacheKey` is not used: this API has no cache key.
 
 Not measured: no cache read has been observed, because nothing was sent.
 
@@ -47,17 +47,17 @@ Selected by `Credential.Scheme == auth.SchemeOAuth`. Read from jcode 037163c7b (
 | first system block | `x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;`, with no cache mark |
 | `Authorization` | `Bearer <token>` |
 | `anthropic-beta` | `oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,advanced-tool-use-2025-11-20,effort-2025-11-24`, plus `thinking-binding-controls-2026-08-01` when `Thinking.DropMismatchedBlocks` is set |
-| `User-Agent` | `acpharness/<version>` |
+| `User-Agent` | `towa/<version>` |
 | `Accept` | `application/json` |
 | `x-client-request-id` | a new UUIDv4 per request |
 
-No identity sentence, no `x-app`, no `X-Stainless-*`, no session header, no tool renaming. The client adds no text that names the agent: the system prompt is the caller's (`agentctx`), and it names acpharness.
+No identity sentence, no `x-app`, no `X-Stainless-*`, no session header, no tool renaming. The client adds no text that names the agent: the system prompt is the caller's (`agentctx`), and it names towa.
 
-**`cc_entrypoint` needs a live probe.** It is the constant `anthropic.BillingEntrypoint`. The checked-out jcode commit 037163c7b sends `jcode`, which is the value used. The probe document ran with `sdk-cli`, which is also what origin/master 8e11eb23e sends. No request from acpharness with either value has reached Anthropic. Before relying on it, record `oauth_text` on Opus or Sonnet (Haiku accepts anything), and if it answers 429 try `sdk-cli`.
+**`cc_entrypoint` needs a live probe.** It is the constant `anthropic.BillingEntrypoint`. The checked-out jcode commit 037163c7b sends `jcode`, which is the value used. The probe document ran with `sdk-cli`, which is also what origin/master 8e11eb23e sends. No request from towa with either value has reached Anthropic. Before relying on it, record `oauth_text` on Opus or Sonnet (Haiku accepts anything), and if it answers 429 try `sdk-cli`.
 
 Differences from jcode's OAuth request, all untested here:
 
-- jcode sends `metadata.user_id` (device id, account uuid, session id), reading the first two from the official Claude client's files. acpharness reads no other tool's files and sends no `metadata`. The probe script sent none and was accepted.
+- jcode sends `metadata.user_id` (device id, account uuid, session id), reading the first two from the official Claude client's files. towa reads no other tool's files and sends no `metadata`. The probe script sent none and was accepted.
 - jcode sends `temperature: 1.0` on OAuth requests without thinking. It is not sent here, on the understanding that 1.0 is the API's default.
 - jcode adds `context-1m-2025-08-07` for a model name ending in `[1m]`. Here that beta goes in `Config.Betas` when the caller wants it. The model name is sent as given.
 
@@ -114,7 +114,7 @@ Seen in them: Ollama's `message_delta` repeats `input_tokens` with a larger valu
 
 ## Not done
 
-- **Recordings from Anthropic.** None exist. `ANTHROPIC_API_KEY` and `ACPHARNESS_CLAUDE_OAUTH_TOKEN` were not set, and no token store was read. Missing files, all under `src/provider/anthropic/testdata/`: `api_text`, `api_tool_call`, `api_thinking`, `api_max_tokens`, `api_rejected_credential`, and the same five with the `oauth_` prefix. The commands are at the top of `replay_test.go`. Not covered by any scenario, because they cannot be provoked on demand: a real 429 with its reset headers, a 529, a context-length rejection, a mid-stream `error` event, a cut-off stream, redacted thinking, a server tool.
+- **Recordings from Anthropic.** None exist. `ANTHROPIC_API_KEY` and `TOWA_CLAUDE_OAUTH_TOKEN` were not set, and no token store was read. Missing files, all under `src/provider/anthropic/testdata/`: `api_text`, `api_tool_call`, `api_thinking`, `api_max_tokens`, `api_rejected_credential`, and the same five with the `oauth_` prefix. The commands are at the top of `replay_test.go`. Not covered by any scenario, because they cannot be provoked on demand: a real 429 with its reset headers, a 529, a context-length rejection, a mid-stream `error` event, a cut-off stream, redacted thinking, a server tool.
 - **The `cc_entrypoint` probe**, above.
 - `pause_turn` is mapped to `provider.StopPaused` but has never been seen in a response: it needs a server tool that runs long.
 - Citations (`citations_delta`) are dropped. Text with citations is sent back as plain text.

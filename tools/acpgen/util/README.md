@@ -3,7 +3,7 @@
 ## Overview
 
 Package `util` holds pure string and identifier helpers for the code generator.
-`github.com/gfx-labs/acpharness/tools/acpgen/emit` and `github.com/gfx-labs/acpharness/tools/acpgen/ir` use them to build Go identifiers and doc comments from schema names and descriptions.
+`github.com/gfx-labs/towa/tools/acpgen/emit` and `github.com/gfx-labs/towa/tools/acpgen/ir` use them to build Go identifiers and doc comments from schema names and descriptions.
 The package imports only `strings` and `unicode`.
 
 ## Interface

@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/mcp"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/mcp"
 )
 
 // errMCPServer is a server name the mcp commands cannot act on: it is not
@@ -83,7 +83,7 @@ func (c *mcpLoginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, en
 		OpenURL:       env.openBrowser,
 		In:            h.Stdin,
 		Out:           h.Stderr,
-		ClientName:    "acpharness",
+		ClientName:    "towa",
 		ClientVersion: version(),
 	})
 	if err != nil {

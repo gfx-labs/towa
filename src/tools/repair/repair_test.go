@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/tools/repair"
+	"github.com/gfx-labs/towa/src/tools/repair"
 )
 
 // schema has each shape the repairs look at: a list of objects, a nested

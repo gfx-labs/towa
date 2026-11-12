@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // wireError is what a provider says about a failed request, from an error

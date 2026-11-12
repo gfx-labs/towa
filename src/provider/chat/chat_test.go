@@ -11,11 +11,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 func newClient(t testing.TB, p config.Provider) *Client {
@@ -27,7 +27,7 @@ func newClient(t testing.TB, p config.Provider) *Client {
 		p.BaseURL = "https://example.invalid/v1"
 	}
 	p.Kind = config.ProviderChat
-	c, err := New(Config{HTTPClient: httpclient.New(), Provider: p, UserAgent: "acpharness/test"})
+	c, err := New(Config{HTTPClient: httpclient.New(), Provider: p, UserAgent: "towa/test"})
 	require.NoError(t, err)
 	return c
 }
@@ -302,15 +302,15 @@ func TestSendsItsHeaders(t *testing.T) {
 	defer server.Close()
 
 	p := openRouter(config.OpenRouterRouting{})
-	p.BaseURL, p.Referer, p.Title = server.URL+"/api/v1/", "https://github.com/gfx-labs/acpharness", "acpharness"
+	p.BaseURL, p.Referer, p.Title = server.URL+"/api/v1/", "https://github.com/gfx-labs/towa", "towa"
 	perr := streamError(t.Context(), t, newClient(t, p))
 	require.Equal(t, http.StatusServiceUnavailable, perr.Status)
 
 	require.Equal(t, "/api/v1/chat/completions", path)
 	require.Equal(t, "Bearer sk-test", got.Get("Authorization"))
-	require.Equal(t, "https://github.com/gfx-labs/acpharness", got.Get("HTTP-Referer"))
-	require.Equal(t, "acpharness", got.Get("X-OpenRouter-Title"))
-	require.Equal(t, "acpharness/test", got.Get("User-Agent"))
+	require.Equal(t, "https://github.com/gfx-labs/towa", got.Get("HTTP-Referer"))
+	require.Equal(t, "towa", got.Get("X-OpenRouter-Title"))
+	require.Equal(t, "towa/test", got.Get("User-Agent"))
 }
 
 // hangingServer answers 200 as an event stream, sends no event, and drops

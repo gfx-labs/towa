@@ -20,9 +20,9 @@ import (
 	"github.com/gfx-labs/sse"
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Values of the wire protocol.
@@ -53,7 +53,7 @@ const (
 	// BillingEntrypoint is the cc_entrypoint value of the billing block.
 	// jcode's branches differ: "jcode" on 037163c7b, which is used here,
 	// and "sdk-cli" on origin/master 8e11eb23e, which is what the probe
-	// ran with. Neither was sent from acpharness to a live account yet.
+	// ran with. Neither was sent from towa to a live account yet.
 	BillingEntrypoint = "jcode"
 	// billingVersion and billingHash are the cc_version and cch values
 	// jcode sends.
@@ -108,8 +108,8 @@ type Thinking struct {
 type Config struct {
 	// HTTPClient sends every request. It comes from src/httpclient.
 	HTTPClient *http.Client
-	// Version is the acpharness version. The user agent is
-	// acpharness/<Version>.
+	// Version is the towa version. The user agent is
+	// towa/<Version>.
 	Version string
 	// BaseURL is the root of the API, without /v1/messages. Empty means
 	// DefaultBaseURL.
@@ -177,7 +177,7 @@ func New(cfg Config) (*Client, error) {
 	if cfg.ErrorBodyBytes < 0 {
 		return nil, fmt.Errorf("anthropic: Config.ErrorBodyBytes is %d", cfg.ErrorBodyBytes)
 	}
-	return &Client{cfg: cfg, userAgent: "acpharness/" + cfg.Version}, nil
+	return &Client{cfg: cfg, userAgent: "towa/" + cfg.Version}, nil
 }
 
 // Stream sends one request and yields what the model produces.

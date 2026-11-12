@@ -14,7 +14,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // ErrNotFound is returned for a session the store does not hold.

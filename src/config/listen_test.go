@@ -5,11 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 func TestListenRefusesAnOpenPortThatWasNotAskedFor(t *testing.T) {
-	tls := []string{"listen.tcp.tls.cert_file=/etc/acpharness/cert.pem", "listen.tcp.tls.key_file=/etc/acpharness/key.pem"}
+	tls := []string{"listen.tcp.tls.cert_file=/etc/towa/cert.pem", "listen.tcp.tls.key_file=/etc/towa/key.pem"}
 	tests := []struct {
 		name string
 		// set holds key=value pairs, each given as the flag --key=value.

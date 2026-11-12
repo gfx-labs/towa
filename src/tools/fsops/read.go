@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // sniffBytes is how much of a file is looked at to tell text from binary.

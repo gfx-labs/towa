@@ -11,7 +11,7 @@ import (
 type Store struct {
 	// Root is the directory that holds one directory per session. It is an
 	// absolute path. Empty means the XDG state directory: Dir resolves it.
-	Root string `name:"root" placeholder:"DIR" help:"Absolute directory that holds one directory per session. Empty means acpharness/sessions in the XDG state directory."`
+	Root string `name:"root" placeholder:"DIR" help:"Absolute directory that holds one directory per session. Empty means towa/sessions in the XDG state directory."`
 	// Compression is how the log of a new session is stored. A session
 	// that exists keeps the format it was created with. The measurements
 	// behind the default are in docs/notes/2026-11-11-store.md.
@@ -34,7 +34,7 @@ func (s Store) validate() error {
 }
 
 // Dir returns the directory sessions are kept in. When Root is empty it is
-// acpharness/sessions under XDG_STATE_HOME, or under ~/.local/state when
+// towa/sessions under XDG_STATE_HOME, or under ~/.local/state when
 // that is not set or not absolute, as the XDG Base Directory specification
 // says. environ is the environment, as os.Environ returns it.
 func (s Store) Dir(environ []string) (string, error) {
@@ -49,7 +49,7 @@ func (s Store) Dir(environ []string) (string, error) {
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(state, "acpharness", "sessions"), nil
+	return filepath.Join(state, "towa", "sessions"), nil
 }
 
 // storeEnv returns the value of name in environ, or "" when it is not set.

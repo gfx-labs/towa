@@ -15,14 +15,14 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
 )
 
 // serverModeEnv makes the test binary run as an MCP server on its stdin and
 // stdout. That is the stdio server the tests start: a real process speaking
 // the SDK's server side of the protocol.
-const serverModeEnv = "ACPHARNESS_MCP_TEST_SERVER"
+const serverModeEnv = "TOWA_MCP_TEST_SERVER"
 
 // Modes of the test server.
 const (
@@ -98,7 +98,7 @@ var onePixelPNG = []byte{
 
 // newTestServer is the server every transport test talks to.
 func newTestServer() *sdk.Server {
-	server := sdk.NewServer(&sdk.Implementation{Name: "acpharness-test-server", Version: "1"}, nil)
+	server := sdk.NewServer(&sdk.Implementation{Name: "towa-test-server", Version: "1"}, nil)
 	sdk.AddTool(server, &sdk.Tool{
 		Name:        "echo",
 		Description: "Return the text it is given.",
@@ -233,7 +233,7 @@ func newTestManager(t *testing.T, opts Options) *Manager {
 	if opts.Config.ConnectTimeoutSeconds == 0 {
 		opts.Config = defaultConfig(t)
 	}
-	opts.ClientName, opts.ClientVersion = "acpharness-test", "0"
+	opts.ClientName, opts.ClientVersion = "towa-test", "0"
 	m, err := NewManager(opts)
 	require.NoError(t, err)
 	// A server that lingers is not given the default five seconds.

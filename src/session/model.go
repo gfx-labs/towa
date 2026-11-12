@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/models"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/models"
 )
 
 // ModelOption is the id of the config option that holds the session's
@@ -17,7 +17,7 @@ import (
 const ModelOption acp.SessionConfigId = "model"
 
 // AddModels registers the model config option, the model key of
-// _meta.acpharness on session/new and the /model command. The option is a
+// _meta.towa on session/new and the /model command. The option is a
 // select over the configured models in list order, starting at the first. The chosen
 // name is written to loop.Turn.Model before each turn, so a switch applies
 // from the next turn.

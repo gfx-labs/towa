@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 func write(t *testing.T, path, body string) string {
@@ -43,7 +43,7 @@ func TestLaterLayersOverrideEarlierOnes(t *testing.T) {
 		{"listed file", func() { src.Files = []string{extra} }, slog.LevelDebug, extra},
 		{"file of --config", func() { args = []string{"--config", flagged} }, slog.LevelInfo, flagged},
 		{"environment", func() {
-			src.Environ = []string{"ACPHARNESS_TELEMETRY__LOGS__STDERR__LEVEL=warn", "ACPHARNESS_CONFIG=" + extra, "HOME=/nowhere"}
+			src.Environ = []string{"TOWA_TELEMETRY__LOGS__STDERR__LEVEL=warn", "TOWA_CONFIG=" + extra, "HOME=/nowhere"}
 		}, slog.LevelWarn, "environment"},
 		{"flag", func() { args = append(args, "--telemetry.logs.stderr.level=error") }, slog.LevelError, "flag"},
 		{"flag by its short name", func() { args = append(args, "--log-level", "debug") }, slog.LevelDebug, "flag"},
@@ -86,7 +86,7 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		// The flag's spelling of a key is not a file's.
 		{"dotted key in a file", file("dotted.yaml", "limits.max_wall: 30m\n"), nil, "dotted.yaml: limits.max_wall"},
 		{"unknown key in a table", file("table.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1s\n    timout: 2s\n"), nil, "hooks[0].timout"},
-		{"unknown key in the environment", config.Sources{Environ: []string{"ACPHARNESS_TELEMETRY__OTLE=1"}}, nil, "ACPHARNESS_TELEMETRY__OTLE"},
+		{"unknown key in the environment", config.Sources{Environ: []string{"TOWA_TELEMETRY__OTLE=1"}}, nil, "TOWA_TELEMETRY__OTLE"},
 		{"unknown flag", config.Sources{}, []string{"--telemetry.otle"}, "otle"},
 		{"file that does not parse", file("broken.yaml", "telemetry:\n  otel: [true\n"), nil, "broken.yaml"},
 		{"file with two documents", file("two.yaml", "telemetry:\n  otel: true\n---\ntelemetry:\n  otel: false\n"), nil, "two.yaml"},
@@ -97,7 +97,7 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"number where a table needs a duration", file("hook-wait.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1\n"), nil, "hooks[0].timeout"},
 		{"value of the wrong type in a file", file("type.yaml", "limits:\n  max_tool_calls: many\n"), nil, "type.yaml"},
 		{"text where a file needs a list", file("list.yaml", "context:\n  agents: a.md,b.md\n"), nil, "list.yaml"},
-		{"value of the wrong type in the environment", config.Sources{Environ: []string{"ACPHARNESS_LIMITS__MAX_WALL=soon"}}, nil, "ACPHARNESS_LIMITS__MAX_WALL"},
+		{"value of the wrong type in the environment", config.Sources{Environ: []string{"TOWA_LIMITS__MAX_WALL=soon"}}, nil, "TOWA_LIMITS__MAX_WALL"},
 		{"value of the wrong type", config.Sources{}, []string{"--telemetry.otel=sometimes"}, "telemetry.otel"},
 		{"unknown log level", config.Sources{}, []string{"--telemetry.logs.stderr.level=loud"}, "loud"},
 		{"unknown log format", config.Sources{}, []string{"--telemetry.logs.stderr.format=xml"}, "telemetry.logs.stderr.format"},
@@ -195,7 +195,7 @@ func TestATableFromTheEnvironmentReplacesTheFilesTable(t *testing.T) {
 		"hooks:\n  - event: prompt\n    command: [one]\n    timeout: 1s\n  - event: stop\n    command: [two]\n    timeout: 1s\n")
 	got, err := config.Load(config.Sources{
 		Files:   []string{path},
-		Environ: []string{`ACPHARNESS_HOOKS=[{event: stop, command: [three], timeout: 2s}]`},
+		Environ: []string{`TOWA_HOOKS=[{event: stop, command: [three], timeout: 2s}]`},
 	})
 	require.NoError(t, err)
 	require.Len(t, got.Config.Hooks, 1)

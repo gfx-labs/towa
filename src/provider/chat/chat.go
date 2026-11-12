@@ -17,9 +17,9 @@ import (
 
 	"github.com/gfx-labs/sse"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // Config is what a Client is built from.
@@ -29,7 +29,7 @@ type Config struct {
 	// Provider is the endpoint's configuration. Its ID tags the items the
 	// client produces, so that only this provider reads their Opaque.
 	Provider config.Provider
-	// UserAgent is sent with every request, as "acpharness/<version>".
+	// UserAgent is sent with every request, as "towa/<version>".
 	UserAgent string
 }
 

@@ -8,10 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
-	"github.com/gfx-labs/acpharness/src/tools/search"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/tools/search"
 )
 
 func toolsConfig(t *testing.T) config.Tools {

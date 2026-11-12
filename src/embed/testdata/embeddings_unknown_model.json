@@ -11,7 +11,7 @@
       ]
     },
     "body": {
-      "text": "{\"model\":\"acpharness-no-such-model\",\"input\":[\"a red bicycle\"]}"
+      "text": "{\"model\":\"towa-no-such-model\",\"input\":[\"a red bicycle\"]}"
     }
   },
   "response": {
@@ -29,7 +29,7 @@
     },
     "chunks": [
       {
-        "text": "{\"error\":{\"message\":\"model \\\"acpharness-no-such-model\\\" not found, try pulling it first\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
+        "text": "{\"error\":{\"message\":\"model \\\"towa-no-such-model\\\" not found, try pulling it first\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
       }
     ]
   }

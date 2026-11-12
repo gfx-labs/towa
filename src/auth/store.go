@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/filelock"
+	"github.com/gfx-labs/towa/src/filelock"
 )
 
 // ErrNotLoggedIn says the store holds no login for an OAuth account.
@@ -58,9 +58,9 @@ func NewStore(dir string) *Store { return &Store{dir: dir} }
 func StateDir(xdgStateHome, home string) (string, error) {
 	switch {
 	case xdgStateHome != "":
-		return filepath.Join(xdgStateHome, "acpharness", "auth"), nil
+		return filepath.Join(xdgStateHome, "towa", "auth"), nil
 	case home != "":
-		return filepath.Join(home, ".local", "state", "acpharness", "auth"), nil
+		return filepath.Join(home, ".local", "state", "towa", "auth"), nil
 	}
 	return "", errors.New("neither XDG_STATE_HOME nor HOME is set, so there is no place for the auth store")
 }

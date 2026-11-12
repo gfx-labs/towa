@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/extras"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/extras"
+	"github.com/gfx-labs/towa/src/transcript"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +37,7 @@ func TestWebSearchReadsARecordedResultPageAndReportsAChallenge(t *testing.T) {
 	defer srv.Close()
 	cfg := config.WebSearch{
 		Enabled: true, Endpoint: srv.URL + "/html/", Region: "us-en", Timeout: time.Minute,
-		MaxBodyBytes: 1 << 20, DefaultResults: 3, MaxResults: 10, UserAgent: "acpharness-test",
+		MaxBodyBytes: 1 << 20, DefaultResults: 3, MaxResults: 10, UserAgent: "towa-test",
 	}
 	tool, err := extras.WebSearch(cfg, httpclient.New())
 	require.NoError(t, err)

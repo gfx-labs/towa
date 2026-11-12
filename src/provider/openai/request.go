@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // requestBody is the body of POST /responses and, with Type set, the

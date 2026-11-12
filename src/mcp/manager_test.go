@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 func textOf(t *testing.T, res *sdk.CallToolResult) string {
@@ -102,7 +102,7 @@ func TestEveryTransportListsAndCalls(t *testing.T) {
 func TestRemoteServerNeedsAClient(t *testing.T) {
 	remote := Server{Name: "s", Transport: config.MCPTransportSSE, URL: "http://127.0.0.1:1/"}
 	_, err := NewManager(Options{
-		Config: defaultConfig(t), Servers: []Server{remote}, ClientName: "acpharness-test", ClientVersion: "0",
+		Config: defaultConfig(t), Servers: []Server{remote}, ClientName: "towa-test", ClientVersion: "0",
 	})
 	require.Error(t, err)
 

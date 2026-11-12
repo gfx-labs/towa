@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/tools"
 )
 
 // view shows a child's turn under the parent's tool call. A tool call update

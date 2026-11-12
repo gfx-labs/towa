@@ -10,14 +10,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/chat"
-	"github.com/gfx-labs/acpharness/src/provider/openai"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/chat"
+	"github.com/gfx-labs/towa/src/provider/openai"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // These checks stop at the request boundary. The endpoint sends only a 503

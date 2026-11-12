@@ -26,15 +26,15 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/towa/src/httpclient"
 )
 
 // Go reads the proxy variables and the root pool once per process, so the
 // client under test runs in a child: this test binary, started again with
 // the two variables below set. TestMain sends such a start to runChild.
 const (
-	envChildMode = "ACPHARNESS_HTTPCLIENT_CHILD"
-	envChildURL  = "ACPHARNESS_HTTPCLIENT_URL"
+	envChildMode = "TOWA_HTTPCLIENT_CHILD"
+	envChildURL  = "TOWA_HTTPCLIENT_URL"
 )
 
 // upstreamHost is the name the client asks for. Go never sends a request to
@@ -64,7 +64,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// runChild makes one request with the client every part of acpharness uses
+// runChild makes one request with the client every part of towa uses
 // and prints the outcome.
 func runChild(mode, url string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), childTimeout)
@@ -155,7 +155,7 @@ func start(t *testing.T) *network {
 	require.NoError(t, err)
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "acpharness test CA"},
+		Subject:               pkix.Name{CommonName: "towa test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		IsCA:                  true,

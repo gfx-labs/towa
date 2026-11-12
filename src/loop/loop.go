@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/tools"
 )
 
 // Result is how a turn ended.
@@ -106,7 +106,7 @@ func Stub(ctx context.Context, t Turn) (Result, error) {
 		text.WriteString(block.Text.Text)
 		text.WriteString("\n")
 	}
-	reply := fmt.Sprintf("acpharness has no model provider yet. Your prompt had %d content blocks that are not text, and this text:\n%s", other, text.String())
+	reply := fmt.Sprintf("towa has no model provider yet. Your prompt had %d content blocks that are not text, and this text:\n%s", other, text.String())
 	update := acp.SessionUpdate{AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
 		Content: acp.ContentBlock{Text: &acp.ContentBlockText{Type: "text", Text: reply}},
 	}}

@@ -1,4 +1,4 @@
-module github.com/gfx-labs/acpharness
+module github.com/gfx-labs/towa
 
 go 1.27.3
 

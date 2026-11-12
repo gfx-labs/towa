@@ -7,12 +7,12 @@ import (
 	"math"
 	"time"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
-	"github.com/gfx-labs/acpharness/src/tools/shell"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/tools/shell"
 )
 
 type readArgs struct {

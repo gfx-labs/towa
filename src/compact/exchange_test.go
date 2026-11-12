@@ -12,25 +12,25 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/compact"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/embed"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/loop/looptest"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/compact"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/embed"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/loop/looptest"
+	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // These exchanges are Ollama's emulation, not Anthropic or OpenAI proof.
 // Record at most one request per test, with no retries or model pulls:
-// ACPHARNESS_RECORD_COMPACTION=1 go test ./src/compact -run 'TestSummaryExchange|TestSemanticExchange'
-const recordEnv = "ACPHARNESS_RECORD_COMPACTION"
+// TOWA_RECORD_COMPACTION=1 go test ./src/compact -run 'TestSummaryExchange|TestSemanticExchange'
+const recordEnv = "TOWA_RECORD_COMPACTION"
 
 func recordedHistory(t *testing.T) (*looptest.Fixture, uuid.UUID, []transcript.Entry) {
 	t.Helper()

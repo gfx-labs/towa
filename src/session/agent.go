@@ -19,14 +19,14 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/agentctx"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/telemetry"
-	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/agentctx"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/telemetry"
+	"github.com/gfx-labs/towa/src/tools"
 )
 
 // TurnFunc runs one prompt turn and says how it ended. It returns when ctx
@@ -63,7 +63,7 @@ type Supports struct {
 	// ContextOverrides: the turn's context is loaded with
 	// loop.Turn.ContextFiles and loop.Turn.SkillsDirs added to the
 	// configured ones. It allows the context_files and skills_dirs keys of
-	// _meta.acpharness on session/new.
+	// _meta.towa on session/new.
 	ContextOverrides bool
 	// MCP: the turn connects to loop.Turn.McpServers over stdio, and over
 	// the transports named here. Nil means it connects to none.
@@ -194,7 +194,7 @@ func (a *Agent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.Init
 		// The only version there is to offer: the client's own when it asked
 		// for it, and otherwise the latest this agent supports.
 		ProtocolVersion:   acp.ProtocolVersionNumber,
-		AgentInfo:         &acp.Implementation{Name: "acpharness", Version: a.version},
+		AgentInfo:         &acp.Implementation{Name: "towa", Version: a.version},
 		AgentCapabilities: capabilities,
 	}, nil
 }
@@ -313,7 +313,7 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 // startValues returns the config option values a session starts with and
 // the changes its _meta overrides make to each turn. stored holds values
 // kept with a stored session. The order is: defaults, stored values, the
-// request's _meta.acpharness, the request's configOptions.
+// request's _meta.towa, the request's configOptions.
 func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionConfigOption, stored map[acp.SessionConfigId]Value) (map[acp.SessionConfigId]Value, []func(*loop.Turn), error) {
 	gate := a.Gate()
 	values := a.registry.defaults()

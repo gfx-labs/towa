@@ -20,8 +20,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // TokenStore is what this package needs from the auth store: the OAuth
@@ -45,7 +45,7 @@ type LoginRequiredError struct {
 }
 
 func (e *LoginRequiredError) Error() string {
-	return fmt.Sprintf("mcp: server %q needs an OAuth login: %v: log in with \"acph mcp login %s\"", e.Server, e.Err, e.Server)
+	return fmt.Sprintf("mcp: server %q needs an OAuth login: %v: log in with \"towa mcp login %s\"", e.Server, e.Err, e.Server)
 }
 
 func (e *LoginRequiredError) Unwrap() error { return e.Err }
@@ -387,7 +387,7 @@ func redirectReceiver(ctx context.Context, opts LoginOptions) (redirect string, 
 	mux := http.NewServeMux()
 	mux.HandleFunc(opts.Config.CallbackPath, func(w http.ResponseWriter, r *http.Request) {
 		result, err := authorizationResult(r.URL.Query())
-		message := "acpharness has the authorization code. You can close this page."
+		message := "towa has the authorization code. You can close this page."
 		if err != nil {
 			message = "The login was not completed. You can close this page."
 		}

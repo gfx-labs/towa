@@ -13,7 +13,7 @@ import (
 	"slices"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/store"
+	"github.com/gfx-labs/towa/src/store"
 )
 
 // Scope says which sessions a call may read.

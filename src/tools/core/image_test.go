@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/image/draw"
 
-	"github.com/gfx-labs/acpharness/src/tools/core"
+	"github.com/gfx-labs/towa/src/tools/core"
 )
 
 var imageFixtures = []string{"blue-purple-pink-large.png", "blue-purple-pink-large.lossless.webp", "blue-purple-pink-large.normal-filter.lossy.webp", "go-turns-two-280x360.jpeg", "video-001.gif"}

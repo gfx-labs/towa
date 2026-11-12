@@ -4,7 +4,7 @@ import (
 	"slices"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Roles of a conversation item.

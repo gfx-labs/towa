@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
-	"github.com/gfx-labs/acpharness/tools/acpgen/util"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/util"
 )
 
 // WriteHelpersJen emits go/helpers_gen.go with New<Union><Variant>

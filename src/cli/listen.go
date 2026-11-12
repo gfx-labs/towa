@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/listen"
-	"github.com/gfx-labs/acpharness/src/session"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/listen"
+	"github.com/gfx-labs/towa/src/session"
 )
 
 // serveListeners serves every configured transport on host. The caller closes

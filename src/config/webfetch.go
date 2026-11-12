@@ -19,7 +19,7 @@ type WebFetch struct {
 	MaxResultBytes int64 `name:"max_result_bytes" default:"40000" validate:"gt=0" help:"Most text one fetch returns. The rest is left out and the result says how much."`
 	// UserAgent is sent with the request. Go's own default names the HTTP
 	// library, which some sites refuse.
-	UserAgent string `name:"user_agent" default:"acpharness" validate:"required" help:"User-Agent sent with the request."`
+	UserAgent string `name:"user_agent" default:"towa" validate:"required" help:"User-Agent sent with the request."`
 }
 
 func (w WebFetch) validate() error {

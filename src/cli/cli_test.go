@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/cli"
+	"github.com/gfx-labs/towa/pkg/acp/acptest"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/cli"
 )
 
 // The whole program: flags and a config file reach the logger, and a client
@@ -21,15 +21,15 @@ import (
 // receives a typed failure instead of an echoed prompt.
 func TestServeAnswersAClientOnStdio(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "acpharness"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "acpharness", "config.yaml"),
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "towa"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "towa", "config.yaml"),
 		[]byte("telemetry:\n  logs:\n    stderr:\n      format: json\n      level: error\n"), 0o600))
 
 	w, stdin, stdout := acptest.New(t)
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- cli.Run(context.Background(), []string{"acph", "--log-level", "info"}, cli.Host{
+		done <- cli.Run(context.Background(), []string{"towa", "--log-level", "info"}, cli.Host{
 			Stdin:   stdin,
 			Stdout:  stdout,
 			Stderr:  &stderr,

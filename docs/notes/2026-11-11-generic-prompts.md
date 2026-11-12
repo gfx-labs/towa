@@ -1,6 +1,6 @@
 # Generic instructions
 
-The generic dialect uses instructions authored for acpharness, not an upstream
+The generic dialect uses instructions authored for towa, not an upstream
 capture or a guessed model-family template. This follows the generic neutral
 dialect in `docs/design.md:205-211` and the Chat Completions first-task milestone.
 

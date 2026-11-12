@@ -15,7 +15,7 @@
 | `timeout` | `30s` | jcode `crates/jcode-app-core/src/tool/webfetch.rs:17` (`DEFAULT_TIMEOUT`), at `8e11eb23e` |
 | `max_body_bytes` | 5 MiB | same file, line 9 (`MAX_SIZE`) |
 | `max_result_bytes` | 40000 | same file, line 12 (`MAX_OUTPUT_CHARS`, which is compared with a byte length at line 181) |
-| `user_agent` | `acpharness` | ours. Go's default names the HTTP library |
+| `user_agent` | `towa` | ours. Go's default names the HTTP library |
 
 ### What comes back
 

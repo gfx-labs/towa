@@ -5,10 +5,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/gfx-labs/acpharness/src/tools"
-	"github.com/gfx-labs/acpharness/src/tools/fsops"
-	"github.com/gfx-labs/acpharness/src/tools/shell"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/tools/shell"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // bashOutputCharacters is the most command output the model is given, in

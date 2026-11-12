@@ -27,7 +27,7 @@ The header is `chatgpt-account-id`. The client sends it on an OAuth request when
 - Whether the backend requires it: not established. jcode sends it only when it has one, and sends requests without it for tokens imported from another tool (`account_id: None` in `load_credentials`). That is code that permits the header to be absent, not a probe that the backend accepts the request. jcode's 2026-11-05 probe varied `originator` only.
 - What to do: have the proxy set `chatgpt-account-id` from the claim whenever the harness did not send it, and leave a value the harness sent alone. That is correct whichever way the backend behaves. The harness side already exists: a `proxied_oauth` account has `chatgpt_account_id` in its config.
 
-Everything else the proxy must leave alone: `originator: acpharness`, `x-codex-routing-hint: model=<model>`, `session-id: <cache key>`, and on the WebSocket handshake `OpenAI-Beta: responses_websockets=2026-02-06`. A proxied credential gets exactly these with the placeholder in `Authorization: Bearer`. The WebSocket handshake is an HTTP GET with `Upgrade`, sent through the same `*http.Client`, so the proxy must swap the authorization there too and pass the upgrade.
+Everything else the proxy must leave alone: `originator: towa`, `x-codex-routing-hint: model=<model>`, `session-id: <cache key>`, and on the WebSocket handshake `OpenAI-Beta: responses_websockets=2026-02-06`. A proxied credential gets exactly these with the placeholder in `Authorization: Bearer`. The WebSocket handshake is an HTTP GET with `Upgrade`, sent through the same `*http.Client`, so the proxy must swap the authorization there too and pass the upgrade.
 
 ## Decisions
 
@@ -96,8 +96,8 @@ The buffer is returned only after the transport has closed every reader of the b
 `testdata/api_text.json`, `api_function_call.json` and `api_unknown_model.json` were recorded on 2026-11-11 from the local Ollama server (0.24.0, `llama3.2:3b`, `http://127.0.0.1:11434/v1`), through the recorder in `replay_test.go`:
 
 ```sh
-ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=placeholder-not-a-key ACPHARNESS_OPENAI_MODEL=llama3.2:3b \
-  ACPHARNESS_OPENAI_EFFORT= ACPHARNESS_OPENAI_BASE_URL=http://127.0.0.1:11434/v1 \
+TOWA_RECORD_OPENAI=1 OPENAI_API_KEY=placeholder-not-a-key TOWA_OPENAI_MODEL=llama3.2:3b \
+  TOWA_OPENAI_EFFORT= TOWA_OPENAI_BASE_URL=http://127.0.0.1:11434/v1 \
   go test -count 1 -run 'TestExchange/api_(text|function_call|unknown_model)$' ./src/provider/openai/
 ```
 
@@ -107,7 +107,7 @@ These are Ollama's emulation of the Responses API, not OpenAI. They show that th
 
 What Ollama sent that is worth knowing:
 
-- It answered the first two requests with HTTP 400, `"llama3.2:3b" does not support thinking`, because the request carried `reasoning`. The recordings were made without an effort (`ACPHARNESS_OPENAI_EFFORT=`), so no recording covers a request with `reasoning`. The client was not changed.
+- It answered the first two requests with HTTP 400, `"llama3.2:3b" does not support thinking`, because the request carried `reasoning`. The recordings were made without an effort (`TOWA_OPENAI_EFFORT=`), so no recording covers a request with `reasoning`. The client was not changed.
 - Events this client does not read arrive and are skipped: `response.in_progress`, `response.content_part.added`, `response.content_part.done`, `response.output_text.done`, `response.function_call_arguments.done`.
 - The function call's arguments came in one delta, so no recording covers arguments split over several deltas.
 - The unknown model error is `{"error":{"message":...,"type":"not_found_error","param":null,"code":null}}` with status 404. A null `code` is read as no code.
@@ -129,8 +129,8 @@ The fixtures were searched for the host name, the user name and home paths, and 
 
 - Nothing has run against OpenAI. Every OpenAI wire shape here is read from jcode and openai/codex, not observed. The only real server the client has talked to is Ollama, for the three recordings above.
 - Not recorded, and skipped by `TestExchange`: `api_custom_call`, `api_max_output_tokens`, `codex_text`, `codex_function_call`, `codex_custom_call`. They need a real account:
-  - the API scenarios: `ACPHARNESS_RECORD_OPENAI=1 OPENAI_API_KEY=... ACPHARNESS_OPENAI_MODEL=... go test ./src/provider/openai -run TestExchange/api_`. This would also replace the three Ollama recordings with OpenAI's.
-  - `codex_text`, `codex_function_call`, `codex_custom_call`: `ACPHARNESS_RECORD_OPENAI=1 ACPHARNESS_CODEX_TOKEN=... ACPHARNESS_CODEX_ACCOUNT_ID=... ACPHARNESS_CODEX_MODEL=... go test ./src/provider/openai -run TestExchange/codex_`
+  - the API scenarios: `TOWA_RECORD_OPENAI=1 OPENAI_API_KEY=... TOWA_OPENAI_MODEL=... go test ./src/provider/openai -run TestExchange/api_`. This would also replace the three Ollama recordings with OpenAI's.
+  - `codex_text`, `codex_function_call`, `codex_custom_call`: `TOWA_RECORD_OPENAI=1 TOWA_CODEX_TOKEN=... TOWA_CODEX_ACCOUNT_ID=... TOWA_CODEX_MODEL=... go test ./src/provider/openai -run TestExchange/codex_`
   - The recorder replaces the token and the account id.
 - No recording exists for an OpenAI error response (usage limit, context length, 401), for the compact call, or for a second turn that sends encrypted reasoning back. Each needs its own scenario and a real account in that state.
 - The WebSocket transport has no test in the repo and has never talked to a real server. `providertest` covers plain HTTP only.

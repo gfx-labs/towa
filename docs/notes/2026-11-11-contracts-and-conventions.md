@@ -6,7 +6,7 @@ This is the base the parallel build starts from. It also takes in the eight asks
 
 ## Moves
 
-- The command line is in `src/cli`. `cmd/acpharness/main.go` sets up signals and calls `cli.Run`.
+- The command line is in `src/cli`. `cmd/towa/main.go` sets up signals and calls `cli.Run`.
 - The ACP package is `pkg/acp`, because protocol7's worker imports it as the client side. It imports only the standard library, so a client pulls in none of our other dependencies.
 
 ## Contracts
@@ -26,7 +26,7 @@ Written before the lanes so they do not each invent one.
 
 ## Typed stop
 
-ACP has five stop reasons and no field for a rate limit. A turn that stops for a reason the client can act on carries `harness.Stop` under the `acpharness` key:
+ACP has five stop reasons and no field for a rate limit. A turn that stops for a reason the client can act on carries `harness.Stop` under the `towa` key:
 
 - in the prompt response's `_meta`, when the turn still has a stop reason (a configured limit answers `max_turn_requests`);
 - in the error's `data`, when the turn failed (rate limit, auth, overload, context full, network, invalid request). A rejected credential answers with code `-32000`, the others with `-32603`.

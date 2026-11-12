@@ -41,7 +41,7 @@ type LoginOptions struct {
 	// TokenTimeout bounds the token request.
 	TokenTimeout time.Duration
 	// Later records a browser or manual login before its page is shown, so
-	// that a later run of "acph login <provider> --code" can finish
+	// that a later run of "towa login <provider> --code" can finish
 	// it. It may be nil, and then the user is not told of that way.
 	Later func(login *Login) error
 }
@@ -55,7 +55,7 @@ func (opts LoginOptions) later(login *Login, what string) (string, error) {
 	if err := opts.Later(login); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("A later run can also finish this login, given %s:\n\n  acph login %s --code '...'\n\n", what, opts.Flow.Provider), nil
+	return fmt.Sprintf("A later run can also finish this login, given %s:\n\n  towa login %s --code '...'\n\n", what, opts.Flow.Provider), nil
 }
 
 // RunLogin takes the user through one authorization and returns the tokens.
@@ -91,7 +91,7 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 		switch {
 		case q.Get("state") != login.State():
 			// Not an answer to this login: some other page or an old tab.
-			http.Error(w, "This is not the login acpharness is waiting for.", http.StatusBadRequest)
+			http.Error(w, "This is not the login towa is waiting for.", http.StatusBadRequest)
 			return
 		case q.Get("error") != "":
 			result.err = fmt.Errorf("%s refused the login: %s %s", opts.Flow.Provider, q.Get("error"), q.Get("error_description"))
@@ -101,7 +101,7 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 			return
 		default:
 			result.code = q.Get("code")
-			_, _ = io.WriteString(w, "acpharness has the authorization code. You can close this tab.\n")
+			_, _ = io.WriteString(w, "towa has the authorization code. You can close this tab.\n")
 		}
 		select {
 		case got <- result:
@@ -140,7 +140,7 @@ func RunLogin(ctx context.Context, opts LoginOptions) (Tokens, error) {
 	case <-timeout.C:
 		result.err = fmt.Errorf("the browser did not come back within %s", opts.CallbackTimeout)
 		if hint != "" {
-			result.err = fmt.Errorf("%w: the login can still be finished with \"acph login %s --code '<the address the browser ended on>'\"", result.err, opts.Flow.Provider)
+			result.err = fmt.Errorf("%w: the login can still be finished with \"towa login %s --code '<the address the browser ended on>'\"", result.err, opts.Flow.Provider)
 		}
 	case <-ctx.Done():
 		result.err = context.Cause(ctx)

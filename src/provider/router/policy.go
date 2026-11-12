@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // Action is what the router does about a failed request.

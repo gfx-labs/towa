@@ -12,8 +12,8 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
 )
 
 // newTestPool returns a pool that is closed when the test ends.
@@ -21,7 +21,7 @@ func newTestPool(t *testing.T, servers []Server) *Pool {
 	t.Helper()
 	p, err := NewPool(PoolOptions{
 		Config: defaultConfig(t), Servers: servers, HTTPClient: newCountingClient().Client,
-		ClientName: "acpharness-test", ClientVersion: "0",
+		ClientName: "towa-test", ClientVersion: "0",
 	})
 	require.NoError(t, err)
 	p.m.terminateGrace = 200 * time.Millisecond

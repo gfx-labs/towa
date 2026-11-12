@@ -54,8 +54,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Action is what a hook decided.

@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/hosts"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/hosts"
 )
 
 // load resolves a YAML file as the program would.

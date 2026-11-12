@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/tools/acpgen/ir"
-	"github.com/gfx-labs/acpharness/tools/acpgen/load"
+	"github.com/gfx-labs/towa/tools/acpgen/ir"
+	"github.com/gfx-labs/towa/tools/acpgen/load"
 )
 
 // WriteDispatchJen emits agent_gen.go and client_gen.go with handlers and wrappers.

@@ -2,7 +2,7 @@
 
 2026-11-11
 
-protocol7 runs acpharness in a pod whose only way out is a proxy that presents its own certificate. Every outbound connection therefore has to go through `HTTPS_PROXY` and trust the system CA pool. `src/httpclient` had no test for either. It has now.
+protocol7 runs towa in a pod whose only way out is a proxy that presents its own certificate. Every outbound connection therefore has to go through `HTTPS_PROXY` and trust the system CA pool. `src/httpclient` had no test for either. It has now.
 
 ## Result
 

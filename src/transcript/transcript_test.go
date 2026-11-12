@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 func TestOpaqueCompatibilityRequiresKnownRequestOrigin(t *testing.T) {

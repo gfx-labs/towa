@@ -11,10 +11,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/mcp/mcptest"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/mcp/mcptest"
 )
 
 // The server side of these tests is the SDK's MCP handler behind the SDK's
@@ -56,7 +56,7 @@ func TestOAuthLoginAndRefresh(t *testing.T) {
 			login := func() error {
 				return Login(ctx, LoginOptions{
 					Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store, Out: io.Discard,
-					ClientName: "acpharness-test", ClientVersion: "0", OpenURL: browser(client),
+					ClientName: "towa-test", ClientVersion: "0", OpenURL: browser(client),
 				})
 			}
 
@@ -174,7 +174,7 @@ func TestOAuthManualLogin(t *testing.T) {
 
 	err := Login(ctx, LoginOptions{
 		Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store, Manual: true, In: pasted, Out: out,
-		ClientName: "acpharness-test", ClientVersion: "0",
+		ClientName: "towa-test", ClientVersion: "0",
 	})
 	require.NoError(t, out.Close())
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestOAuthManualLogin(t *testing.T) {
 	err = Login(ctx, LoginOptions{
 		Server: server, Config: cfg.OAuth, HTTPClient: client, Tokens: store, Manual: true,
 		In: strings.NewReader("http://127.0.0.1:1/callback?code=abc&state=not-this-login\n"), Out: io.Discard,
-		ClientName: "acpharness-test", ClientVersion: "0",
+		ClientName: "towa-test", ClientVersion: "0",
 	})
 	require.Error(t, err)
 	after, err := store.LoadMCP(server.Name)

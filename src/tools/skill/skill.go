@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/src/agentctx"
+	"github.com/gfx-labs/towa/src/agentctx"
 )
 
 // Input names the skill to load.

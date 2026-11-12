@@ -11,12 +11,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // source is a server recordings are made from.
@@ -92,7 +92,7 @@ var openRouterExchanges = []exchange{
 	},
 	{
 		name:   "unknown_model",
-		req:    provider.Request{Model: "acpharness/no-such-model", Items: userSays("hi")},
+		req:    provider.Request{Model: "towa/no-such-model", Items: userSays("hi")},
 		failed: true,
 		check: func(t *testing.T, got outcome) {
 			require.Equal(t, provider.Fail, got.err.Class)
@@ -128,7 +128,7 @@ var ollamaExchanges = []exchange{
 	},
 	{
 		name:   "unknown_model",
-		req:    provider.Request{Model: "acpharness-no-such-model", Items: userSays("hi")},
+		req:    provider.Request{Model: "towa-no-such-model", Items: userSays("hi")},
 		failed: true,
 		check: func(t *testing.T, got outcome) {
 			require.Equal(t, provider.Fail, got.err.Class)
@@ -159,7 +159,7 @@ var sources = []source{
 		provider: func(base string) config.Provider {
 			return config.Provider{
 				ID: "openrouter", Kind: config.ProviderChat, BaseURL: base, CacheKeyField: config.CacheKeySessionID,
-				Referer: "https://github.com/gfx-labs/acpharness", Title: "acpharness",
+				Referer: "https://github.com/gfx-labs/towa", Title: "towa",
 				OpenRouter: config.OpenRouter{Enabled: true},
 			}
 		},
@@ -168,7 +168,7 @@ var sources = []source{
 	{
 		// The build machine's Ollama server. It needs no key, so the
 		// variable only says that recording from it is wanted.
-		name: "ollama", env: "ACPHARNESS_RECORD_OLLAMA", base: "http://127.0.0.1:11434/v1", path: "/v1", token: "ollama",
+		name: "ollama", env: "TOWA_RECORD_OLLAMA", base: "http://127.0.0.1:11434/v1", path: "/v1", token: "ollama",
 		provider: func(base string) config.Provider {
 			return config.Provider{ID: "ollama", Kind: config.ProviderChat, BaseURL: base}
 		},
@@ -219,7 +219,7 @@ func run(t *testing.T, c *Client, req provider.Request, token string) outcome {
 // for the sources whose variable is set. Run it by hand:
 //
 //	OPENROUTER_API_KEY=... go test ./src/provider/chat -run TestRecord -count=1
-//	ACPHARNESS_RECORD_OLLAMA=1 go test ./src/provider/chat -run TestRecord -count=1
+//	TOWA_RECORD_OLLAMA=1 go test ./src/provider/chat -run TestRecord -count=1
 func TestRecord(t *testing.T) {
 	for _, src := range sources {
 		t.Run(src.name, func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestRecord(t *testing.T) {
 				t.Run(ex.name, func(t *testing.T) {
 					httpClient := httpclient.New()
 					httpClient.Transport = &providertest.Recorder{Next: httpClient.Transport, Path: recordingPath(src, ex.name), Secrets: secrets}
-					c, err := New(Config{HTTPClient: httpClient, Provider: src.provider(src.base), UserAgent: "acpharness/test"})
+					c, err := New(Config{HTTPClient: httpClient, Provider: src.provider(src.base), UserAgent: "towa/test"})
 					require.NoError(t, err)
 					got := run(t, c, ex.req, token)
 					require.Equal(t, ex.failed, got.err != nil, "%v", got.err)
@@ -257,7 +257,7 @@ func TestReplay(t *testing.T) {
 					t.Skipf("%s is not recorded: run TestRecord with %s set", path, src.env)
 				}
 				server := providertest.Replay(t, path)
-				c, err := New(Config{HTTPClient: httpclient.New(), Provider: src.provider(server.URL + src.path), UserAgent: "acpharness/test"})
+				c, err := New(Config{HTTPClient: httpclient.New(), Provider: src.provider(server.URL + src.path), UserAgent: "towa/test"})
 				require.NoError(t, err)
 				got := run(t, c, ex.req, "replayed")
 				contextName, err := c.ContextName(auth.Credential{Scheme: auth.SchemeAPIKey})

@@ -6,8 +6,8 @@ import (
 	"unicode/utf8"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 // jcode origin/master 8e11eb23e: crates/jcode-compaction-core/src/lib.rs:43

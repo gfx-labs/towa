@@ -14,18 +14,18 @@ import (
 	"testing"
 	"uuid"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/embed"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/loop/looptest"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/telemetry"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/embed"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/loop/looptest"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/telemetry"
 	"github.com/stretchr/testify/require"
 )
 
 // Recording requires separate approval for exactly one local embedding request.
-const recordRuntimeEmbedding = "ACPHARNESS_RECORD_RUNTIME_EMBEDDING"
+const recordRuntimeEmbedding = "TOWA_RECORD_RUNTIME_EMBEDDING"
 
 func TestRuntimeRetainsSemanticEmbeddingAcrossTurns(t *testing.T) {
 	fixture := looptest.Replay(t, looptest.ReadTurn)

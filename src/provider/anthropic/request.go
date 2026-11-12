@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 type wireRequest struct {
@@ -199,7 +199,7 @@ func (c *Client) buildRequest(req provider.Request) (*wireRequest, Thinking, *pr
 // cached prefix runs tools, system, messages, so each mark covers
 // everything before it.
 //
-//   - the last tool acpharness defined: a native tool is sent unchanged and
+//   - the last tool towa defined: a native tool is sent unchanged and
 //     so cannot carry the mark;
 //   - the last system block. The billing block is never marked;
 //   - the end of the last message, which the next request reads;

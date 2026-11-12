@@ -9,8 +9,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Provider sends model requests to one endpoint. It holds no account: the
@@ -156,7 +156,7 @@ func (c Class) String() string {
 	}
 }
 
-// Reason is why a request failed, from a fixed list. A client of acpharness
+// Reason is why a request failed, from a fixed list. A client of towa
 // reads it to decide what to do, so a new reason is a protocol change.
 type Reason string
 

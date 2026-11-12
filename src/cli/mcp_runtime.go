@@ -8,11 +8,11 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/mcp"
-	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/mcp"
+	"github.com/gfx-labs/towa/src/tools"
 )
 
 // mcpRuntimeOptions holds process dependencies. Session setup takes a copy
@@ -53,7 +53,7 @@ func newMCPPool(o mcpRuntimeOptions) (*mcp.Pool, error) {
 	return mcp.NewPool(mcp.PoolOptions{
 		Config: o.Config, Servers: servers, HTTPClient: o.HTTPClient,
 		Tokens: o.Tokens, Logger: o.Logger, Tracer: o.Tracer,
-		ClientName: "acpharness", ClientVersion: o.Version,
+		ClientName: "towa", ClientVersion: o.Version,
 	})
 }
 
@@ -73,7 +73,7 @@ func newSessionMCP(ctx context.Context, o mcpRuntimeOptions, pool *mcp.Pool, tur
 		Config: o.Config, Servers: servers, HTTPClient: o.HTTPClient,
 		Dir: turn.Cwd, Tokens: o.Tokens, Pool: pool,
 		Logger: o.Logger, Tracer: o.Tracer,
-		ClientName: "acpharness", ClientVersion: o.Version,
+		ClientName: "towa", ClientVersion: o.Version,
 	})
 	if err != nil {
 		return nil, nil, err

@@ -36,7 +36,7 @@ type WebSearch struct {
 	DefaultResults int `name:"default_results" default:"8" validate:"gt=0,ltefield=MaxResults" help:"Results a call gets when it names no number."`
 	MaxResults     int `name:"max_results" default:"20" validate:"gt=0" help:"Most results a call may ask for."`
 	// UserAgent is sent with the request.
-	UserAgent string `name:"user_agent" default:"acpharness" validate:"required" help:"User-Agent sent with the request."`
+	UserAgent string `name:"user_agent" default:"towa" validate:"required" help:"User-Agent sent with the request."`
 }
 
 func (w WebSearch) validate() error {

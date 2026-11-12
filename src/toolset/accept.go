@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/acpharness/src/tools/gate"
+	"github.com/gfx-labs/towa/src/tools/gate"
 )
 
 // acceptSchema is what the model is told about the gate's member. No

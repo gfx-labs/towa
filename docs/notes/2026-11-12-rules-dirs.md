@@ -10,7 +10,7 @@ A rules directory that does not exist is skipped, as a skills directory is: the 
 
 ## Why
 
-Found while comparing acpharness with jcode on one task (2026-11-12). jcode's prompt held the user's eleven rule files and acpharness's held none, so the two agents were working to different instructions. `context.extra_dirs: ["~/.agents/rules"]` already loaded them, but only for a user who knew to set it.
+Found while comparing towa with jcode on one task (2026-11-12). jcode's prompt held the user's eleven rule files and towa's held none, so the two agents were working to different instructions. `context.extra_dirs: ["~/.agents/rules"]` already loaded them, but only for a user who knew to set it.
 
 ## Order
 

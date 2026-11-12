@@ -19,14 +19,14 @@
         "application/json"
       ],
       "User-Agent": [
-        "acpharness/recording"
+        "towa/recording"
       ],
       "X-Client-Request-Id": [
         "be60e732-ed9e-4368-826a-a9c7708742c0"
       ]
     },
     "body": {
-      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":16,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Write three paragraphs about rivers.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"stream\":true}"
+      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":16,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are towa, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Write three paragraphs about rivers.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"stream\":true}"
     }
   },
   "response": {

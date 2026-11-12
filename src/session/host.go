@@ -10,9 +10,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/store"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/store"
 )
 
 // Host is what a process has once for all its connections: the store, the
@@ -63,13 +63,13 @@ func NewHost(o Options) (*Host, error) {
 	if o.Turn == nil && o.Open == nil {
 		return nil, errors.New("session: Turn or Open is required")
 	}
-	turns, err := o.Meter.Int64Counter("acpharness.turns",
+	turns, err := o.Meter.Int64Counter("towa.turns",
 		metric.WithDescription("Prompt turns finished, by stop reason."),
 		metric.WithUnit("{turn}"))
 	if err != nil {
 		return nil, err
 	}
-	repairs, err := o.Meter.Int64Counter("acpharness.session.repairs",
+	repairs, err := o.Meter.Int64Counter("towa.session.repairs",
 		metric.WithDescription("Session logs whose torn tails were set aside."),
 		metric.WithUnit("{repair}"))
 	if err != nil {

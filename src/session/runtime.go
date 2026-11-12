@@ -5,9 +5,9 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/tools"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/tools"
 )
 
 // baseTurn snapshots the settings used to build a runtime. Its permission

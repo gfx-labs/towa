@@ -4,7 +4,7 @@
 
 Package `emit` renders the generated Go files of the root `acp` package with jennifer (`github.com/dave/jennifer/jen`).
 Each exported `Write*Jen` function builds one or two jennifer files for package `acp` and writes them into `outDir`.
-The inputs are `load.Meta` and `load.Schema` from `github.com/gfx-labs/acpharness/tools/acpgen/load`, and the method grouping comes from `github.com/gfx-labs/acpharness/tools/acpgen/ir`.
+The inputs are `load.Meta` and `load.Schema` from `github.com/gfx-labs/towa/tools/acpgen/load`, and the method grouping comes from `github.com/gfx-labs/towa/tools/acpgen/ir`.
 `jenwrap.go` re-exports jennifer names under short aliases so the emitter does not need a dot-import.
 
 ## Interface

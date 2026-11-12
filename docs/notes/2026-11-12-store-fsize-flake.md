@@ -7,7 +7,7 @@ CI run 43194668481 on `90d424f` failed in its tests step. Every test of `src/sto
 ```
 PASS
 testing: can't write /tmp/go-build3693687670/b689/testlog.txt: write /tmp/go-build3693687670/b689/testlog.txt: file too large
-FAIL	github.com/gfx-labs/acpharness/src/store/dir	8.336s
+FAIL	github.com/gfx-labs/towa/src/store/dir	8.336s
 ```
 
 The second attempt of the same run passed. `90d424f` does not touch `src/store`.
@@ -29,7 +29,7 @@ So it needs both the test log and this test, and it was there before `90d424f`.
 
 ## Fix
 
-The append under the lowered limit is made by a second process: the test binary run again with `ACPHARNESS_TEST_LIMIT_*` set, the way `TestMovedSessionContinues` already runs one. That process writes nothing but the session log. It succeeds only when the append failed with `EFBIG`. The test process then reads the log, as before, and checks that it is unchanged and that the next append works.
+The append under the lowered limit is made by a second process: the test binary run again with `TOWA_TEST_LIMIT_*` set, the way `TestMovedSessionContinues` already runs one. That process writes nothing but the session log. It succeeds only when the append failed with `EFBIG`. The test process then reads the log, as before, and checks that it is unchanged and that the next append works.
 
 - 120 runs with `-test.testlogfile`: 0 failed.
 - With the rollback in `Store.append` taken out (`go test -overlay`), both cases of the test fail, so it still catches a torn record.

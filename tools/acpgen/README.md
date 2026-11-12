@@ -8,7 +8,7 @@ go generate ./pkg/acp
 
 That runs `go run . -schema ../../pkg/acp/schema -out ../../pkg/acp` in this directory. Both flags are required.
 
-This is its own Go module, so its one dependency (`dave/jennifer`) stays out of the acpharness binary's module.
+This is its own Go module, so its one dependency (`dave/jennifer`) stays out of the towa binary's module.
 
 ## Origin
 

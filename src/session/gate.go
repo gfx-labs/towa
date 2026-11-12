@@ -1,6 +1,6 @@
 package session
 
-import "github.com/gfx-labs/acpharness/pkg/acp"
+import "github.com/gfx-labs/towa/pkg/acp"
 
 // Gate holds what the client of one connection advertised in initialize and
 // decides which session updates it is sent.

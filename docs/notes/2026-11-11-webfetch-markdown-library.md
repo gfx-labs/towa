@@ -8,8 +8,8 @@
 
 - `github.com/JohannesKaufmann/html-to-markdown/v2` v2.5.2, MIT. Used: `converter` and the `base`, `commonmark`, `table` and `strikethrough` plugins.
 - It brings `github.com/JohannesKaufmann/dom` v0.3.1, MIT, whose only requirement is `golang.org/x/net`, already here.
-- The library's `go.mod` also lists goldmark, cascadia, termenv and others. They belong to its CLI and tests. `go list -deps ./cmd/acpharness` shows none of them linked.
-- Binary, `CGO_ENABLED=0 go build -trimpath ./cmd/acpharness` on linux amd64: 37,559,103 bytes before, 37,867,871 after, 308,768 more.
+- The library's `go.mod` also lists goldmark, cascadia, termenv and others. They belong to its CLI and tests. `go list -deps ./cmd/towa` shows none of them linked.
+- Binary, `CGO_ENABLED=0 go build -trimpath ./cmd/towa` on linux amd64: 37,559,103 bytes before, 37,867,871 after, 308,768 more.
 - `go mod tidy` also moved eleven modules that the code imports directly out of the indirect block. No version changed.
 
 ## What stays ours

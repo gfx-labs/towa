@@ -19,14 +19,14 @@
         "application/json"
       ],
       "User-Agent": [
-        "acpharness/recording"
+        "towa/recording"
       ],
       "X-Client-Request-Id": [
         "0d09e2a7-8748-4277-a9c3-897df643bc8f"
       ]
     },
     "body": {
-      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":1024,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are acpharness, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Search the web for the Agent Client Protocol and reply with the address of its website.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"max_uses\":1,\"name\":\"web_search\",\"type\":\"web_search_20250305\"}],\"stream\":true}"
+      "text": "{\"model\":\"claude-fable-5-2\",\"max_tokens\":1024,\"system\":[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: cc_version=2.1.280; cc_entrypoint=jcode; cch=33f85;\"},{\"type\":\"text\",\"text\":\"You are towa, a coding agent under test. Follow the user's request exactly.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Search the web for the Agent Client Protocol and reply with the address of its website.\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"max_uses\":1,\"name\":\"web_search\",\"type\":\"web_search_20250305\"}],\"stream\":true}"
     }
   },
   "response": {

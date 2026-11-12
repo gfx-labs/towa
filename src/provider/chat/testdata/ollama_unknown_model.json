@@ -13,11 +13,11 @@
         "application/json"
       ],
       "User-Agent": [
-        "acpharness/test"
+        "towa/test"
       ]
     },
     "body": {
-      "text": "{\"model\":\"acpharness-no-such-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true}}"
+      "text": "{\"model\":\"towa-no-such-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true}}"
     }
   },
   "response": {
@@ -35,7 +35,7 @@
     },
     "chunks": [
       {
-        "text": "{\"error\":{\"message\":\"model 'acpharness-no-such-model' not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
+        "text": "{\"error\":{\"message\":\"model 'towa-no-such-model' not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n"
       }
     ]
   }

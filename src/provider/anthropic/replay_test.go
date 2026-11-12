@@ -15,21 +15,21 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/provider"
-	"github.com/gfx-labs/acpharness/src/provider/anthropic"
-	"github.com/gfx-labs/acpharness/src/provider/hostedsearch"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/hostedsearch"
+	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Recordings are made from a real account and never written by hand:
 //
-//	ACPHARNESS_RECORD_ANTHROPIC=1 ACPHARNESS_ANTHROPIC_MODEL=... ANTHROPIC_API_KEY=... \
+//	TOWA_RECORD_ANTHROPIC=1 TOWA_ANTHROPIC_MODEL=... ANTHROPIC_API_KEY=... \
 //	    go test ./src/provider/anthropic -run TestExchange/api_
-//	ACPHARNESS_RECORD_ANTHROPIC=1 ACPHARNESS_CLAUDE_MODEL=... ACPHARNESS_CLAUDE_OAUTH_TOKEN=... \
+//	TOWA_RECORD_ANTHROPIC=1 TOWA_CLAUDE_MODEL=... TOWA_CLAUDE_OAUTH_TOKEN=... \
 //	    go test ./src/provider/anthropic -run TestExchange/oauth_
 //
 // The OAuth model has to be Opus or Sonnet: Haiku accepts a request without
@@ -40,14 +40,14 @@ import (
 // The ollama_ scenarios are recorded from a local Ollama server, which
 // serves the Messages shape and needs no key:
 //
-//	ACPHARNESS_RECORD_ANTHROPIC=1 ACPHARNESS_OLLAMA_URL=http://127.0.0.1:11434 ACPHARNESS_OLLAMA_MODEL=llama3.2:3b \
+//	TOWA_RECORD_ANTHROPIC=1 TOWA_OLLAMA_URL=http://127.0.0.1:11434 TOWA_OLLAMA_MODEL=llama3.2:3b \
 //	    go test ./src/provider/anthropic -run TestExchange/ollama_
 //
 // They show that the parser reads a real server's stream. They are Ollama's
 // emulation, and show nothing about Anthropic's thinking blocks, cache
 // usage, OAuth shape, errors or headers.
 const (
-	recordEnv = "ACPHARNESS_RECORD_ANTHROPIC"
+	recordEnv = "TOWA_RECORD_ANTHROPIC"
 	// version is fixed so that the user agent of a replay matches the
 	// recording.
 	version = "recording"
@@ -175,7 +175,7 @@ func scenarios() []scenario {
 		},
 		scenario{
 			name: "ollama_unknown_model", scheme: auth.SchemeAPIKey, ollama: true, maxOutput: 16,
-			model:  "acpharness-no-such-model",
+			model:  "towa-no-such-model",
 			prompt: "Reply with the single word: ready",
 			check: func(t *testing.T, _ []provider.Event, err error) {
 				var perr *provider.Error
@@ -248,7 +248,7 @@ func checkUsageBeforeStop(t *testing.T, events []provider.Event) {
 func (s scenario) request(model string, cred auth.Credential) provider.Request {
 	return provider.Request{
 		Model: model, Credential: cred,
-		System:          []provider.SystemBlock{{Name: "instructions", Text: "You are acpharness, a coding agent under test. Follow the user's request exactly."}},
+		System:          []provider.SystemBlock{{Name: "instructions", Text: "You are towa, a coding agent under test. Follow the user's request exactly."}},
 		Items:           []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: s.prompt}}}}},
 		Tools:           s.tools,
 		Effort:          s.effort,
@@ -272,20 +272,20 @@ func TestExchange(t *testing.T) {
 			httpClient := httpclient.New()
 			var model, baseURL string
 			if recording {
-				model, cred.Token = os.Getenv("ACPHARNESS_ANTHROPIC_MODEL"), os.Getenv("ANTHROPIC_API_KEY")
+				model, cred.Token = os.Getenv("TOWA_ANTHROPIC_MODEL"), os.Getenv("ANTHROPIC_API_KEY")
 				if s.scheme == auth.SchemeOAuth {
-					model, cred.Token = os.Getenv("ACPHARNESS_CLAUDE_MODEL"), os.Getenv("ACPHARNESS_CLAUDE_OAUTH_TOKEN")
+					model, cred.Token = os.Getenv("TOWA_CLAUDE_MODEL"), os.Getenv("TOWA_CLAUDE_OAUTH_TOKEN")
 				}
 				if s.ollama {
 					// Ollama reads no key. The header is replaced in the
 					// recording by its name.
-					model, cred.Token, baseURL = os.Getenv("ACPHARNESS_OLLAMA_MODEL"), "ollama", os.Getenv("ACPHARNESS_OLLAMA_URL")
+					model, cred.Token, baseURL = os.Getenv("TOWA_OLLAMA_MODEL"), "ollama", os.Getenv("TOWA_OLLAMA_URL")
 				}
 				if cred.Token == "" || model == "" || (s.ollama && baseURL == "") {
 					t.Skip("the credential or the model for this scheme is not in the environment")
 				}
 				if s.badToken {
-					cred.Token = "acpharness-rejected-credential"
+					cred.Token = "towa-rejected-credential"
 				}
 				if s.model != "" {
 					model = s.model

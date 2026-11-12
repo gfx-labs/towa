@@ -22,34 +22,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// binary is the acpharness built from this checkout, once for all tests.
+// binary is the towa built from this checkout, once for all tests.
 var binary string
 
-// envBinary names an acpharness binary to test in place of one built from
+// envBinary names an towa binary to test in place of one built from
 // this checkout, so that the binary of another branch can be checked.
 // envWire prints both directions of every conversation with -v.
 const (
-	envBinary = "ACPHARNESS_CONFORMANCE_BINARY"
-	envWire   = "ACPHARNESS_CONFORMANCE_WIRE"
+	envBinary = "TOWA_CONFORMANCE_BINARY"
+	envWire   = "TOWA_CONFORMANCE_WIRE"
 )
 
 func TestMain(m *testing.M) {
 	if binary = os.Getenv(envBinary); binary != "" {
 		os.Exit(m.Run())
 	}
-	dir, err := os.MkdirTemp("", "acpharness-conformance")
+	dir, err := os.MkdirTemp("", "towa-conformance")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	binary = filepath.Join(dir, "acph")
-	// Built from the repository root: cmd/acph is in the root module,
+	binary = filepath.Join(dir, "towa")
+	// Built from the repository root: cmd/towa is in the root module,
 	// and go build refuses a package outside the module it runs in.
-	build := exec.Command("go", "build", "-o", binary, "./cmd/acph")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/towa")
 	build.Dir = filepath.Join("..", "..")
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "build acpharness:", err)
+		fmt.Fprintln(os.Stderr, "build towa:", err)
 		os.Exit(1)
 	}
 	code := m.Run()
@@ -162,7 +162,7 @@ func (c *client) WaitForTerminalExit(context.Context, acp.WaitForTerminalExitReq
 	return acp.WaitForTerminalExitResponse{}, acp.NewMethodNotFound(acp.ClientMethodTerminalWaitForExit)
 }
 
-// agent is one running "acph serve" and what crossed its pipes.
+// agent is one running "towa serve" and what crossed its pipes.
 type agent struct {
 	t *testing.T
 	// sent is what the client wrote and received what the agent wrote.
@@ -207,11 +207,11 @@ func start(t *testing.T) *agent {
 		select {
 		case err := <-done:
 			if err != nil {
-				t.Errorf("acph serve ended with %v\nstderr:\n%s", err, stderr.String())
+				t.Errorf("towa serve ended with %v\nstderr:\n%s", err, stderr.String())
 			}
 		case <-time.After(30 * time.Second):
 			_ = cmd.Process.Kill()
-			t.Errorf("acph serve did not end after its standard input closed\nstderr:\n%s", stderr.String())
+			t.Errorf("towa serve did not end after its standard input closed\nstderr:\n%s", stderr.String())
 		}
 		if t.Failed() || os.Getenv(envWire) != "" {
 			t.Logf("client sent:\n%s", strings.Join(a.sent.lines(), "\n"))

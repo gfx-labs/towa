@@ -16,9 +16,9 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/httpclient"
-	"github.com/gfx-labs/acpharness/src/mcp/mcptest"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/mcp/mcptest"
 )
 
 // The mcp commands from the command line to the token file, against an MCP
@@ -42,8 +42,8 @@ func TestMCPLoginLogout(t *testing.T) {
 	}}
 
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "acpharness"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.yaml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "towa"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "towa", "config.yaml"), []byte(`
 mcp:
   servers:
     - name: tracker
@@ -63,12 +63,12 @@ mcp:
 				"XDG_STATE_HOME=" + filepath.Join(dir, "state"),
 			},
 		}
-		err := run(t.Context(), append([]string{"acph"}, args...), h, env)
+		err := run(t.Context(), append([]string{"towa"}, args...), h, env)
 		return stdout.String(), err
 	}
-	store := auth.NewStore(filepath.Join(dir, "state", "acpharness", "auth"))
+	store := auth.NewStore(filepath.Join(dir, "state", "towa", "auth"))
 	sum := sha256.Sum256([]byte("tracker"))
-	file := filepath.Join(dir, "state", "acpharness", "auth", "mcp", hex.EncodeToString(sum[:])+".json")
+	file := filepath.Join(dir, "state", "towa", "auth", "mcp", hex.EncodeToString(sum[:])+".json")
 
 	// A server that is not configured, or is not remote, is refused before
 	// anything is sent.

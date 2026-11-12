@@ -9,16 +9,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/harness"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/provider/providertest"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/provider/providertest"
 )
 
 // TestRecord runs each scenario's turn against the Ollama server and writes
 // one recording per model request. Run it by hand:
 //
-//	ACPHARNESS_RECORD_OLLAMA=1 go test ./src/loop/looptest -run TestRecord -count=1
+//	TOWA_RECORD_OLLAMA=1 go test ./src/loop/looptest -run TestRecord -count=1
 //
 // A turn that makes another number of requests than its scenario says
 // fails, and its recordings are not to be kept: the model did not do what

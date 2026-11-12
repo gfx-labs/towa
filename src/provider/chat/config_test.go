@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/provider"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/provider"
 )
 
 func loadProviders(t *testing.T, yaml string) (*config.Loaded, error) {
@@ -26,8 +26,8 @@ providers:
   - id: openrouter
     kind: chat
     base_url: https://openrouter.ai/api/v1
-    referer: https://github.com/gfx-labs/acpharness
-    title: acpharness
+    referer: https://github.com/gfx-labs/towa
+    title: towa
     cache_key_field: session_id
     openrouter:
       enabled: true

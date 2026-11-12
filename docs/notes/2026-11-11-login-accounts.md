@@ -4,18 +4,18 @@
 
 ## Why
 
-`acpharness login` refused any account that a config file did not already declare, and no command made one. A first login was therefore impossible without editing a config file by hand. The user asked for account creation from the command line, a printed page to click or a device code with its page, logins kept in a file of their own (`auth.json`), and jcode's two-run login, where a second run of the command takes the code.
+`towa login` refused any account that a config file did not already declare, and no command made one. A first login was therefore impossible without editing a config file by hand. The user asked for account creation from the command line, a printed page to click or a device code with its page, logins kept in a file of their own (`auth.json`), and jcode's two-run login, where a second run of the command takes the code.
 
 ## What changed
 
-- **One file.** `$XDG_STATE_HOME/acpharness/auth/auth.json` holds every OAuth account by id: its provider and its tokens. It replaces one `<account>.json` per account. `src/auth/store.go`.
-- **A login creates the account.** `acpharness login <provider> --account <id>` needs no `accounts` entry. `accounts` in the configuration is now for API keys and proxy-held accounts.
+- **One file.** `$XDG_STATE_HOME/towa/auth/auth.json` holds every OAuth account by id: its provider and its tokens. It replaces one `<account>.json` per account. `src/auth/store.go`.
+- **A login creates the account.** `towa login <provider> --account <id>` needs no `accounts` entry. `accounts` in the configuration is now for API keys and proxy-held accounts.
 - **A chain may name an account first.** An account that a model chain names on `claude` or `codex` is taken as an oauth account, so a config can be written before the login. A turn that reaches it reports `ErrNotLoggedIn` with the command to run. `config.Sources.StoredAccounts` carries the store's accounts into `config.Load`, and `Account.Stored` marks an account that no config layer declares.
 - **The page is always printed.** A browser login used to fail when no opener could be started. It now prints the page, says no browser opened, and keeps waiting for the callback.
 - **`--device`.** Codex only. Prints a one-time code and `https://auth.openai.com/codex/device`, then asks for the approval until it comes. `src/auth/device.go`.
-- **`--code`.** A browser or manual login writes `auth/pending/<provider>.json` before it shows its page. `acpharness login <provider> --code '<code or address>'` in a later run finishes it. The record names the account, so the later run needs the provider alone. `src/auth/pending.go`.
+- **`--code`.** A browser or manual login writes `auth/pending/<provider>.json` before it shows its page. `towa login <provider> --code '<code or address>'` in a later run finishes it. The record names the account, so the later run needs the provider alone. `src/auth/pending.go`.
 - **A manual login with nobody at the terminal.** An empty line or a closed input leaves the pending record, prints the command for the later run and exits 0. This is how a script or an agent starts a login that a person finishes.
-- `acpharness hosts` names a stored account as `auth.json:accounts.<id>` and adds a flow's device endpoints. Codex's are on `auth.openai.com`, which the authorize and token endpoints already put in the list, so the list for Codex is the same as before.
+- `towa hosts` names a stored account as `auth.json:accounts.<id>` and adds a flow's device endpoints. Codex's are on `auth.openai.com`, which the authorize and token endpoints already put in the list, so the list for Codex is the same as before.
 - A browser login that times out names the `--code` run in its error. Its pending record is still there.
 - The examples in `docs/design.md` are YAML. The sketch there did not load as written: `limits.subagent_depth` and `limits.subagent_concurrency` are not keys (the section is `subagents`, with `max_depth` and `max_concurrent`), the hook had no `timeout`, and no provider `openrouter` was declared for the chain entry and account that name it. All three are corrected.
 

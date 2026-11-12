@@ -15,8 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/acpharness/src/auth"
-	"github.com/gfx-labs/acpharness/src/httpclient"
+	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/httpclient"
 )
 
 // The account commands from the command line to the files: a login through
@@ -57,8 +57,8 @@ func TestLoginAccountsLogout(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "acpharness"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "acpharness", "config.yaml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config", "towa"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config", "towa", "config.yaml"), []byte(`
 # The model names an account that no login has made yet.
 models: ["claude:fresh/claude-opus-4-7"]
 accounts:
@@ -85,10 +85,10 @@ accounts:
 				"XDG_STATE_HOME=" + filepath.Join(dir, "state"),
 			},
 		}
-		err := run(t.Context(), append([]string{"acph"}, args...), h, env)
+		err := run(t.Context(), append([]string{"towa"}, args...), h, env)
 		return stdout.String(), err
 	}
-	file := filepath.Join(dir, "state", "acpharness", "auth", "auth.json")
+	file := filepath.Join(dir, "state", "towa", "auth", "auth.json")
 	store := auth.NewStore(filepath.Dir(file))
 
 	// The form the design gives: the provider, then the flag.

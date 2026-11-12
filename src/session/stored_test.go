@@ -18,20 +18,20 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/gfx-labs/acpharness/pkg/acp"
-	"github.com/gfx-labs/acpharness/pkg/acp/acptest"
-	"github.com/gfx-labs/acpharness/src/config"
-	"github.com/gfx-labs/acpharness/src/loop"
-	"github.com/gfx-labs/acpharness/src/session"
-	"github.com/gfx-labs/acpharness/src/store"
-	"github.com/gfx-labs/acpharness/src/store/dir"
-	"github.com/gfx-labs/acpharness/src/transcript"
+	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/pkg/acp/acptest"
+	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/loop"
+	"github.com/gfx-labs/towa/src/session"
+	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/store/dir"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // envStoreRoot makes the test binary serve an agent on standard input and
 // output over the store in the named directory, in place of running tests.
 // TestSessionMovesToANewProcess starts the binary that way twice.
-const envStoreRoot = "ACPHARNESS_SESSION_TEST_STORE_ROOT"
+const envStoreRoot = "TOWA_SESSION_TEST_STORE_ROOT"
 
 func TestMain(m *testing.M) {
 	root := os.Getenv(envStoreRoot)
@@ -421,7 +421,7 @@ func TestTornSessionMovesToANewProcess(t *testing.T) {
 						Repair struct {
 							Bytes int64 `json:"setAsideBytes"`
 						} `json:"repair"`
-					} `json:"acpharness"`
+					} `json:"towa"`
 				} `json:"_meta"`
 			}
 			require.NoError(t, json.Unmarshal(loaded.Result, &response))
