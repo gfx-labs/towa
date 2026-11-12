@@ -45,6 +45,9 @@ func parseName(id string) (name, bool) {
 		}
 		if n.family == "" {
 			n.family = segment
+		} else {
+			// "gpt-6.1-sol-mini" is another model than "gpt-6.1-sol".
+			n.family += "-" + segment
 		}
 	}
 	if n.vendor == "" || len(numbers) == 0 {

@@ -144,6 +144,8 @@ func TestSelectTakesAFigureFromTheProvidersList(t *testing.T) {
 		"codex:chatgpt": {FetchedAtUnixMs: 1794504428000, Models: map[string]models.Listed{
 			"gpt-6.1-sol": {ContextWindow: 500_000},
 			"gpt-5.6-sol": {ContextWindow: 272_000},
+			// A variant is another model: it says nothing of gpt-5.5-sol.
+			"gpt-5.5-sol-mini": {ContextWindow: 128_000},
 		}},
 	}
 	path := filepath.Join(t.TempDir(), "state", "models.json")
@@ -197,6 +199,9 @@ func TestSelectTakesAFigureFromTheProvidersList(t *testing.T) {
 	both, err := entry(fromLists, "codex:chatgpt/gpt-5.6-sol")
 	require.NoError(t, err)
 	require.Equal(t, models.Metadata{ContextWindow: 272_000, MaxOutputTokens: 100_000}, both.Metadata)
+	_, err = entry(fromLists, "codex:chatgpt/gpt-5.5-sol")
+	require.ErrorAs(t, err, &unknown)
+	require.Equal(t, []string{config.KeyModelContextWindow}, unknown.Missing)
 }
 
 // Select from a real config file and from the flag, as the wiring calls it.
