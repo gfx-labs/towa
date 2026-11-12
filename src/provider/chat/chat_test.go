@@ -162,7 +162,7 @@ func TestRequestRejectsWhatItCannotSend(t *testing.T) {
 		"empty item":      {Model: "m", Items: []transcript.Item{{}}},
 		"empty part":      {Model: "m", Items: []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{}}}}}},
 		"own native item": {Model: "m", Items: []transcript.Item{user, {Native: &transcript.Native{Kind: "x"}, Provider: "test"}}},
-		"file in a result": {Model: "m", Items: []transcript.Item{user, {ToolResult: &transcript.ToolResult{CallID: "c", Parts: []transcript.Part{
+		"file in a prompt": {Model: "m", Items: []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{
 			{Resource: &transcript.Resource{URI: "file:///a.pdf", MimeType: "application/pdf", Data: []byte{1}}},
 		}}}}},
 		"tool without a name": {Model: "m", Items: []transcript.Item{user}, Tools: []provider.Tool{{Description: "d"}}},

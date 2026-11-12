@@ -20,7 +20,7 @@
 - A `Thinking` item is sent only when `Item.Provider` is this client's and `Opaque` holds a signature or redacted data. `Opaque` is `{"signature":...}` or `{"redacted_data":...}`. The text is the item's own `Text`. Thinking from another provider is left out. A `Native` item from this provider is sent as the block it arrived as. One from another provider is left out. `Text` and `ToolCall` items are rendered from their plain fields whoever produced them.
 - A tool call whose `Input` is a JSON string (a free-text tool of another provider, or JSON the model left unfinished) is sent as `{"input": "<the text>"}`, because `tool_use.input` has to be an object.
 - A tool result is `is_error` for every outcome but `completed`.
-- A `Stored` part is left out. Audio is an error. A resource is text, an image or a PDF, else an error. A link is sent as markdown text.
+- A `Stored` part is left out. Audio is an error. A resource is text, an image or a PDF, else an error. A link is sent as markdown text. Changed on 2026-11-12 for a tool result: see `2026-11-12-tool-result-parts.md`.
 - `Tool.Native` is sent unchanged. The betas such tools need go in `Config.Betas`.
 
 ### Cache breakpoints

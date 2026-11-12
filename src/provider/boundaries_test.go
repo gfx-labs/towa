@@ -1,6 +1,7 @@
 package provider_test
 
 import (
+	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"net/http"
@@ -20,6 +21,79 @@ import (
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
+// boundaryClient is the client of one wire API, sending to baseURL.
+func boundaryClient(t *testing.T, api, baseURL string) provider.Provider {
+	t.Helper()
+	var client provider.Provider
+	var err error
+	switch api {
+	case "responses":
+		client, err = openai.New(openai.Config{HTTPClient: httpclient.New(), BaseURL: baseURL, CodexBaseURL: baseURL, Provider: "configured-responses"})
+	case "messages":
+		client, err = anthropic.New(anthropic.Config{HTTPClient: httpclient.New(), Version: "test", BaseURL: baseURL, Provider: "configured-messages"})
+	case "chat":
+		client, err = chat.New(chat.Config{HTTPClient: httpclient.New(), UserAgent: "test", Provider: config.Provider{ID: "configured-chat", Kind: config.ProviderChat, BaseURL: baseURL}})
+	}
+	require.NoError(t, err)
+	require.NotNil(t, client, api)
+	return client
+}
+
+// A tool's result is stored before a request is built from it. A result
+// holding content the API has no form for, which an MCP tool can return,
+// must still build: a refusal here repeats in every later turn of the
+// session. The endpoint sends only a 503 status.
+func TestAToolResultTheAPICannotCarryIsStillSent(t *testing.T) {
+	archive := []byte("PK\x05\x06 not text, an image or a PDF")
+	for _, api := range []string{"responses", "messages", "chat"} {
+		t.Run(api, func(t *testing.T) {
+			bodies := make(chan string, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body jsontext.Value
+				if err := json.UnmarshalRead(r.Body, &body); err != nil {
+					t.Errorf("read request: %v", err)
+				}
+				bodies <- string(body)
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer server.Close()
+			req := provider.Request{
+				Model: "test", MaxOutputTokens: 64,
+				Credential: auth.Credential{Account: "test", Scheme: auth.SchemeAPIKey, Token: "not-a-secret"},
+				Items: []transcript.Item{
+					{User: &transcript.User{Parts: []transcript.Part{{Text: "build it"}}}},
+					{ToolCall: &transcript.ToolCall{ID: "call-1", Name: "build", Input: jsontext.Value(`{}`)}},
+					{ToolResult: &transcript.ToolResult{CallID: "call-1", Name: "build", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
+						{Text: "the build output"},
+						{Audio: &transcript.Blob{MimeType: "audio/x-towa-test", Data: []byte{1, 2, 3}}},
+						{Resource: &transcript.Resource{URI: "file:///out.zip", MimeType: "application/zip", Data: archive}},
+						{Resource: &transcript.Resource{URI: "file:///empty.txt", MimeType: "text/plain"}},
+					}}},
+				},
+			}
+			var got *provider.Error
+			for _, err := range boundaryClient(t, api, server.URL).Stream(t.Context(), req) {
+				if err != nil {
+					require.ErrorAs(t, err, &got)
+				}
+			}
+			require.NotNil(t, got)
+			require.Equal(t, http.StatusServiceUnavailable, got.Status, "the request was built and sent: %v", got)
+			body := <-bodies
+			// The model is told what the tool returned and did not get.
+			require.Contains(t, body, "the build output")
+			require.Contains(t, body, "file:///out.zip")
+			require.NotContains(t, body, base64.StdEncoding.EncodeToString(archive))
+			// Chat Completions carries audio, in a user message.
+			if api == "chat" {
+				require.Contains(t, body, "input_audio")
+			} else {
+				require.Contains(t, body, "audio/x-towa-test")
+			}
+		})
+	}
+}
+
 // These checks stop at the request boundary. The endpoint sends only a 503
 // status, not an invented provider response.
 func TestRequestProvenanceBoundaries(t *testing.T) {
@@ -37,17 +111,8 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 				w.WriteHeader(http.StatusServiceUnavailable)
 			}))
 			defer server.Close()
-			var client provider.Provider
+			client := boundaryClient(t, api, server.URL)
 			var err error
-			switch api {
-			case "responses":
-				client, err = openai.New(openai.Config{HTTPClient: httpclient.New(), BaseURL: server.URL, CodexBaseURL: server.URL, Provider: "configured-responses"})
-			case "messages":
-				client, err = anthropic.New(anthropic.Config{HTTPClient: httpclient.New(), Version: "test", BaseURL: server.URL, Provider: "configured-messages"})
-			case "chat":
-				client, err = chat.New(chat.Config{HTTPClient: httpclient.New(), UserAgent: "test", Provider: config.Provider{ID: "configured-chat", Kind: config.ProviderChat, BaseURL: server.URL}})
-			}
-			require.NoError(t, err)
 			namer, ok := client.(provider.ContextNamer)
 			require.True(t, ok)
 			cred := auth.Credential{Account: "test", Scheme: auth.SchemeAPIKey, Token: "not-a-secret"}

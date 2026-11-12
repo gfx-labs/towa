@@ -20,7 +20,7 @@ and the next prompt in the same session, which asked for one word, ended with th
 
 - The tool message keeps the result's text and ends with a line saying that the rest is in the user message after the tool results.
 - The content goes in one user message placed after the run of tool results: for each result, a text part naming the tool call id, then its image or audio parts. The old code gave up because a user message between the results of one response's calls is refused by endpoints, which was not measured here. After the last of them it is not between any.
-- A binary resource that is not an image is still an error, as it is in a user message.
+- A binary resource that is not an image was still an error when this was written. It is now left out with a line that says so: see `2026-11-12-tool-result-parts.md`.
 - `binaryPart` holds the conversion that `userContent` had, so a prompt and a tool result turn a part into the same wire part.
 
 Measured after the fix:

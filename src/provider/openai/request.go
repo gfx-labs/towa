@@ -235,7 +235,7 @@ func buildInput(own string, origin transcript.Origin, items []transcript.Item) (
 			if role == "" {
 				role = "user"
 			}
-			content, perr := buildContent(item.User.Parts)
+			content, perr := buildContent(item.User.Parts, false)
 			if perr != nil {
 				return nil, at(perr, i)
 			}
@@ -348,7 +348,7 @@ func buildCall(call *transcript.ToolCall, op opaque) (any, bool, *provider.Error
 // buildOutput returns a tool result's output: a string for one piece of
 // text, a list of parts otherwise.
 func buildOutput(parts []transcript.Part) (any, *provider.Error) {
-	content, perr := buildContent(parts)
+	content, perr := buildContent(parts, true)
 	if perr != nil {
 		return nil, perr
 	}
@@ -363,8 +363,10 @@ func buildOutput(parts []transcript.Part) (any, *provider.Error) {
 }
 
 // buildContent turns parts into input content. A Stored part is left out:
-// it references content that is never sent to a model.
-func buildContent(parts []transcript.Part) ([]contentPart, *provider.Error) {
+// it references content that is never sent to a model. In a tool result, a
+// part the API cannot carry becomes text that says so. Anywhere else it is
+// an error.
+func buildContent(parts []transcript.Part, result bool) ([]contentPart, *provider.Error) {
 	out := make([]contentPart, 0, len(parts))
 	for _, p := range parts {
 		switch {
@@ -374,11 +376,17 @@ func buildContent(parts []transcript.Part) ([]contentPart, *provider.Error) {
 		case p.Image != nil:
 			out = append(out, contentPart{Type: "input_image", ImageURL: dataURL(p.Image.MimeType, p.Image.Data)})
 		case p.Audio != nil:
-			return nil, invalidRequest("the Responses API takes no audio input")
+			if !result {
+				return nil, invalidRequest("the Responses API takes no audio input")
+			}
+			out = append(out, contentPart{Type: "input_text", Text: provider.LeftOut(p, apiName)})
 		case p.Resource != nil:
 			part, perr := buildResource(p.Resource)
 			if perr != nil {
-				return nil, perr
+				if !result {
+					return nil, perr
+				}
+				part = contentPart{Type: "input_text", Text: provider.LeftOut(p, apiName)}
 			}
 			out = append(out, part)
 		case p.Link != nil:
@@ -390,15 +398,18 @@ func buildContent(parts []transcript.Part) ([]contentPart, *provider.Error) {
 	return out, nil
 }
 
+// apiName names the API in what a model is told was left out of a result.
+const apiName = "the Responses API"
+
 func buildResource(r *transcript.Resource) (contentPart, *provider.Error) {
 	switch {
-	case r.Text != "":
+	case r.Text != "" || len(r.Data) == 0:
 		// The URI is kept with the text so the model can tell which file
-		// it is reading.
+		// it is reading. A resource with no content is an empty file.
 		return contentPart{Type: "input_text", Text: fmt.Sprintf("<resource uri=%q>\n%s\n</resource>", r.URI, r.Text)}, nil
-	case len(r.Data) > 0 && strings.HasPrefix(r.MimeType, "image/"):
+	case strings.HasPrefix(r.MimeType, "image/"):
 		return contentPart{Type: "input_image", ImageURL: dataURL(r.MimeType, r.Data)}, nil
-	case len(r.Data) > 0 && r.MimeType == "application/pdf":
+	case r.MimeType == "application/pdf":
 		return contentPart{Type: "input_file", Filename: r.URI, FileData: dataURL(r.MimeType, r.Data)}, nil
 	default:
 		return contentPart{}, invalidRequest(fmt.Sprintf("resource %q of type %q has no form the Responses API accepts", r.URI, r.MimeType))

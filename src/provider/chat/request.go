@@ -356,6 +356,7 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 			}
 			var b strings.Builder
 			var binary []wirePart
+			var notes []string
 			for j, p := range tr.Parts {
 				switch {
 				case p.Stored != nil:
@@ -366,11 +367,14 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 				case p.Link != nil:
 					b.WriteString(linkText(p.Link))
 				case p.Image != nil, p.Audio != nil, p.Resource != nil:
-					part, perr := binaryPart(i, j, p)
-					if perr != nil {
-						return nil, perr
+					// A part this API has no form for becomes text that
+					// says so: the result is stored already, so an error
+					// here would fail every later turn of the session.
+					if part, perr := binaryPart(i, j, p); perr != nil {
+						notes = append(notes, provider.LeftOut(p, "Chat Completions"))
+					} else {
+						binary = append(binary, part)
 					}
-					binary = append(binary, part)
 				default:
 					return nil, invalid("items[%d].parts[%d]: part has nothing set", i, j)
 				}
@@ -380,12 +384,15 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 				// message between the results of one response's calls.
 				// The content goes in a user message after the last of
 				// them, and each says here and there whose it is.
+				notes = append(notes, textAttachedBelow)
+				attached = append(attached, wirePart{Type: "text", Text: fmt.Sprintf(textAttachment, tr.CallID)})
+				attached = append(attached, binary...)
+			}
+			for _, note := range notes {
 				if b.Len() > 0 {
 					b.WriteString("\n\n")
 				}
-				b.WriteString(textAttachedBelow)
-				attached = append(attached, wirePart{Type: "text", Text: fmt.Sprintf(textAttachment, tr.CallID)})
-				attached = append(attached, binary...)
+				b.WriteString(note)
 			}
 			out = append(out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(b.String())})
 		case item.Native != nil:
