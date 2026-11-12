@@ -31,21 +31,24 @@ Every Claude model in the built-in table was then sent the third form with a sho
 
 - `claude.thinking` (default `adaptive`) and `claude.thinking_display` (default `summarized`). `off` sends no thinking parameter, as before. An empty display sends none, and the thinking then arrives without text.
 - The display value is passed through as written. The API names the values and refuses one it does not know.
-- `models.Metadata.NoAdaptiveThinking` marks `claude-haiku-4-5`, the one model the probe found. A request to it carries no thinking parameter. A model the table does not have is sent the configured one, and the API's 400 names the problem.
+- `models.Metadata.NoAdaptiveThinking` marks `claude-haiku-4-5`, the one model the probe found. A request to it carries no thinking parameter. A model the table does not have is sent the configured one. That case was not sent to the API: a session on a model with no metadata is refused before any request unless `model_context_window` and `model_max_output_tokens` are set.
 - Manual thinking with a token budget (`anthropic.ThinkingManual`) is not wired. Nothing here needs it: the one model without adaptive thinking is left without a parameter.
 
 ## Checked
 
-With the built binary, same question:
+With the binary built from `830580f`, same question, one run each:
 
 | Setting | Model | Thought text | Result |
 |---|---|---|---|
-| defaults | `claude-opus-5-5` | 284 chars | 19 |
+| defaults | `claude-opus-5-5` | 341 chars in 39 chunks | 19 |
 | `--claude.thinking=off` | `claude-opus-5-5` | 0 | 19 |
 | `--claude.thinking_display=` | `claude-opus-5-5` | 0 | 19 |
-| `--claude.thinking=off` | `claude-haiku-4-5` | 0 | answered |
+| defaults | `claude-haiku-4-5` | 0 | answered, no error |
+| defaults, the question followed by a `read` and a `bash` call | `claude-opus-5-5` | 533 chars in 51 chunks | 19, both tool calls completed, 2 requests |
 
-`--claude.thinking=loud` is refused when the config loads: `claude.thinking: fails oneof validation (adaptive off)`.
+- In the last row the thinking is stored with its text and signature and sent back in the second request. The API accepted it.
+- The probe build that sends the parameter to every model still gets the HTTP 400 from `claude-haiku-4-5`, so the table's mark is what lets the default work there.
+- `--claude.thinking=loud` is refused when the config loads: `claude.thinking: fails oneof validation (adaptive off)`.
 
 ## Limits
 

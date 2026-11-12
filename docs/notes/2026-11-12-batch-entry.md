@@ -54,20 +54,22 @@ Both runs made the same change to the two source files. pi 1.3.0 on this task to
 - One task, at most six runs per agent. Request counts moved by three between runs of the same agent.
 - Four of the six pi runs used an adapter that moved the rules and `AGENTS.md` out of the system prompt. The two runs after replacing it gave 338k and 440k.
 
-## The base instructions are the difference
+## towa with pi's base instructions
 
-PR 4672 on `84339ad`, towa only, alternating its own instructions with pi's through `context.system_prompt_file`. pi's are the four lines its model receives ("You are an expert coding assistant. Be concise and helpful. Use the available tools to answer the user's request. Show file paths clearly when working with files.") and its two general rules. Everything else was the same: tools, rules, `AGENTS.md`, skills.
+PR 4672, towa only, alternating its own instructions with pi's through `context.system_prompt_file`. The first run was on `de12ef6` and the other three on `619af59`. The one commit between them changes no prompt or tool text, and the first request is 31,367 tokens with pi's instructions on both builds. No run sent a thinking parameter. pi's are the four lines its model receives ("You are an expert coding assistant. Be concise and helpful. Use the available tools to answer the user's request. Show file paths clearly when working with files.") and its two general rules. Everything else was the same: tools, rules, `AGENTS.md`, skills.
 
-| Instructions | Requests | Tokens | Committed | Merged PR's 2 tests |
-|---|---|---|---|---|
-| pi's | 5 | 207k | no | pass |
-| towa's | 7 | 299k | yes | 1 fails |
-| pi's | 6 | 250k | no | 1 fails |
-| towa's | 8 | 380k | yes | pass |
+| Instructions | Requests | Up to the edit | After it | Tokens | Committed | Merged PR's 2 tests |
+|---|---|---|---|---|---|---|
+| pi's | 5 | 3 | 2 | 207k | no | pass |
+| towa's | 7 | 4 | 3 | 299k | yes | 1 fails |
+| pi's | 6 | 3 | 3 | 250k | no | 1 fails |
+| towa's | 8 | 5 | 3 | 380k | yes | pass |
 
-pi itself took 6 requests and 238k on this task, and did not commit.
+pi itself took 6 requests (4 up to the edit, 2 after) and 238k in its one run on this task, did not commit, and failed the same one test.
 
-- With pi's instructions towa takes as few requests as pi. With its own it takes about two more: one more look around before the edit, and the commit after it.
-- The commit is the task repository's own workflow step. towa's instructions say to "finish the whole task, not only its first part", and pi's say nothing of the kind.
+- With pi's instructions towa took 5 and 6 requests, where pi took 6. With its own it took 7 and 8.
+- Most of the difference is before the edit: one or two more requests reading code. After the edit both towa runs on its own instructions spent a request on the commit. One run on pi's instructions spent the same request running the tests a second time.
+- The commit is step 5 of the workflow in the task repository's `AGENTS.md`. The task prompt does not ask for one. towa's instructions say to "finish the whole task, not only its first part", and pi's say nothing of the kind.
 - The change itself was no better or worse in either pair: one run of each failed the same merged test, by leaving the Price chart's tooltip unformatted.
-- Two runs each. The instructions were not changed.
+- The gap closed with no thinking parameter in any run, while pi sends adaptive thinking. So the thinking parameter is not needed to explain it. Whether sending it changes towa's count is not measured here.
+- Two runs each, and the same agent has varied by two or three requests on one task. This points at the base instructions and does not establish them. The instructions were not changed.
