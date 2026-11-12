@@ -32,3 +32,19 @@ Thirty-two live turns against `openai/gpt-oss-20b` (65,536-token context, the us
 | Allocated under `session.(*Agent).send` | 7.02 MB | 2.00 MB |
 
 The profile samples every 10 ms, so the smaller figures are a handful of samples each.
+
+## The envelope and the params copies
+
+After the change above, one session update still cost six allocations through the generated wrapper. Four came from the JSON-RPC envelope: the `outboundCall` struct, the params value boxed into its `any` member, and two copies `encoding/json/v2` makes of a non-pointer value it finds in an interface (`makeInterfaceArshaler` and `marshalValueAny` each call `newAddressableValue`).
+
+`Connection.write` now writes the envelope by hand into the pooled buffer (`jsonrpc`, `id`, `method`, then the `params`, `result` or `error` member name) and hands only the value to `json.MarshalWrite`. The generated wrappers pass `&params`, so the encoder is given a pointer and copies nothing. The bytes on the wire are the same.
+
+A session update sent through `AgentSideConnection.SessionUpdate`, measured with a scratch benchmark:
+
+| | Before | After |
+|---|---|---|
+| Allocations | 6, 736 B | 3, 304 B |
+
+`BenchmarkEncodeSessionUpdate`, which passes params by value to `SendNotification`, went from 5 allocations and 560 B to 3 and 304 B.
+
+The three left are the params struct itself, which escapes to the heap because it is passed as `any` (176 B), and the generated union encoders' copies of the `SessionUpdate` and `ContentBlock` variants, made to set the discriminator (80 B and 48 B).

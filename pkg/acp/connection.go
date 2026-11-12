@@ -55,32 +55,19 @@ type inbound struct {
 	Error  *RequestError  `json:"error"`
 }
 
-// The outbound messages hold the params and the result as Go values, so a
-// message is encoded once, into one buffer. The members are written in the
-// order jsonrpc, id, method, params, result, error.
+// An outbound message holds its params or its result as a Go value, so it is
+// encoded once, into one buffer. Its members are written in the order
+// jsonrpc, id, method, then params, result or error. The envelope is written
+// by hand: as a struct with an any member it cost an allocation for itself
+// and two copies of the value, which encoding/json makes of a value it finds
+// in an interface.
 
-// outboundCall is a request, or a notification when ID is nil.
-type outboundCall struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      jsontext.Value `json:"id,omitzero"`
-	Method  string         `json:"method"`
-	Params  any            `json:"params,omitzero"`
-}
-
-// outboundResult is a response that carries a result. A nil result is
-// written as null: a response needs a result or an error.
-type outboundResult struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      jsontext.Value `json:"id"`
-	Result  any            `json:"result"`
-}
-
-// outboundError is a response that carries an error.
-type outboundError struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      jsontext.Value `json:"id"`
-	Error   *RequestError  `json:"error"`
-}
+// The members an outbound message carries its value in.
+const (
+	memberParams = "params"
+	memberResult = "result"
+	memberError  = "error"
+)
 
 type cancelRequestParams struct {
 	RequestID jsontext.Value `json:"requestId"`
@@ -386,13 +373,13 @@ func (c *Connection) respond(id jsontext.Value, result any, rerr *RequestError) 
 	var err error
 	if rerr == nil {
 		var encodeErr error
-		if err, encodeErr = c.write(&outboundResult{JSONRPC: version, ID: id, Result: result}); encodeErr != nil {
+		if err, encodeErr = c.write(id, "", memberResult, result); encodeErr != nil {
 			// Nothing was written, so the request can still be answered.
 			rerr = NewInternalError(map[string]any{"error": encodeErr.Error()})
 		}
 	}
 	if rerr != nil {
-		writeErr, encodeErr := c.write(&outboundError{JSONRPC: version, ID: id, Error: rerr})
+		writeErr, encodeErr := c.write(id, "", memberError, rerr)
 		err = errors.Join(writeErr, encodeErr)
 	}
 	if err != nil {
@@ -423,15 +410,16 @@ func (c *Connection) SendRequestNoResult(ctx context.Context, method string, par
 
 // SendNotification sends a notification. It returns once the message has
 // been written, so notifications reach the peer in the order they were sent.
+// Params passed as a pointer are encoded without being copied.
 func (c *Connection) SendNotification(_ context.Context, method string, params any) error {
-	return c.send(&outboundCall{JSONRPC: version, Method: method, Params: params})
+	return c.send(nil, method, params)
 }
 
-// send writes a request or a notification.
-func (c *Connection) send(msg *outboundCall) error {
-	err, encodeErr := c.write(msg)
+// send writes a request, or a notification when id is nil.
+func (c *Connection) send(id jsontext.Value, method string, params any) error {
+	err, encodeErr := c.write(id, method, memberParams, params)
 	if encodeErr != nil {
-		return fmt.Errorf("acp: encode %s: %w", msg.Method, encodeErr)
+		return fmt.Errorf("acp: encode %s: %w", method, encodeErr)
 	}
 	return err
 }
@@ -452,7 +440,7 @@ func (c *Connection) call(ctx context.Context, method string, params any) (jsont
 		return nil, err
 	}
 
-	if err := c.send(&outboundCall{JSONRPC: version, ID: idRaw, Method: method, Params: params}); err != nil {
+	if err := c.send(idRaw, method, params); err != nil {
 		c.forget(id)
 		return nil, err
 	}
@@ -467,7 +455,7 @@ func (c *Connection) call(ctx context.Context, method string, params any) (jsont
 		if err := c.closed(); err != nil {
 			return nil, err
 		}
-		if err := c.SendNotification(ctx, methodCancelRequest, cancelRequestParams{RequestID: idRaw}); err != nil {
+		if err := c.SendNotification(ctx, methodCancelRequest, &cancelRequestParams{RequestID: idRaw}); err != nil {
 			c.logger.Debug("acp: cancel not written", "method", method, "err", err)
 		}
 		return nil, context.Cause(ctx)
@@ -504,17 +492,38 @@ func (r response) unwrap() (jsontext.Value, error) {
 	return r.result, nil
 }
 
-// write encodes msg and sends it as a single Write, so a message is never
-// split by another goroutine's message. The message is encoded whole before
-// any of it is written: when it cannot be encoded, encodeErr says why and
-// nothing has reached the peer.
-func (c *Connection) write(msg any) (err, encodeErr error) {
+// write encodes a message and sends it as a single Write, so a message is
+// never split by another goroutine's message. With a method the message is a
+// request, or a notification when id is nil, and nil params are left out.
+// Without one it is a response: its id is written even when it is null, and
+// so is a nil result, since a response needs a result or an error. The
+// message is encoded whole before any of it is written: when it cannot be
+// encoded, encodeErr says why and nothing has reached the peer.
+func (c *Connection) write(id jsontext.Value, method, member string, value any) (err, encodeErr error) {
 	buf := bytebufferpool.Get()
 	defer bytebufferpool.Put(buf)
-	if err := json.MarshalWrite(buf, msg, wireOptions); err != nil {
-		return nil, err
+	buf.B = append(buf.B, `{"jsonrpc":"`+version+`"`...)
+	if method == "" || id != nil {
+		buf.B = append(buf.B, `,"id":`...)
+		if id == nil {
+			buf.B = append(buf.B, "null"...)
+		} else {
+			buf.B = append(buf.B, id...)
+		}
 	}
-	buf.B = append(buf.B, '\n')
+	if method != "" {
+		buf.B = append(buf.B, `,"method":`...)
+		if buf.B, encodeErr = jsontext.AppendQuote(buf.B, method); encodeErr != nil {
+			return nil, encodeErr
+		}
+	}
+	if method == "" || value != nil {
+		buf.B = append(append(append(buf.B, `,"`...), member...), `":`...)
+		if err := json.MarshalWrite(buf, value, wireOptions); err != nil {
+			return nil, err
+		}
+	}
+	buf.B = append(buf.B, '}', '\n')
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	n, err := c.w.Write(buf.B)

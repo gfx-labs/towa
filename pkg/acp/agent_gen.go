@@ -396,63 +396,63 @@ func (a *AgentSideConnection) handle(ctx context.Context, method string, params 
 }
 
 func (c *AgentSideConnection) UnstableAuthStatusUpdate(ctx context.Context, params UnstableAuthStatusUpdateNotification) error {
-	return c.conn.SendNotification(ctx, ClientMethodAuthStatusUpdate, params)
+	return c.conn.SendNotification(ctx, ClientMethodAuthStatusUpdate, &params)
 }
 
 func (c *AgentSideConnection) CompleteElicitation(ctx context.Context, params CompleteElicitationNotification) error {
-	return c.conn.SendNotification(ctx, ClientMethodElicitationComplete, params)
+	return c.conn.SendNotification(ctx, ClientMethodElicitationComplete, &params)
 }
 
 func (c *AgentSideConnection) CreateElicitation(ctx context.Context, params CreateElicitationRequest) (CreateElicitationResponse, error) {
-	resp, err := SendRequest[CreateElicitationResponse](ctx, c.conn, ClientMethodElicitationCreate, params)
+	resp, err := SendRequest[CreateElicitationResponse](ctx, c.conn, ClientMethodElicitationCreate, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) ReadTextFile(ctx context.Context, params ReadTextFileRequest) (ReadTextFileResponse, error) {
-	resp, err := SendRequest[ReadTextFileResponse](ctx, c.conn, ClientMethodFsReadTextFile, params)
+	resp, err := SendRequest[ReadTextFileResponse](ctx, c.conn, ClientMethodFsReadTextFile, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) WriteTextFile(ctx context.Context, params WriteTextFileRequest) (WriteTextFileResponse, error) {
-	resp, err := SendRequest[WriteTextFileResponse](ctx, c.conn, ClientMethodFsWriteTextFile, params)
+	resp, err := SendRequest[WriteTextFileResponse](ctx, c.conn, ClientMethodFsWriteTextFile, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) UnstableMessageMcp(ctx context.Context, params UnstableMessageMcpRequest) (UnstableMessageMcpResponse, error) {
-	resp, err := SendRequest[UnstableMessageMcpResponse](ctx, c.conn, ClientMethodMcpMessage, params)
+	resp, err := SendRequest[UnstableMessageMcpResponse](ctx, c.conn, ClientMethodMcpMessage, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) RequestPermission(ctx context.Context, params RequestPermissionRequest) (RequestPermissionResponse, error) {
-	resp, err := SendRequest[RequestPermissionResponse](ctx, c.conn, ClientMethodSessionRequestPermission, params)
+	resp, err := SendRequest[RequestPermissionResponse](ctx, c.conn, ClientMethodSessionRequestPermission, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) SessionUpdate(ctx context.Context, params SessionNotification) error {
-	return c.conn.SendNotification(ctx, ClientMethodSessionUpdate, params)
+	return c.conn.SendNotification(ctx, ClientMethodSessionUpdate, &params)
 }
 
 func (c *AgentSideConnection) CreateTerminal(ctx context.Context, params CreateTerminalRequest) (CreateTerminalResponse, error) {
-	resp, err := SendRequest[CreateTerminalResponse](ctx, c.conn, ClientMethodTerminalCreate, params)
+	resp, err := SendRequest[CreateTerminalResponse](ctx, c.conn, ClientMethodTerminalCreate, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) KillTerminal(ctx context.Context, params KillTerminalRequest) (KillTerminalResponse, error) {
-	resp, err := SendRequest[KillTerminalResponse](ctx, c.conn, ClientMethodTerminalKill, params)
+	resp, err := SendRequest[KillTerminalResponse](ctx, c.conn, ClientMethodTerminalKill, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) TerminalOutput(ctx context.Context, params TerminalOutputRequest) (TerminalOutputResponse, error) {
-	resp, err := SendRequest[TerminalOutputResponse](ctx, c.conn, ClientMethodTerminalOutput, params)
+	resp, err := SendRequest[TerminalOutputResponse](ctx, c.conn, ClientMethodTerminalOutput, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) ReleaseTerminal(ctx context.Context, params ReleaseTerminalRequest) (ReleaseTerminalResponse, error) {
-	resp, err := SendRequest[ReleaseTerminalResponse](ctx, c.conn, ClientMethodTerminalRelease, params)
+	resp, err := SendRequest[ReleaseTerminalResponse](ctx, c.conn, ClientMethodTerminalRelease, &params)
 	return resp, err
 }
 
 func (c *AgentSideConnection) WaitForTerminalExit(ctx context.Context, params WaitForTerminalExitRequest) (WaitForTerminalExitResponse, error) {
-	resp, err := SendRequest[WaitForTerminalExitResponse](ctx, c.conn, ClientMethodTerminalWaitForExit, params)
+	resp, err := SendRequest[WaitForTerminalExitResponse](ctx, c.conn, ClientMethodTerminalWaitForExit, &params)
 	return resp, err
 }
