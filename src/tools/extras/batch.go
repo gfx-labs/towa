@@ -29,12 +29,12 @@ func Batch(cfg config.ToolsBatch, dispatcher func(context.Context) (batch.Dispat
 	}
 	schema, err := json.Marshal(map[string]any{"type": "object", "required": []string{"tool_calls"}, "properties": map[string]any{
 		"intent":     map[string]any{"type": "string"},
-		"tool_calls": map[string]any{"type": "array", "minItems": 1, "maxItems": cfg.MaxCalls, "items": map[string]any{"type": "object", "required": []string{"tool", "intent"}, "properties": map[string]any{"tool": map[string]any{"type": "string"}, "intent": map[string]any{"type": "string"}}, "additionalProperties": true}},
+		"tool_calls": map[string]any{"type": "array", "minItems": 1, "maxItems": cfg.MaxCalls, "items": map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string"}}, "additionalProperties": true}},
 	}})
 	if err != nil {
 		return tools.Tool{}, err
 	}
-	t := newTool(NameBatch, "Run several independent tool calls in one call and return every result. Each entry contains tool, intent and the tool's normal arguments as sibling fields. Calls that only read run at the same time, and a call that writes or executes runs in the order given. Do not batch calls that depend on each other's results, and do not nest batch.", acp.ToolKindExecute, schema)
+	t := newTool(NameBatch, "Run several independent tool calls in one call and return every result. Each entry contains tool and that tool's own arguments as sibling fields, and nothing else. Calls that only read run at the same time, and a call that writes or executes runs in the order given. Do not batch calls that depend on each other's results, and do not nest batch.", acp.ToolKindExecute, schema)
 	// Children can execute. Serialize the parent against outer calls as well.
 	t.Effect = tools.Executes
 	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {

@@ -25,6 +25,7 @@ import (
 	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/store/dir"
 	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/core"
 	"github.com/gfx-labs/towa/src/tools/extras"
 	"github.com/gfx-labs/towa/src/tools/repair"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -224,4 +225,32 @@ func TestBatchRunsRealToolsThroughLoopAndRejectsNesting(t *testing.T) {
 	require.Contains(t, shown.String(), "1 succeeded, 1 failed")
 	result := run(t, bt, `{"tool_calls":[{"tool":"batch","intent":"Nested","tool_calls":[]}]}`, tools.Env{})
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+}
+
+// The file tools take no member but their own, so an entry that had to carry
+// one more was refused by each of them.
+func TestBatchEntryIsTheToolAndItsOwnArguments(t *testing.T) {
+	loaded, err := config.Load(config.Sources{})
+	require.NoError(t, err)
+	env := tools.Env{Cwd: t.TempDir()}
+	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "a.txt"), []byte("alpha\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "b.txt"), []byte("beta\n"), 0o600))
+	var tracker core.ReadTracker
+	fileTools, err := core.Tools(env, loaded.Config.Tools, core.Deps{Reads: &tracker})
+	require.NoError(t, err)
+	bt, err := extras.Batch(config.ToolsBatch{Enabled: true, MaxCalls: 10}, loop.BatchDispatcher)
+	require.NoError(t, err)
+	set := tools.Set{Tools: append(fileTools, bt)}
+	schemas, err := loop.Schemas(set)
+	require.NoError(t, err)
+	d := loop.Dispatcher{Tools: set, Schemas: schemas, Env: env, Logger: slog.New(slog.DiscardHandler), Update: func(acp.SessionToolCallUpdate) {}}
+
+	res := d.Run(t.Context(), []transcript.ToolCall{{ID: "batch1", Name: bt.Spec.Name, Input: jsontext.Value(`{"tool_calls":[{"tool":"read","file_path":"a.txt"},{"tool":"read","file_path":"b.txt"}]}`)}})
+	require.NoError(t, res.Err)
+	require.Len(t, res.Results, 1)
+	output := text(tools.Result{Parts: res.Results[0].Parts})
+	require.Equal(t, transcript.OutcomeCompleted, res.Results[0].Outcome, output)
+	require.Contains(t, output, "alpha")
+	require.Contains(t, output, "beta")
+	require.Contains(t, output, "2 succeeded, 0 failed")
 }
