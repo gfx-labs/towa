@@ -20,6 +20,20 @@ The existing test batched `skill_manage`, one of the extras whose schema does ta
 - `intent` is not removed from an entry on the way through. A tool that takes it (the extras use it for the call's title) still gets it, and a tool that does not still refuses it with the error above.
 - `TestBatchEntryIsTheToolAndItsOwnArguments` batches two real `read` calls through the loop's dispatcher.
 
+## The same task after the fix
+
+PR 4672 again, one run on each build, same model and effort:
+
+| | `9e66a35` | `84339ad` |
+|---|---|---|
+| batch calls | 2, both failed | 1 of five reads, completed |
+| failed tool calls | 2 | 0 |
+| requests up to the edit | 6 | 4 |
+| requests after the edit | 3 | 3 |
+| requests and tokens | 9, 409k | 7, 322k |
+
+Both runs made the same change to the two source files. pi 1.3.0 on this task took 4 requests up to the edit and 2 after, 238k tokens, in its one run.
+
 ## End to end
 
 `docs/notes/2026-11-12-token-use.md` measured single requests. Whole turns, same machine and model, through `acphost exec`, one agent at a time. PR 4673 is the task that note started from.
