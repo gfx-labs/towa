@@ -219,6 +219,16 @@ func TestConversation(t *testing.T) {
 		assert.Equal(t, []transcript.Part{{Text: ""}}, silent.ToolResult.Parts, "the stored item is not changed")
 	})
 
+	t.Run("a user message stored with a part that holds nothing is sent without it", func(t *testing.T) {
+		padded := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: ""}, {Text: "go"}}}}
+		blank := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: ""}}}}
+		items, repairs, err := loop.Conversation([]transcript.Item{blank, padded, text}, "[interrupted]")
+		require.NoError(t, err)
+		assert.Empty(t, repairs)
+		assert.Equal(t, []transcript.Item{user("go"), text}, items)
+		assert.Len(t, padded.User.Parts, 2, "the stored item is not changed")
+	})
+
 	t.Run("an interruption keeps the user messages around it", func(t *testing.T) {
 		before, after := user("go"), user("again")
 		items, repairs, err := loop.Conversation([]transcript.Item{

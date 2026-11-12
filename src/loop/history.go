@@ -32,15 +32,20 @@ func result(call transcript.ToolCall, outcome transcript.Outcome, text string) t
 	}
 }
 
-// told returns a result's parts as a request can hold them. A part with
-// nothing set is left out: a command that printed nothing returns empty
-// text, and a provider refuses a part that holds nothing. A result left with
-// no part says so in words.
-func told(parts []transcript.Part) []transcript.Part {
-	if len(parts) > 0 && !slices.Contains(parts, transcript.Part{}) {
+// filled returns parts without the ones that have nothing set, which a
+// provider refuses.
+func filled(parts []transcript.Part) []transcript.Part {
+	if !slices.Contains(parts, transcript.Part{}) {
 		return parts
 	}
-	kept := slices.DeleteFunc(slices.Clone(parts), func(p transcript.Part) bool { return p == (transcript.Part{}) })
+	return slices.DeleteFunc(slices.Clone(parts), func(p transcript.Part) bool { return p == (transcript.Part{}) })
+}
+
+// told returns a result's parts as a request can hold them. A part with
+// nothing set is left out: a command that printed nothing returns empty
+// text. A result left with no part says so in words.
+func told(parts []transcript.Part) []transcript.Part {
+	kept := filled(parts)
 	if len(kept) == 0 {
 		return []transcript.Part{{Text: textNoOutput}}
 	}
@@ -55,7 +60,9 @@ func told(parts []transcript.Part) []transcript.Part {
 // Usage and ModelSwitch items are not part of the conversation. A call
 // without a result is one a process died on: nothing says whether it took
 // effect, so it gets the unknown outcome and is not run again. A result
-// stored with a part that holds nothing is sent as Settle would have left it.
+// stored with a part that holds nothing is sent as Settle would have left it,
+// and a user message stored with one as UserItem would have: without the
+// part, and not at all when no part is left.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
 	interrupted := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: interruption}}}}
 	if err := interrupted.Validate(); err != nil {
@@ -99,6 +106,12 @@ func Conversation(history []transcript.Item, interruption string) (items []trans
 			if err := dangling(); err != nil {
 				return nil, nil, err
 			}
+			user := *item.User
+			user.Parts = filled(user.Parts)
+			if len(user.Parts) == 0 {
+				continue
+			}
+			item.User = &user
 			items = append(items, item)
 		case item.Interrupted != nil:
 			if err := dangling(); err != nil {

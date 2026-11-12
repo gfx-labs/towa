@@ -137,4 +137,15 @@ func TestAPromptSurvivesTheTripThroughTheTranscript(t *testing.T) {
 
 	_, err = loop.UserItem([]acp.ContentBlock{{Image: &acp.ContentBlockImage{Type: "image", MimeType: "image/png", Data: "not base64!"}}})
 	assert.Error(t, err)
+
+	// A provider refuses a part that holds nothing, and a stored prompt is
+	// sent again with every later request of the session.
+	empty := acp.ContentBlock{Text: &acp.ContentBlockText{Type: "text", Text: ""}}
+	item, err = loop.UserItem([]acp.ContentBlock{empty, prompt[0], empty})
+	require.NoError(t, err)
+	assert.Equal(t, []transcript.Part{{Text: "look at these"}}, item.User.Parts)
+	_, err = loop.UserItem([]acp.ContentBlock{empty})
+	var refused *acp.RequestError
+	require.ErrorAs(t, err, &refused)
+	assert.Equal(t, acp.NewInvalidParams(nil).Code, refused.Code)
 }

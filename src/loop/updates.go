@@ -286,7 +286,10 @@ func Part(block acp.ContentBlock) (transcript.Part, error) {
 	return transcript.Part{}, errors.New("loop: content block has no variant set")
 }
 
-// UserItem returns a prompt as the transcript's user item.
+// UserItem returns a prompt as the transcript's user item. A text block with
+// no text is left out, as a provider refuses a part that holds nothing. A
+// prompt with nothing left is refused here, before it is stored: a stored
+// item goes into every later request of the session.
 func UserItem(prompt []acp.ContentBlock) (transcript.Item, error) {
 	parts := make([]transcript.Part, 0, len(prompt))
 	for _, block := range prompt {
@@ -294,7 +297,13 @@ func UserItem(prompt []acp.ContentBlock) (transcript.Item, error) {
 		if err != nil {
 			return transcript.Item{}, err
 		}
+		if part == (transcript.Part{}) {
+			continue
+		}
 		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return transcript.Item{}, acp.NewInvalidParams(map[string]any{"error": "the prompt has no content"})
 	}
 	return transcript.Item{User: &transcript.User{Parts: parts}}, nil
 }

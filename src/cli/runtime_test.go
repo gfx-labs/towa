@@ -100,6 +100,7 @@ func TestRuntimeOwnsMCPInventoryAndReadAuthority(t *testing.T) {
 	// preparation before a provider request, then closes that runtime.
 	failedTurn := childTurn
 	failedTurn.SessionID = acp.SessionId(uuid.NewV7().String())
+	failedTurn.Prompt = []acp.ContentBlock{{Text: &acp.ContentBlockText{Type: "text", Text: "hi"}}}
 	_, err = factory.Run(t.Context(), failedTurn)
 	var noModel *models.NoModelError
 	require.ErrorAs(t, err, &noModel)
