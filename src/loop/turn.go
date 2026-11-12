@@ -59,6 +59,9 @@ type Resolved struct {
 	Provider provider.Provider
 	// Tools is the session's tool set.
 	Tools tools.Set
+	// Schemas is the compiled input schema of each tool in Tools that has
+	// one, by tool name. Nil means the loop compiles them, once a turn.
+	Schemas map[string]*repair.Schema
 	// Model is the provider's own name for the model, of the chain's first
 	// entry. It is for logs: the router names the model of each request.
 	Model string
@@ -525,9 +528,11 @@ func (tn *turn) resolve(ctx context.Context) error {
 	case model.ContextSize < 0 || model.MaxOutputTokens < 0:
 		return fmt.Errorf("loop: model %q resolved with a negative context size or output limit", tn.t.Model)
 	}
-	schemas, err := Schemas(model.Tools)
-	if err != nil {
-		return err
+	schemas := model.Schemas
+	if schemas == nil {
+		if schemas, err = Schemas(model.Tools); err != nil {
+			return err
+		}
 	}
 	tn.model, tn.schemas = model, schemas
 	tn.mapper = Mapper{Tools: model.Tools}

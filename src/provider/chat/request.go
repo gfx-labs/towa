@@ -5,6 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/gfx-labs/towa/src/config"
@@ -128,10 +129,10 @@ func invalid(format string, args ...any) *provider.Error {
 	return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf(format, args...)}
 }
 
-// body encodes the request.
-func (c *Client) body(req provider.Request) ([]byte, *provider.Error) {
+// body encodes the request into dst.
+func (c *Client) body(dst io.Writer, req provider.Request) *provider.Error {
 	if req.Model == "" {
-		return nil, invalid("request has no model")
+		return invalid("request has no model")
 	}
 	w := wireRequest{Model: req.Model, Stream: true, MaxTokens: req.MaxOutputTokens}
 	or := c.cfg.OpenRouter
@@ -158,41 +159,40 @@ func (c *Client) body(req provider.Request) ([]byte, *provider.Error) {
 	}
 	msgs, perr := c.messages(transcript.Origin{Model: req.Model, Account: req.Credential.Account}, req.Items)
 	if perr != nil {
-		return nil, perr
+		return perr
 	}
 	w.Messages = append(w.Messages, msgs...)
 	if len(w.Messages) == 0 {
-		return nil, invalid("request has no system prompt and no items")
+		return invalid("request has no system prompt and no items")
 	}
 
 	for i, t := range req.Tools {
 		if t.NativeAPI != "" && len(t.Native) == 0 {
-			return nil, invalid("tool %q: native API is set without a native definition", t.Name)
+			return invalid("tool %q: native API is set without a native definition", t.Name)
 		}
 		if t.Native != nil {
 			if t.NativeAPI != provider.NativeAPIChatCompletions {
-				return nil, invalid("tool %q: native API %q is not %q", t.Name, t.NativeAPI, provider.NativeAPIChatCompletions)
+				return invalid("tool %q: native API %q is not %q", t.Name, t.NativeAPI, provider.NativeAPIChatCompletions)
 			}
 			w.Tools = append(w.Tools, t.Native)
 			continue
 		}
 		if t.Name == "" {
-			return nil, invalid("tools[%d] has no name", i)
+			return invalid("tools[%d] has no name", i)
 		}
 		def, err := json.Marshal(wireTool{Type: "function", Function: wireToolDef{
 			Name: t.Name, Description: t.Description, Parameters: t.InputSchema,
 		}})
 		if err != nil {
-			return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("tool %q", t.Name), Err: err}
+			return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("tool %q", t.Name), Err: err}
 		}
 		w.Tools = append(w.Tools, def)
 	}
 
-	out, err := json.Marshal(w)
-	if err != nil {
-		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: "encode request", Err: err}
+	if err := json.MarshalWrite(dst, w); err != nil {
+		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: "encode request", Err: err}
 	}
-	return out, nil
+	return nil
 }
 
 // routing returns the provider object, or nil when no preference is set.

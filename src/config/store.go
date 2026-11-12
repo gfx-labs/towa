@@ -16,6 +16,11 @@ type Store struct {
 	// that exists keeps the format it was created with. The measurements
 	// behind the default are in docs/notes/2026-11-11-store.md.
 	Compression string `name:"compression" default:"zstd" validate:"oneof=none zstd" help:"How the log of a new session is stored: none or zstd."`
+	// Fsync flushes every write of a session to the disk before the write
+	// is acknowledged. Off, a crash of the machine can lose or tear the
+	// last writes, and the next open drops a torn record. The cost is in
+	// docs/notes/2026-11-12-turn-cost.md.
+	Fsync bool `name:"fsync" default:"true" help:"Flush every write of a session to the disk before it is acknowledged. On by default. Off is faster, and a crash of the machine can lose the last writes."`
 }
 
 // Values of Store.Compression. They are the names src/store/dir takes.

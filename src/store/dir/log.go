@@ -170,16 +170,14 @@ func (s *Store) append(f *os.File, format logFormat, lines []byte, count int, co
 	// One write, so that a crash tears at most the record being added.
 	_, err = f.WriteAt(out.B, size)
 	if err == nil {
-		s.syncs.Add(1)
-		err = f.Sync()
+		err = s.sync(f)
 	}
 	if err != nil {
 		// The entries were not stored. Take back what was written, so that
 		// the failure does not leave a torn record for the next Append.
 		rollback := f.Truncate(size)
 		if rollback == nil {
-			s.syncs.Add(1)
-			rollback = f.Sync()
+			rollback = s.sync(f)
 		}
 		return errors.Join(err, rollback)
 	}
@@ -373,8 +371,7 @@ func (s *Store) repair(f *os.File, format logFormat, dir string) (int64, error) 
 	if err := f.Truncate(end); err != nil {
 		return 0, err
 	}
-	s.syncs.Add(1)
-	return int64(len(torn)), f.Sync()
+	return int64(len(torn)), s.sync(f)
 }
 
 // logPath is where a format keeps a session's log.

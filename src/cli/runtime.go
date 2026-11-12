@@ -89,7 +89,7 @@ func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *tele
 	if err != nil {
 		return nil, err
 	}
-	f.store, err = dir.New(dir.Options{Root: root, Compression: dir.Compression(cfg.Store.Compression)})
+	f.store, err = dir.New(dir.Options{Root: root, Compression: dir.Compression(cfg.Store.Compression), NoSync: !cfg.Store.Fsync})
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	}
 	first := selected.Entries[0]
 	result.resolved = loop.Resolved{
-		Provider: routed, Tools: assembled.Set, Model: first.Model,
+		Provider: routed, Tools: assembled.Set, Schemas: assembled.Schemas, Model: first.Model,
 		ProviderName: first.Provider, ContextSize: first.Metadata.ContextWindow, MaxOutputTokens: first.Metadata.MaxOutputTokens,
 		Effort: first.Effort, Interruption: agentctx.Interruption,
 	}

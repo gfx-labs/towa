@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/jsontext"
 	"errors"
@@ -17,6 +18,13 @@ import (
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/transcript"
 )
+
+// encoded returns the request body c would send for req.
+func encoded(c *Client, req provider.Request) ([]byte, *provider.Error) {
+	var out bytes.Buffer
+	perr := c.body(&out, req)
+	return out.Bytes(), perr
+}
 
 func newClient(t testing.TB, p config.Provider) *Client {
 	t.Helper()
@@ -63,7 +71,7 @@ func conversation(providerID string) []transcript.Item {
 
 func TestRequestBodyForAPlainEndpoint(t *testing.T) {
 	c := newClient(t, config.Provider{ID: "deepseek", CacheKeyField: config.CacheKeyPromptCacheKey})
-	body, perr := c.body(provider.Request{
+	body, perr := encoded(c, provider.Request{
 		Model:      "deepseek-chat",
 		Credential: auth.Credential{Account: "main"},
 		System:     []provider.SystemBlock{{Name: "base", Text: "You are an agent."}, {Name: "empty"}, {Name: "rules", Text: "Be brief."}},
@@ -114,7 +122,7 @@ func TestRequestBodyForOpenRouter(t *testing.T) {
 	p.OpenRouter.Reasoning.Exclude = true
 	c := newClient(t, p)
 	// Another provider wrote the reasoning, so it cannot go back.
-	body, perr := c.body(provider.Request{
+	body, perr := encoded(c, provider.Request{
 		Model: "anthropic/claude-sonnet-4.5", Items: conversation("deepseek")[:3], Effort: "low", CacheKey: "session-1",
 	})
 	require.Nil(t, perr)
@@ -150,7 +158,7 @@ func TestRequestRejectsWhatItCannotSend(t *testing.T) {
 		"tool without a name": {Model: "m", Items: []transcript.Item{user}, Tools: []provider.Tool{{Description: "d"}}},
 	}
 	for name, req := range cases {
-		_, perr := c.body(req)
+		_, perr := encoded(c, req)
 		require.NotNil(t, perr, name)
 		require.Equal(t, provider.Fail, perr.Class, name)
 		require.Equal(t, provider.ReasonRequest, perr.Reason, name)
@@ -178,7 +186,7 @@ func TestReasoningDetailsGoBackAsTheyCame(t *testing.T) {
 	require.Equal(t, provider.StopEndTurn, s.out[2].Stop)
 
 	user := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}
-	body, perr := c.body(provider.Request{Model: "m", Credential: auth.Credential{Account: "main"}, Items: []transcript.Item{user, *thinking, *s.out[1].Item}})
+	body, perr := encoded(c, provider.Request{Model: "m", Credential: auth.Credential{Account: "main"}, Items: []transcript.Item{user, *thinking, *s.out[1].Item}})
 	require.Nil(t, perr)
 	require.JSONEq(t, `{"model":"m","stream":true,"messages":[
 		{"role":"user","content":"hi"},

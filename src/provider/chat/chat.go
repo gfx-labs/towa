@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/gfx-labs/sse"
+	"github.com/valyala/bytebufferpool"
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
@@ -97,11 +98,14 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	if _, perr := c.contextName(req.Credential); perr != nil {
 		return perr
 	}
-	body, perr := c.body(req)
-	if perr != nil {
+	// The transport may read the body until the response is closed, so the
+	// buffer goes back only after that.
+	body := bytebufferpool.Get()
+	defer bytebufferpool.Put(body)
+	if perr := c.body(body, req); perr != nil {
 		return perr
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body.B))
 	if err != nil {
 		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
 	}

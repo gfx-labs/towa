@@ -112,8 +112,7 @@ func (s *Store) copyFile(ctx context.Context, path string, content io.Reader) er
 	}
 	_, err = io.Copy(f, &ctxReader{ctx: ctx, r: content})
 	if err == nil {
-		s.syncs.Add(1)
-		err = f.Sync()
+		err = s.sync(f)
 	}
 	return errors.Join(err, f.Close())
 }

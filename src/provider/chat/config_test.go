@@ -42,7 +42,7 @@ providers:
 	require.NoError(t, err)
 	require.Len(t, loaded.Config.Providers, 1)
 
-	body, perr := newClient(t, loaded.Config.Providers[0]).body(provider.Request{Model: "m", Items: userSays("hi"), CacheKey: "s"})
+	body, perr := encoded(newClient(t, loaded.Config.Providers[0]), provider.Request{Model: "m", Items: userSays("hi"), CacheKey: "s"})
 	require.Nil(t, perr)
 	require.JSONEq(t, `{
 		"model": "m", "stream": true, "session_id": "s",

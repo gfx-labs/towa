@@ -33,6 +33,22 @@ import (
 
 var compressions = []dir.Compression{dir.CompressionNone, dir.CompressionZstd}
 
+// A store made with NoSync writes and reads as any other, and calls fsync
+// for nothing: not the session's directory, its metadata, its log or a blob.
+func TestNoSyncStoreDoesNotFsync(t *testing.T) {
+	s, err := dir.New(dir.Options{Root: t.TempDir(), Compression: dir.CompressionZstd, NoSync: true})
+	require.NoError(t, err)
+	sess := newSession(t, s)
+	written := []transcript.Entry{sess.user("one"), sess.text("two")}
+	require.NoError(t, s.Append(t.Context(), sess.meta.ID, written))
+	_, err = s.PutBlob(t.Context(), sess.meta.ID, "text/plain", strings.NewReader("blob"))
+	require.NoError(t, err)
+
+	assert.Zero(t, s.Stats().Syncs)
+	_, entries := load(t, s, sess.meta.ID)
+	same(t, written, entries)
+}
+
 func open(t *testing.T, root string, c dir.Compression) *dir.Store {
 	t.Helper()
 	s, err := dir.New(dir.Options{Root: root, Compression: c})

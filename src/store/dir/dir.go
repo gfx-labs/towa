@@ -69,6 +69,9 @@ type Options struct {
 	// Compression is how the log of a session made by Create is stored. A
 	// session that exists is read and appended to in the format it has.
 	Compression Compression
+	// NoSync leaves out every fsync, of files and of directories. A crash
+	// of the machine can then lose or tear the last writes.
+	NoSync bool
 }
 
 // Compression names a log format.
@@ -97,6 +100,7 @@ type Store struct {
 	formats []logFormat
 	create1 logFormat
 	codec   codec
+	noSync  bool
 
 	syncs atomic.Int64
 }
@@ -108,7 +112,7 @@ func New(opts Options) (*Store, error) {
 	if !filepath.IsAbs(opts.Root) {
 		return nil, fmt.Errorf("store/dir: root %q is not an absolute path", opts.Root)
 	}
-	s := &Store{root: filepath.Clean(opts.Root)}
+	s := &Store{root: filepath.Clean(opts.Root), noSync: opts.NoSync}
 	plain, compressed := plainFormat{}, zstdFormat{codec: &s.codec}
 	s.formats = []logFormat{plain, compressed}
 	switch opts.Compression {
@@ -440,6 +444,15 @@ func (s *Store) writeSync(f *os.File, data []byte) error {
 	if err != nil {
 		return err
 	}
+	return s.sync(f)
+}
+
+// sync makes what was written to f durable, unless the store was made with
+// NoSync.
+func (s *Store) sync(f *os.File) error {
+	if s.noSync {
+		return nil
+	}
 	s.syncs.Add(1)
 	return f.Sync()
 }
@@ -459,12 +472,14 @@ func (s *Store) replaceFile(dir, name string, data []byte) error {
 
 // syncDir makes the names in a directory durable.
 func (s *Store) syncDir(path string) error {
+	if s.noSync {
+		return nil
+	}
 	d, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	s.syncs.Add(1)
-	if err := d.Sync(); err != nil {
+	if err := s.sync(d); err != nil {
 		return errors.Join(err, d.Close())
 	}
 	return d.Close()

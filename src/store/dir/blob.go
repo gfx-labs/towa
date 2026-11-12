@@ -82,8 +82,7 @@ func (s *Store) putBlob(ctx context.Context, blobs string, tmp *os.File, content
 	final := filepath.Join(blobs, digest)
 	// Even an existing hash can be another publisher's unsynced rename.
 	// Publish and sync our own copy rather than acknowledging its write.
-	s.syncs.Add(1)
-	if err := tmp.Sync(); err != nil {
+	if err := s.sync(tmp); err != nil {
 		return transcript.Stored{}, errors.Join(err, tmp.Close())
 	}
 	if err := tmp.Close(); err != nil {
