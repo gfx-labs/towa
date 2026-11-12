@@ -78,7 +78,7 @@ After those runs the `edit` tool got a second rule, jcode's with towa's tool nam
 - An edit made by a script skips the exact-match check, the read-before-write check and the diff an ACP client is shown.
 - `85e52ca` had removed the older line "Change part of a file with edit, not with sed or a script in bash" along with the lines about searching. The 4634 runs on `85e52ca` and `78b4593` then made 6 and 2 edits by script and none by tool.
 - The rule about reading through `bash` was kept all along ("Use read to examine files instead of cat or sed.") and the 4634 run still read with `sed` and `cat`, so a rule is not sufficient by itself.
-- Not measured on a task.
+- One run of PR 4634 on the build with the rule (`ae5d4d5`, which also has the shorter opening of `eb665eb`): 11 requests and 344k tokens, with one `apply_patch` call, no edit by script, and 2 reads through `sed` or `head`. It again changed only the call site, this time to an `aria-label` reading "Toggle randomize", so the merged PR's test fails and the name differs from the ticket's "Randomize". The run said so. One run, with two changes since `78b4593`, so neither the lower count nor the choice of fix is attributed.
 
 ## Not measured
 
