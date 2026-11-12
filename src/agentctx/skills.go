@@ -50,19 +50,32 @@ func (e *UnknownSkillError) Error() string {
 // Skills are listed directory by directory in config order, and by path
 // within a directory. A name found again in a later directory is left out:
 // the earlier directory wins. The same name twice within one directory is
-// an error. A skills directory that does not exist holds no skills, since
-// the default directory is absent on most machines. A SKILL.md that cannot
-// be read or has no usable front matter is an error.
+// an error. The default directory, ~/.agents/skills, comes first when
+// context.default_skills is on and holds no skills when it does not exist,
+// since it is absent on most machines. A configured directory that does not
+// exist is an error. A SKILL.md that cannot be read or has no usable front
+// matter is an error.
 func ListSkills(req Request) ([]Skill, error) {
-	var out []Skill
-	byName := map[string]Skill{}
+	type root struct {
+		path     string
+		optional bool
+	}
+	var roots []root
+	if req.Config.DefaultSkills && req.HomeDir != "" {
+		roots = append(roots, root{path: filepath.Join(req.HomeDir, skillsDir), optional: true})
+	}
 	for _, configured := range req.Config.SkillsDirs {
-		root, err := resolvePath(configured, req.WorkDir, req.HomeDir)
+		path, err := resolvePath(configured, req.WorkDir, req.HomeDir)
 		if err != nil {
 			return nil, fmt.Errorf("agentctx: context.skills_dirs: %w", err)
 		}
+		roots = append(roots, root{path: path})
+	}
+	var out []Skill
+	byName := map[string]Skill{}
+	for _, r := range roots {
 		w := &skillWalker{limit: req.Config.MaxFileBytes, visited: map[string]bool{}}
-		if err := w.walk(root, true); err != nil {
+		if err := w.walk(r.path, r.optional); err != nil {
 			return nil, err
 		}
 		inThisRoot := map[string]string{}
@@ -110,10 +123,12 @@ type skillWalker struct {
 	visited map[string]bool
 }
 
-func (w *skillWalker) walk(dir string, root bool) error {
+// walk searches dir. With optional set, a dir that does not exist holds no
+// skills.
+func (w *skillWalker) walk(dir string, optional bool) error {
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		if root && errors.Is(err, fs.ErrNotExist) {
+		if optional && errors.Is(err, fs.ErrNotExist) {
 			if _, lerr := os.Lstat(dir); lerr != nil && errors.Is(lerr, fs.ErrNotExist) {
 				return nil
 			}

@@ -96,7 +96,7 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"number where a file needs a duration", file("wall.yaml", "limits:\n  max_wall: 30\n"), nil, "wall.yaml"},
 		{"number where a table needs a duration", file("hook-wait.yaml", "hooks:\n  - event: stop\n    command: ['true']\n    timeout: 1\n"), nil, "hooks[0].timeout"},
 		{"value of the wrong type in a file", file("type.yaml", "limits:\n  max_tool_calls: many\n"), nil, "type.yaml"},
-		{"text where a file needs a list", file("list.yaml", "context:\n  extra_files: a.md,b.md\n"), nil, "list.yaml"},
+		{"text where a file needs a list", file("list.yaml", "context:\n  agents: a.md,b.md\n"), nil, "list.yaml"},
 		{"value of the wrong type in the environment", config.Sources{Environ: []string{"ACPHARNESS_LIMITS__MAX_WALL=soon"}}, nil, "ACPHARNESS_LIMITS__MAX_WALL"},
 		{"value of the wrong type", config.Sources{}, []string{"--telemetry.otel=sometimes"}, "telemetry.otel"},
 		{"unknown log level", config.Sources{}, []string{"--telemetry.logs.stderr.level=loud"}, "loud"},
@@ -170,10 +170,8 @@ hooks:
     timeout: 10s
     max_output_bytes: 65536
 context:
-  agents_files: false
-  global_dir: ""
-  extra_files: ["notes, with a comma.md"]
-  extra_dirs: [docs]
+  default_agents: false
+  agents: ["notes, with a comma.md", docs]
   skills_dirs: ["~/a"]
   max_file_bytes: 1000
   max_total_bytes: 5000
@@ -185,9 +183,9 @@ context:
 	require.NoError(t, err)
 	// A list item keeps its comma, and an empty value in a file replaces a
 	// default that is not empty.
-	require.Equal(t, []string{"notes, with a comma.md"}, got.Config.Context.ExtraFiles)
-	require.Empty(t, got.Config.Context.GlobalDir)
-	require.Equal(t, path, got.Origin["context.global_dir"])
+	require.Equal(t, []string{"notes, with a comma.md", "docs"}, got.Config.Context.Agents)
+	require.False(t, got.Config.Context.DefaultAgents)
+	require.Equal(t, path, got.Origin["context.default_agents"])
 }
 
 // A table is one key: a flag or an environment variable gives it as one
@@ -270,4 +268,12 @@ providers:
 `)
 	_, err = config.Load(config.Sources{Files: []string{path}})
 	require.ErrorContains(t, err, "nobody")
+}
+
+// Text from a command substitution is one entry per flag, commas and
+// newlines included.
+func TestEachAgentsTextFlagIsOneEntry(t *testing.T) {
+	got, err := config.Load(config.Sources{}, "--context.agents_text=a, b\nc", "--context.agents_text=d")
+	require.NoError(t, err)
+	require.Equal(t, []string{"a, b\nc", "d"}, got.Config.Context.AgentsText)
 }

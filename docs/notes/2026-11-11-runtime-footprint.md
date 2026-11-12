@@ -52,7 +52,7 @@ The child environment is replaced, not extended: `PATH=/usr/bin:/bin`, `LANG=C.U
   "accounts": [{"id": "dummy", "provider": "local", "kind": "api_key", "api_key_env": "IDLE_DUMMY_KEY"}],
   "store": {"root": "<run>/store", "compression": "zstd"},
   "compaction": {"mode": "off", "openai_native": "off"},
-  "context": {"agents_files": false, "global_dir": "", "skills_enabled": false, "skills_dirs": []},
+  "context": {"default_agents": false, "skills_enabled": false, "default_skills": false},
   "webfetch": {"enabled": false},
   "conversation_search": {"enabled": false},
   "subagents": {"max_depth": 0},

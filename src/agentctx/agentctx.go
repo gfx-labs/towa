@@ -17,8 +17,15 @@ import (
 	"github.com/gfx-labs/acpharness/src/provider"
 )
 
-// agentsFile is the name of an instruction file.
-const agentsFile = "AGENTS.md"
+const (
+	// agentsFile is the name of an instruction file.
+	agentsFile = "AGENTS.md"
+	// rulesDir holds the default rule files, relative to the home directory.
+	rulesDir = ".agents/rules"
+	// skillsDir is the default skills directory, relative to the home
+	// directory.
+	skillsDir = ".agents/skills"
+)
 
 // Request says what to load for one session.
 type Request struct {
@@ -38,11 +45,15 @@ type Loaded struct {
 	Skills []Skill
 	// Sections are the sections added by configuration, in config order.
 	Sections []provider.SystemBlock
+	// Instructions is the text of the prompt section: the file named by
+	// context.system_prompt_file, or the built-in Instructions.
+	Instructions string
 }
 
 // File is one context file.
 type File struct {
-	// Path is the absolute path the file was read from.
+	// Path is the absolute path the file was read from, or the config key
+	// of text given inline.
 	Path string
 	Text string
 }
@@ -78,28 +89,42 @@ func Load(req Request) (*Loaded, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Loaded{Files: files, Skills: skills, Sections: sections}, nil
+	instructions := Instructions
+	if file := req.Config.SystemPromptFile; file != "" {
+		path, err := resolvePath(file, req.WorkDir, req.HomeDir)
+		if err != nil {
+			return nil, fmt.Errorf("agentctx: context.system_prompt_file: %w", err)
+		}
+		if instructions, err = readText(path, req.Config.MaxFileBytes); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(instructions) == "" {
+			return nil, fmt.Errorf("agentctx: context.system_prompt_file %s is empty", path)
+		}
+	}
+	return &Loaded{Files: files, Skills: skills, Sections: sections, Instructions: instructions}, nil
 }
 
 // LoadFiles reads the context files in this order, which is the order they
 // take in the prompt:
 //
-//  1. the global directory's AGENTS.md;
-//  2. the AGENTS.md of each directory from the repository root down to the
+//  1. ~/AGENTS.md;
+//  2. the .md files under ~/.agents/rules, in path order;
+//  3. the AGENTS.md of each directory from the repository root down to the
 //     working directory, so that the file nearest the working directory
 //     comes last;
-//  3. the configured extra files, in config order;
-//  4. the .md files under each configured extra directory, in path order.
+//  4. each entry of context.agents, in config order. A file is read as it
+//     is, and a directory contributes the .md files under it in path order;
+//  5. each entry of context.agents_text, in config order, under the name
+//     context.agents_text[i].
 //
-// Steps 1 and 2 are skipped
-// when context.agents_files is off. The repository root is the nearest
-// directory, from the working directory upwards, that holds a ".git" entry.
-// When there is none, only the working directory is searched.
-//
-// An AGENTS.md that does not exist is not an error. Any other
-// failure is, including an extra file or directory that does not exist. A
-// file reached twice, such as an extra file that is also an AGENTS.md, is
-// read once, at its first position.
+// Steps 1 to 3 are the defaults, skipped when context.default_agents is
+// off. A default file or directory that does not exist is left out. A
+// configured entry that does not exist is an error, as is any other
+// failure. The repository root is the nearest directory, from the working
+// directory upwards, that holds a ".git" entry. When there is none, only
+// the working directory is searched. A file reached twice is read once, at
+// its first position.
 func LoadFiles(req Request) ([]File, error) {
 	workDir, err := checkWorkDir(req.WorkDir)
 	if err != nil {
@@ -107,62 +132,74 @@ func LoadFiles(req Request) ([]File, error) {
 	}
 	l := &fileLoader{cfg: req.Config, seen: map[string]bool{}}
 
-	if req.Config.AgentsFiles {
-		var dirs []string
-		if req.Config.GlobalDir != "" {
-			global, err := resolvePath(req.Config.GlobalDir, workDir, req.HomeDir)
-			if err != nil {
-				return nil, fmt.Errorf("agentctx: context.global_dir: %w", err)
-			}
-			dirs = append(dirs, global)
+	if req.Config.DefaultAgents {
+		var defaults []string
+		if req.HomeDir != "" {
+			defaults = append(defaults, filepath.Join(req.HomeDir, agentsFile), filepath.Join(req.HomeDir, rulesDir))
 		}
 		chain, err := dirsFromRepoRoot(workDir)
 		if err != nil {
 			return nil, err
 		}
-		for _, dir := range append(dirs, chain...) {
-			if err := l.add(filepath.Join(dir, agentsFile), true); err != nil {
+		for _, dir := range chain {
+			defaults = append(defaults, filepath.Join(dir, agentsFile))
+		}
+		for _, path := range defaults {
+			if err := l.addPath(path, true); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	for _, extra := range req.Config.ExtraFiles {
-		path, err := resolvePath(extra, workDir, req.HomeDir)
+	for _, entry := range req.Config.Agents {
+		path, err := resolvePath(entry, workDir, req.HomeDir)
 		if err != nil {
-			return nil, fmt.Errorf("agentctx: context.extra_files: %w", err)
+			return nil, fmt.Errorf("agentctx: context.agents: %w", err)
 		}
-		if err := l.add(path, false); err != nil {
+		if err := l.addPath(path, false); err != nil {
 			return nil, err
 		}
 	}
-	for _, extra := range req.Config.ExtraDirs {
-		dir, err := resolvePath(extra, workDir, req.HomeDir)
-		if err != nil {
-			return nil, fmt.Errorf("agentctx: context.extra_dirs: %w", err)
-		}
-		// WalkDir visits in lexical order and does not follow symlinks
-		// below dir, so a link cannot make the walk loop.
-		var paths []string
-		err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !d.IsDir() && filepath.Ext(path) == ".md" {
-				paths = append(paths, path)
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("agentctx: %w", pathError(dir, err))
-		}
-		for _, path := range paths {
-			if err := l.add(path, false); err != nil {
-				return nil, err
-			}
+	for i, text := range req.Config.AgentsText {
+		if err := l.addText(fmt.Sprintf("context.agents_text[%d]", i), text); err != nil {
+			return nil, err
 		}
 	}
 	return l.files, nil
+}
+
+// addPath reads a file, or the .md files under a directory in path order.
+// With optional set, a path that does not exist is left out.
+func (l *fileLoader) addPath(path string, optional bool) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		// add reports the error, or leaves out a missing optional file.
+		return l.add(path, optional)
+	}
+	if !info.IsDir() {
+		return l.add(path, optional)
+	}
+	// WalkDir visits in lexical order and does not follow symlinks below
+	// path, so a link cannot make the walk loop.
+	var paths []string
+	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(p) == ".md" {
+			paths = append(paths, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("agentctx: %w", pathError(path, err))
+	}
+	for _, p := range paths {
+		if err := l.add(p, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type fileLoader struct {
@@ -201,6 +238,24 @@ func (l *fileLoader) add(path string, optional bool) error {
 		return &LimitError{Path: path, Key: "context.max_total_bytes", Size: l.total, Limit: limit}
 	}
 	l.files = append(l.files, File{Path: path, Text: text})
+	return nil
+}
+
+// addText adds inline text under name, counted against
+// context.max_file_bytes and context.max_total_bytes like a file.
+func (l *fileLoader) addText(name, text string) error {
+	if !utf8.ValidString(text) {
+		return fmt.Errorf("agentctx: %s: not valid UTF-8", name)
+	}
+	size := int64(len(text))
+	if limit := l.cfg.MaxFileBytes; limit > 0 && size > limit {
+		return &LimitError{Path: name, Key: "context.max_file_bytes", Size: size, Limit: limit}
+	}
+	l.total += size
+	if limit := l.cfg.MaxTotalBytes; limit > 0 && l.total > limit {
+		return &LimitError{Path: name, Key: "context.max_total_bytes", Size: l.total, Limit: limit}
+	}
+	l.files = append(l.files, File{Path: name, Text: text})
 	return nil
 }
 

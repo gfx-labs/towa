@@ -65,9 +65,11 @@ func names(blocks []provider.SystemBlock) []string {
 	return out
 }
 
-func TestContextFilesAreReadFromGlobalThenRepoRootDownToWorkDir(t *testing.T) {
+func TestContextFilesAreReadFromDefaultsThenConfiguredEntriesInOrder(t *testing.T) {
 	tr := newTree(t)
-	global := write(t, filepath.Join(tr.home, ".agents", "AGENTS.md"), "global")
+	global := write(t, filepath.Join(tr.home, "AGENTS.md"), "global")
+	ruleB := write(t, filepath.Join(tr.home, ".agents", "rules", "b.md"), "rule b")
+	ruleA := write(t, filepath.Join(tr.home, ".agents", "rules", "a", "z.md"), "rule z")
 	write(t, filepath.Join(tr.outside, "AGENTS.md"), "above the repository")
 	root := write(t, filepath.Join(tr.repo, "AGENTS.md"), "root")
 	mid := write(t, filepath.Join(tr.repo, "a", "AGENTS.md"), "mid")
@@ -79,22 +81,23 @@ func TestContextFilesAreReadFromGlobalThenRepoRootDownToWorkDir(t *testing.T) {
 	write(t, filepath.Join(tr.repo, "docs", "skip.txt"), "not markdown")
 
 	cfg := config.Context{
-		AgentsFiles: true,
-		GlobalDir:   "~/.agents",
-		ExtraFiles:  []string{"~/notes.md"},
-		// Relative to the working directory.
-		ExtraDirs: []string{"../../docs"},
+		DefaultAgents: true,
+		// A directory, then a file: config order, not kind, decides. The
+		// directory is relative to the working directory.
+		Agents:     []string{"../../docs", "~/notes.md"},
+		AgentsText: []string{"from a command, with, commas\nand lines"},
 	}
 
 	files, err := agentctx.LoadFiles(tr.request(cfg))
 	require.NoError(t, err)
-	require.Equal(t, []string{global, root, mid, leaf, extra, dirA, dirB}, paths(files))
-	require.Equal(t, "root", files[1].Text)
+	require.Equal(t, []string{global, ruleA, ruleB, root, mid, leaf, dirA, dirB, extra, "context.agents_text[0]"}, paths(files))
+	require.Equal(t, "root", files[3].Text)
+	require.Equal(t, "from a command, with, commas\nand lines", files[9].Text)
 
-	cfg.AgentsFiles = false
+	cfg.DefaultAgents = false
 	files, err = agentctx.LoadFiles(tr.request(cfg))
 	require.NoError(t, err)
-	require.Equal(t, []string{extra, dirA, dirB}, paths(files))
+	require.Equal(t, []string{dirA, dirB, extra, "context.agents_text[0]"}, paths(files))
 }
 
 // Outside a repository there is no root to stop at, so only the working
@@ -106,7 +109,7 @@ func TestOutsideARepositoryOnlyTheWorkDirIsSearched(t *testing.T) {
 	leaf := write(t, filepath.Join(base, "work", "AGENTS.md"), "leaf")
 
 	files, err := agentctx.LoadFiles(agentctx.Request{
-		Config:  config.Context{AgentsFiles: true},
+		Config:  config.Context{DefaultAgents: true},
 		WorkDir: filepath.Join(base, "work"),
 	})
 	require.NoError(t, err)
@@ -122,7 +125,7 @@ func TestAFileReachedTwiceIsReadOnce(t *testing.T) {
 	require.NoError(t, os.Symlink(root, link))
 
 	files, err := agentctx.LoadFiles(tr.request(config.Context{
-		AgentsFiles: true, ExtraFiles: []string{root, link},
+		DefaultAgents: true, Agents: []string{root, link},
 	}))
 	require.NoError(t, err)
 	require.Equal(t, []string{root}, paths(files))
@@ -131,17 +134,17 @@ func TestAFileReachedTwiceIsReadOnce(t *testing.T) {
 func TestAFileThatCannotBeReadIsAnErrorWithItsPath(t *testing.T) {
 	tr := newTree(t)
 
-	t.Run("missing extra file", func(t *testing.T) {
+	t.Run("missing agents file", func(t *testing.T) {
 		missing := filepath.Join(tr.home, "missing.md")
-		_, err := agentctx.LoadFiles(tr.request(config.Context{ExtraFiles: []string{missing}}))
+		_, err := agentctx.LoadFiles(tr.request(config.Context{Agents: []string{missing}}))
 		var pe *fs.PathError
 		require.ErrorAs(t, err, &pe)
 		require.Equal(t, missing, pe.Path)
 		require.ErrorIs(t, err, fs.ErrNotExist)
 	})
-	t.Run("missing extra directory", func(t *testing.T) {
+	t.Run("missing agents directory", func(t *testing.T) {
 		missing := filepath.Join(tr.home, "nodir")
-		_, err := agentctx.LoadFiles(tr.request(config.Context{ExtraDirs: []string{missing}}))
+		_, err := agentctx.LoadFiles(tr.request(config.Context{Agents: []string{missing}}))
 		var pe *fs.PathError
 		require.ErrorAs(t, err, &pe)
 		require.Equal(t, missing, pe.Path)
@@ -153,7 +156,7 @@ func TestAFileThatCannotBeReadIsAnErrorWithItsPath(t *testing.T) {
 		path := write(t, filepath.Join(tr.repo, "AGENTS.md"), "root")
 		require.NoError(t, os.Chmod(path, 0))
 		t.Cleanup(func() { require.NoError(t, os.Remove(path)) })
-		_, err := agentctx.LoadFiles(tr.request(config.Context{AgentsFiles: true}))
+		_, err := agentctx.LoadFiles(tr.request(config.Context{DefaultAgents: true}))
 		var pe *fs.PathError
 		require.ErrorAs(t, err, &pe)
 		require.Equal(t, path, pe.Path)
@@ -163,13 +166,13 @@ func TestAFileThatCannotBeReadIsAnErrorWithItsPath(t *testing.T) {
 		link := filepath.Join(tr.workDir, "AGENTS.md")
 		require.NoError(t, os.Symlink("gone.md", link))
 		t.Cleanup(func() { require.NoError(t, os.Remove(link)) })
-		_, err := agentctx.LoadFiles(tr.request(config.Context{AgentsFiles: true}))
+		_, err := agentctx.LoadFiles(tr.request(config.Context{DefaultAgents: true}))
 		var pe *fs.PathError
 		require.ErrorAs(t, err, &pe)
 		require.Equal(t, link, pe.Path)
 	})
 	t.Run("tilde without a home directory", func(t *testing.T) {
-		req := tr.request(config.Context{ExtraFiles: []string{"~/notes.md"}})
+		req := tr.request(config.Context{Agents: []string{"~/notes.md"}})
 		req.HomeDir = ""
 		_, err := agentctx.LoadFiles(req)
 		require.Error(t, err)
@@ -181,16 +184,16 @@ func TestSizeLimitsAreErrorsNotTruncation(t *testing.T) {
 	root := write(t, filepath.Join(tr.repo, "AGENTS.md"), "0123456789")
 	leaf := write(t, filepath.Join(tr.workDir, "AGENTS.md"), "0123456789")
 
-	_, err := agentctx.LoadFiles(tr.request(config.Context{AgentsFiles: true, MaxFileBytes: 9}))
+	_, err := agentctx.LoadFiles(tr.request(config.Context{DefaultAgents: true, MaxFileBytes: 9}))
 	var limit *agentctx.LimitError
 	require.ErrorAs(t, err, &limit)
 	require.Equal(t, agentctx.LimitError{Path: root, Key: "context.max_file_bytes", Size: 10, Limit: 9}, *limit)
 
-	_, err = agentctx.LoadFiles(tr.request(config.Context{AgentsFiles: true, MaxFileBytes: 10, MaxTotalBytes: 19}))
+	_, err = agentctx.LoadFiles(tr.request(config.Context{DefaultAgents: true, MaxFileBytes: 10, MaxTotalBytes: 19}))
 	require.ErrorAs(t, err, &limit)
 	require.Equal(t, agentctx.LimitError{Path: leaf, Key: "context.max_total_bytes", Size: 20, Limit: 19}, *limit)
 
-	files, err := agentctx.LoadFiles(tr.request(config.Context{AgentsFiles: true, MaxFileBytes: 10, MaxTotalBytes: 20}))
+	files, err := agentctx.LoadFiles(tr.request(config.Context{DefaultAgents: true, MaxFileBytes: 10, MaxTotalBytes: 20}))
 	require.NoError(t, err)
 	require.Len(t, files, 2)
 }
@@ -201,7 +204,7 @@ func skillFile(name, description, body string) string {
 
 func TestSkillsAreListedAndLoadedOnDemand(t *testing.T) {
 	tr := newTree(t)
-	first, second := filepath.Join(tr.home, "skills"), filepath.Join(tr.repo, "skills")
+	first, second := filepath.Join(tr.home, ".agents", "skills"), filepath.Join(tr.repo, "skills")
 	deploy := write(t, filepath.Join(first, "deploy", "SKILL.md"),
 		"---\nname: deploy\nlicense: MIT\ndescription: >\n  Ship a release:\n  tag, build, publish.\n---\n# Deploy\n\nRun `scripts/ship.sh`.\n")
 	// Not a skill: it is inside one.
@@ -215,7 +218,8 @@ func TestSkillsAreListedAndLoadedOnDemand(t *testing.T) {
 	linked := write(t, filepath.Join(tr.home, "elsewhere", "review", "SKILL.md"), skillFile("review", "Review a change", "review body"))
 	require.NoError(t, os.Symlink(filepath.Dir(linked), filepath.Join(second, "review")))
 
-	cfg := config.Context{SkillsDirs: []string{"~/skills", second, filepath.Join(tr.home, "no-such-dir")}}
+	// The default directory comes before the configured ones.
+	cfg := config.Context{DefaultSkills: true, SkillsDirs: []string{second}}
 	skills, err := agentctx.ListSkills(tr.request(cfg))
 	require.NoError(t, err)
 	require.Equal(t, []agentctx.Skill{
@@ -287,8 +291,8 @@ func loadedPrompt(t *testing.T) (tree, agentctx.Prompt) {
 	write(t, filepath.Join(tr.home, "skills", "deploy", "SKILL.md"), skillFile("deploy", "Ship a release", "body"))
 	write(t, filepath.Join(tr.home, "house.md"), "House rules.")
 	loaded, err := agentctx.Load(tr.request(config.Context{
-		AgentsFiles: true,
-		SkillsDirs:  []string{"~/skills"},
+		DefaultAgents: true,
+		SkillsDirs:    []string{"~/skills"},
 		Sections: []config.ContextSection{
 			{Name: "team", Text: "Team notes."},
 			{Name: "house", File: "~/house.md"},
@@ -386,5 +390,36 @@ func TestAConfiguredSectionCannotTakeABuiltInName(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	_, err = agentctx.Build(agentctx.Prompt{Instructions: "UPSTREAM", Loaded: loaded})
+	require.Error(t, err)
+}
+
+// The default skills directory is absent on most machines, so a missing one
+// holds no skills. A configured one was named on purpose and must exist.
+func TestOnlyAConfiguredSkillsDirectoryMustExist(t *testing.T) {
+	tr := newTree(t)
+	skills, err := agentctx.ListSkills(tr.request(config.Context{DefaultSkills: true}))
+	require.NoError(t, err)
+	require.Empty(t, skills)
+
+	missing := filepath.Join(tr.home, "no-such-dir")
+	_, err = agentctx.ListSkills(tr.request(config.Context{SkillsDirs: []string{missing}}))
+	var pe *fs.PathError
+	require.ErrorAs(t, err, &pe)
+	require.Equal(t, missing, pe.Path)
+}
+
+func TestSystemPromptFileReplacesTheInstructions(t *testing.T) {
+	tr := newTree(t)
+	loaded, err := agentctx.Load(tr.request(config.Context{}))
+	require.NoError(t, err)
+	require.Equal(t, agentctx.Instructions, loaded.Instructions)
+
+	write(t, filepath.Join(tr.home, "prompt.md"), "Be a reviewer.")
+	loaded, err = agentctx.Load(tr.request(config.Context{SystemPromptFile: "~/prompt.md"}))
+	require.NoError(t, err)
+	require.Equal(t, "Be a reviewer.", loaded.Instructions)
+
+	write(t, filepath.Join(tr.home, "blank.md"), " \n")
+	_, err = agentctx.Load(tr.request(config.Context{SystemPromptFile: "~/blank.md"}))
 	require.Error(t, err)
 }

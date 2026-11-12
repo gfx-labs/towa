@@ -1,31 +1,39 @@
 package config
 
 // Context configures what is loaded into a session's system prompt: agent
-// instruction files, skills, extra files and directories. src/agentctx reads
-// it. A path may start with "~/", which stands for the home directory. Any
-// other relative path is taken from the session's working directory.
+// instruction files, skills, configured sections and the prompt itself.
+// src/agentctx reads it. A path may start with "~/", which stands for the
+// home directory. Any other relative path is taken from the session's
+// working directory.
 //
 // The two size limits default to none: no size has been measured to be the
 // right one, and a file over a limit fails the session.
 type Context struct {
-	// AgentsFiles turns on reading AGENTS.md from the global directory and
-	// from the working directory up to the repository root.
-	AgentsFiles bool `name:"agents_files" default:"true" help:"Read AGENTS.md from the global directory and from the working directory up to the repository root. On by default."`
-	// GlobalDir is the directory that holds the global AGENTS.md. Empty
-	// means there is no global file.
-	GlobalDir string `name:"global_dir" default:"~/.agents" placeholder:"DIR" help:"Directory that holds the global AGENTS.md. Empty means there is no global file."`
-	// ExtraFiles are read after the instruction files, in this order. Each
-	// must exist.
-	ExtraFiles []string `name:"extra_files" placeholder:"FILE" validate:"dive,required" help:"Files read after the instruction files, in this order. Each must exist."`
-	// ExtraDirs are read after ExtraFiles. Every .md file under each
-	// directory is read, in path order. Each directory must exist.
-	ExtraDirs []string `name:"extra_dirs" placeholder:"DIR" validate:"dive,required" help:"Directories whose .md files are read after extra_files, in path order. Each must exist."`
+	// DefaultAgents turns on the default instruction files: ~/AGENTS.md,
+	// the .md files under ~/.agents/rules, and AGENTS.md in each directory
+	// from the repository root down to the working directory. A default
+	// file that does not exist is left out.
+	DefaultAgents bool `name:"default_agents" default:"true" help:"Read ~/AGENTS.md, ~/.agents/rules/*.md and AGENTS.md from the repository root down to the working directory. On by default."`
+	// Agents are instruction files and directories read after the default
+	// ones, in this order. A directory contributes every .md file under it,
+	// in path order. Each must exist.
+	Agents []string `name:"agents" placeholder:"PATH" validate:"dive,required" help:"Instruction files or directories of .md files, read after the defaults in this order. Each must exist."`
+	// AgentsText are instructions given inline, read after Agents in this
+	// order. A flag value is one whole entry, so text from a command such
+	// as --context.agents_text="$(cmd)" keeps its commas and newlines.
+	AgentsText []string `name:"agents_text" sep:"none" placeholder:"TEXT" validate:"dive,required" help:"Instruction text read after agents, in this order (repeatable). Each flag value is one entry."`
 	// SkillsEnabled exposes the skill-loading extra to the model.
 	SkillsEnabled bool `name:"skills_enabled" default:"true" help:"Give the model the tool that loads a skill. On by default."`
-	// SkillsDirs are searched for directories that hold a SKILL.md. When
-	// two skills have the same name, the one from the earlier directory is
-	// used.
-	SkillsDirs []string `name:"skills_dirs" default:"~/.agents/skills" placeholder:"DIR" validate:"dive,required" help:"Directories searched for directories that hold a SKILL.md. The earlier directory wins a name."`
+	// DefaultSkills turns on ~/.agents/skills, searched before SkillsDirs.
+	// It holds no skills when it does not exist.
+	DefaultSkills bool `name:"default_skills" default:"true" help:"Search ~/.agents/skills before skills_dirs. On by default."`
+	// SkillsDirs are searched after the default directory for directories
+	// that hold a SKILL.md. When two skills have the same name, the one from
+	// the earlier directory is used. Each must exist.
+	SkillsDirs []string `name:"skills_dirs" placeholder:"DIR" validate:"dive,required" help:"Directories searched after the default one for directories that hold a SKILL.md. The earlier directory wins a name. Each must exist."`
+	// SystemPromptFile replaces the built-in instructions with the file's
+	// text. Empty means the built-in instructions.
+	SystemPromptFile string `name:"system_prompt_file" placeholder:"FILE" help:"File whose text replaces the built-in instructions section of the system prompt."`
 	// MaxFileBytes is the largest context file or SKILL.md that is
 	// accepted. A larger one is an error, not a truncated file. Zero means
 	// no limit.

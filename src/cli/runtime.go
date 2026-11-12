@@ -260,7 +260,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 		return preparedTurn{}, err
 	}
 	contextConfig := f.cfg.Context
-	contextConfig.ExtraFiles = append(slices.Clone(contextConfig.ExtraFiles), turn.ContextFiles...)
+	contextConfig.Agents = append(slices.Clone(contextConfig.Agents), turn.ContextFiles...)
 	contextConfig.SkillsDirs = append(slices.Clone(contextConfig.SkillsDirs), turn.SkillsDirs...)
 	loaded, err := agentctx.Load(agentctx.Request{Config: contextConfig, WorkDir: turn.Cwd, HomeDir: lookup(f.host.Environ, "HOME")})
 	if err != nil {
@@ -306,7 +306,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 			return preparedTurn{}, err
 		}
 		system, err := agentctx.Build(agentctx.Prompt{
-			Instructions: agentctx.Instructions, Tools: agentctx.ToolGuidance,
+			Instructions: loaded.Instructions, Tools: agentctx.ToolGuidance,
 			ToolLines: toolLines(assembled.Set, hasHosted), Loaded: loaded,
 			WorkDir: turn.Cwd, AdditionalDirs: turn.Dirs, SkillTool: skillTool, Client: turn.SystemPrompt,
 		})

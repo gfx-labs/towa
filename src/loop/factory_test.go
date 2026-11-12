@@ -181,10 +181,9 @@ store:
   root: %q
   compression: none
 context:
-  agents_files: false
-  global_dir: ""
+  default_agents: false
   skills_enabled: false
-  skills_dirs: []
+  default_skills: false
 compaction:
   mode: "off"
 conversation_search:
