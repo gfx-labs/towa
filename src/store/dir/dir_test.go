@@ -7,12 +7,15 @@ import (
 	"encoding/hex"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -131,6 +134,14 @@ const (
 	envMovedBlob    = "ACPHARNESS_TEST_MOVED_BLOB"
 )
 
+// The environment variables that turn the test binary into the process of
+// TestFailedAppendLeavesNoTornRecord, whose file size limit is lowered.
+const (
+	envLimitRoot    = "ACPHARNESS_TEST_LIMIT_ROOT"
+	envLimitSession = "ACPHARNESS_TEST_LIMIT_SESSION"
+	envLimitBytes   = "ACPHARNESS_TEST_LIMIT_BYTES"
+)
+
 // movedReport is what the second process says it found.
 type movedReport struct {
 	Meta     store.Meta         `json:"meta"`
@@ -142,16 +153,66 @@ type movedReport struct {
 
 // TestMain runs the second process when its variables are set: it loads the
 // session from the root it is given, continues it with one more entry and
-// reports what it read.
+// reports what it read. With the other variables it is the process that
+// appends under a file size limit.
 func TestMain(m *testing.M) {
-	root := os.Getenv(envMovedRoot)
-	if root == "" {
+	var err error
+	switch {
+	case os.Getenv(envMovedRoot) != "":
+		err = continueMoved(os.Getenv(envMovedRoot))
+	case os.Getenv(envLimitRoot) != "":
+		err = appendOverLimit(os.Getenv(envLimitRoot))
+	default:
 		os.Exit(m.Run())
 	}
-	if err := continueMoved(root); err != nil {
+	if err != nil {
 		_, _ = os.Stderr.WriteString(err.Error() + "\n")
 		os.Exit(1)
 	}
+}
+
+// appendOverLimit appends the entries on standard input with the process's
+// file size limit lowered. It succeeds when the limit is what failed the
+// append.
+func appendOverLimit(root string) error {
+	id, err := uuid.Parse(os.Getenv(envLimitSession))
+	if err != nil {
+		return err
+	}
+	size, err := strconv.ParseUint(os.Getenv(envLimitBytes), 10, 64)
+	if err != nil {
+		return err
+	}
+	var entries []transcript.Entry
+	if err := json.UnmarshalRead(os.Stdin, &entries); err != nil {
+		return err
+	}
+	s, err := dir.New(dir.Options{Root: root, Compression: dir.CompressionNone})
+	if err != nil {
+		return err
+	}
+	// Without this the kernel's signal for the limit ends the process.
+	signal.Ignore(syscall.SIGXFSZ)
+	var limit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &limit); err != nil {
+		return err
+	}
+	full := limit
+	limit.Cur = size
+	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limit); err != nil {
+		return err
+	}
+	failed := s.Append(context.Background(), id, entries)
+	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &full); err != nil {
+		return err
+	}
+	switch {
+	case failed == nil:
+		return fmt.Errorf("append under a file size limit of %d bytes was not refused", size)
+	case !errors.Is(failed, syscall.EFBIG):
+		return fmt.Errorf("append under a file size limit of %d bytes: %w", size, failed)
+	}
+	return nil
 }
 
 func continueMoved(root string) error {
@@ -413,14 +474,14 @@ func TestTornAppendIsAbsentAndReported(t *testing.T) {
 }
 
 // The write of an append is made to fail part way by the process's file
-// size limit, which is a real short write followed by a real error.
+// size limit, which is a real short write followed by a real error. The
+// limit is the whole process's, and the test binary writes files of its
+// own, so another process makes that append.
 func TestFailedAppendLeavesNoTornRecord(t *testing.T) {
-	// Without this the kernel's signal for the limit ends the process.
-	signal.Ignore(syscall.SIGXFSZ)
-	t.Cleanup(func() { signal.Reset(syscall.SIGXFSZ) })
 	for _, c := range compressions {
 		t.Run(string(c), func(t *testing.T) {
-			s := open(t, t.TempDir(), c)
+			root := t.TempDir()
+			s := open(t, root, c)
 			sess := newSession(t, s)
 			id := sess.meta.ID
 			whole := []transcript.Entry{sess.user("one"), sess.text("two")}
@@ -429,15 +490,15 @@ func TestFailedAppendLeavesNoTornRecord(t *testing.T) {
 			before, err := os.ReadFile(path)
 			require.NoError(t, err)
 
-			var limit syscall.Rlimit
-			require.NoError(t, syscall.Getrlimit(syscall.RLIMIT_FSIZE, &limit))
-			short := limit
+			more, err := json.Marshal([]transcript.Entry{sess.user("three"), sess.text("four")})
+			require.NoError(t, err)
+			cmd := exec.CommandContext(t.Context(), os.Args[0])
 			// Room for the start of the next record and no more.
-			short.Cur = uint64(len(before)) + 10
-			require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &short))
-			failed := s.Append(t.Context(), id, []transcript.Entry{sess.user("three"), sess.text("four")})
-			require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limit))
-			require.ErrorIs(t, failed, syscall.EFBIG)
+			cmd.Env = append(os.Environ(), envLimitRoot+"="+root, envLimitSession+"="+id.String(),
+				envLimitBytes+"="+strconv.Itoa(len(before)+10))
+			cmd.Stdin = bytes.NewReader(more)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
 
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
