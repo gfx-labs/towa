@@ -6,7 +6,11 @@ there is no ui. the only way to speak with it is the acp protocol, over stdio or
 
 try it with out with https://github.com/gfx-labs/acphost, a lightweight wrapper over acp that proxies and normalizes acp, along with providing journals, persistent sessions, and sandboxing.
 
-there are a large amount of configuration keys, everything configurable through ENV, cli, or file. these are meant to be set per run by a caller, another llm/program/scheduler/whatever. for instance, you could have your orchestator inject a generated config into a file in a kubernetes pod, with a command to run acpharness with this command and a prompt.
+there are a large amount of configuration keys, everything configurable through ENV, cli, or file.
+
+these are meant to be set per run by a caller, another llm/program/scheduler/whatever.
+
+for instance, ask your llm to setup a provider with you, and then run a turn using acphost or another light weight acp cli client.
 
 ## key features
 
