@@ -53,8 +53,8 @@ func textResult(outcome transcript.Outcome, text string) tools.Result {
 
 // JobFor is what the scheduler needs to know about a call. A call is taken
 // to read the paths it shows the client as locations.
-func JobFor(effect tools.Effect, d tools.Description) Job {
-	job := Job{Effect: effect}
+func JobFor(effect tools.Effect, d tools.Description) tools.Job {
+	job := tools.Job{Effect: effect}
 	for _, p := range d.WritePaths {
 		job.WritePaths = append(job.WritePaths, filepath.Clean(p))
 	}
@@ -194,7 +194,7 @@ type planned struct {
 	input []byte
 	// accept says the call asked for its output whatever its size.
 	accept bool
-	job    Job
+	job    tools.Job
 }
 
 // Run runs calls and returns a result for every one of them, whatever
@@ -202,7 +202,7 @@ type planned struct {
 // denying hook, a reached limit and a cancelled turn each give a result
 // that says so.
 //
-// Calls that conflict (see Conflicts) run in the order the model wrote
+// Calls that conflict (see tools.Conflicts) run in the order the model wrote
 // them, and the others run at the same time. A call is handed to its tool
 // at most once. Run returns when every tool has returned, also after ctx
 // ends: a tool is trusted to stop when its context does.
@@ -228,13 +228,13 @@ func (d Dispatcher) Run(ctx context.Context, calls []transcript.ToolCall) Dispat
 	}
 
 	// A refused call takes no part in scheduling: it conflicts with nothing.
-	jobs := make([]Job, len(calls))
+	jobs := make([]tools.Job, len(calls))
 	for i := range plan {
 		if refused[i] == nil {
 			jobs[i] = plan[i].job
 		}
 	}
-	runAll(Waits(jobs), func(i int) {
+	tools.RunAll(tools.Waits(jobs), func(i int) {
 		var res tools.Result
 		if refused[i] != nil {
 			res = textResult(refused[i].Outcome, refused[i].Text)
@@ -451,7 +451,7 @@ func (d Dispatcher) batch(ctx context.Context, b *budget, parent transcript.Tool
 			mu.Lock()
 			plans[index] = p
 			mu.Unlock()
-			return batch.Plan{Effect: p.job.Effect, WritePaths: p.job.WritePaths, ReadPaths: p.job.ReadPaths}, nil
+			return p.job, nil
 		},
 		Run: func(ctx context.Context, index int, call batch.Call) (tools.Result, error) {
 			mu.Lock()

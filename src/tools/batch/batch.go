@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"fmt"
-	"slices"
-	"sync"
 
 	"github.com/gfx-labs/acpharness/src/config"
 	"github.com/gfx-labs/acpharness/src/tools"
@@ -22,17 +20,9 @@ type Call struct {
 	Input jsontext.Value
 }
 
-// Plan is what scheduling needs to know about one call.
-type Plan struct {
-	Effect tools.Effect
-	// WritePaths are the absolute paths a call with Effect Writes will
-	// write, from the tool's Describe. A writing call with none is taken to
-	// write anywhere.
-	WritePaths []string
-	// ReadPaths are the absolute paths the call is known to read. A call
-	// does not run at the same time as one that writes a path it reads.
-	ReadPaths []string
-}
+// Plan is what scheduling needs to know about one call. A writing call with
+// no WritePaths is taken to write anywhere.
+type Plan = tools.Job
 
 // Dispatcher runs the calls of a batch. The loop supplies it, so a call in
 // a batch goes through the same repair, validation, permission and gating
@@ -78,17 +68,8 @@ type Error struct {
 func (e *Error) Error() string { return "batch: " + string(e.Kind) }
 
 // Run runs the calls and returns one Item for each, in the order given. A
-// call starts once every earlier call it conflicts with has ended. The rule
-// is the loop's own for parallel calls (loop.Conflicts):
-//
-//   - a call that executes runs alone: after every call before it and
-//     before every call after it, because what it touches is not known;
-//   - a call that writes without saying where is treated the same way;
-//   - two writes that share a path run in the order given;
-//   - a call that reads a path does not overlap one that writes it;
-//   - calls that only read run at the same time as each other.
-//
-// Paths are compared as text, so the dispatcher gives them in one form.
+// call starts once every earlier call it conflicts with has ended, by the
+// rule the loop uses for parallel calls (tools.Conflicts).
 //
 // When ctx is cancelled, calls that have not started are not started.
 func Run(ctx context.Context, cfg config.ToolsBatch, d Dispatcher, calls []Call) ([]Item, error) {
@@ -111,62 +92,22 @@ func Run(ctx context.Context, cfg config.ToolsBatch, d Dispatcher, calls []Call)
 		plans[i] = plan
 	}
 
-	done := make([]chan struct{}, len(calls))
-	for i := range done {
-		done[i] = make(chan struct{})
-	}
-	var wg sync.WaitGroup
-	for i, call := range calls {
+	tools.RunAll(tools.Waits(plans), func(i int) {
 		if items[i].Err != nil {
-			close(done[i])
-			continue
+			return
 		}
-		var waits []chan struct{}
-		for j := range i {
-			if conflicts(plans[j], plans[i]) {
-				waits = append(waits, done[j])
-			}
+		if ctx.Err() != nil {
+			items[i] = Item{Result: tools.Result{Outcome: transcript.OutcomeCancelled}}
+			return
 		}
-		wg.Go(func() {
-			defer close(done[i])
-			for _, earlier := range waits {
-				<-earlier
-			}
-			if ctx.Err() != nil {
-				items[i] = Item{Result: tools.Result{Outcome: transcript.OutcomeCancelled}}
-				return
-			}
-			res, err := d.Run(ctx, i, call)
-			if err != nil {
-				res.Outcome = transcript.OutcomeFailed
-				err = fmt.Errorf("batch: call %d: %w", i, err)
-			}
-			items[i] = Item{Started: true, Result: res, Err: err}
-		})
-	}
-	wg.Wait()
+		res, err := d.Run(ctx, i, calls[i])
+		if err != nil {
+			res.Outcome = transcript.OutcomeFailed
+			err = fmt.Errorf("batch: call %d: %w", i, err)
+		}
+		items[i] = Item{Started: true, Result: res, Err: err}
+	})
 	return items, nil
-}
-
-// conflicts says whether two calls must not run at the same time.
-func conflicts(a, b Plan) bool {
-	if exclusive(a) || exclusive(b) {
-		return true
-	}
-	return overlap(a.WritePaths, b.WritePaths) || overlap(a.WritePaths, b.ReadPaths) || overlap(a.ReadPaths, b.WritePaths)
-}
-
-func exclusive(p Plan) bool {
-	return p.Effect == tools.Executes || (p.Effect == tools.Writes && len(p.WritePaths) == 0)
-}
-
-func overlap(a, b []string) bool {
-	for _, p := range a {
-		if slices.Contains(b, p) {
-			return true
-		}
-	}
-	return false
 }
 
 // Outcome is the outcome of the batch as one call: completed when every

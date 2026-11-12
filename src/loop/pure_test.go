@@ -114,12 +114,12 @@ func TestStopForCopiesWhatTheProviderSaid(t *testing.T) {
 }
 
 func TestConflicts(t *testing.T) {
-	read := func(paths ...string) loop.Job { return loop.Job{Effect: tools.ReadOnly, ReadPaths: paths} }
-	write := func(paths ...string) loop.Job { return loop.Job{Effect: tools.Writes, WritePaths: paths} }
-	exec := loop.Job{Effect: tools.Executes}
+	read := func(paths ...string) tools.Job { return tools.Job{Effect: tools.ReadOnly, ReadPaths: paths} }
+	write := func(paths ...string) tools.Job { return tools.Job{Effect: tools.Writes, WritePaths: paths} }
+	exec := tools.Job{Effect: tools.Executes}
 	for _, tc := range []struct {
 		name string
-		a, b loop.Job
+		a, b tools.Job
 		want bool
 	}{
 		{"two reads of one file", read("/a"), read("/a"), false},
@@ -133,8 +133,8 @@ func TestConflicts(t *testing.T) {
 		{"two commands", exec, exec, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, loop.Conflicts(tc.a, tc.b))
-			assert.Equal(t, tc.want, loop.Conflicts(tc.b, tc.a))
+			assert.Equal(t, tc.want, tools.Conflicts(tc.a, tc.b))
+			assert.Equal(t, tc.want, tools.Conflicts(tc.b, tc.a))
 		})
 	}
 }

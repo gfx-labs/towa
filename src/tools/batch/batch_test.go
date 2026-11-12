@@ -25,18 +25,10 @@ import (
 type session struct {
 	cfg config.Tools
 	env tools.Env
-	// meet is how many read calls must be running at once before any of
-	// them returns.
-	meet    int
-	arrived chan struct{}
-	// planReads makes the plan of a read name the path it reads.
-	planReads bool
 }
 
 type arg struct {
 	Path    string `json:"path"`
-	Old     string `json:"old"`
-	New     string `json:"new"`
 	Command string `json:"command"`
 }
 
@@ -46,27 +38,16 @@ func newSession(t *testing.T) *session {
 	require.NoError(t, err)
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	return &session{cfg: loaded.Config.Tools, env: tools.Env{Cwd: dir}, arrived: make(chan struct{}, 16)}
+	return &session{cfg: loaded.Config.Tools, env: tools.Env{Cwd: dir}}
 }
 
 func (s *session) dispatcher() batch.Dispatcher {
 	roots := fsops.RootsOf(s.env, s.cfg.Files)
 	return batch.Dispatcher{
 		Plan: func(_ int, call batch.Call) (batch.Plan, error) {
-			var a arg
-			if err := json.Unmarshal(call.Input, &a); err != nil {
-				return batch.Plan{}, err
-			}
 			switch call.Name {
 			case "read":
-				if !s.planReads {
-					return batch.Plan{Effect: tools.ReadOnly}, nil
-				}
-				path, err := roots.Resolve(a.Path)
-				return batch.Plan{Effect: tools.ReadOnly, ReadPaths: []string{path}}, err
-			case "edit":
-				path, err := roots.Resolve(a.Path)
-				return batch.Plan{Effect: tools.Writes, WritePaths: []string{path}}, err
+				return batch.Plan{Effect: tools.ReadOnly}, nil
 			case "shell":
 				return batch.Plan{Effect: tools.Executes}, nil
 			default:
@@ -80,29 +61,11 @@ func (s *session) dispatcher() batch.Dispatcher {
 			}
 			switch call.Name {
 			case "read":
-				// Only the test that sets meet counts arrivals: the channel
-				// is never emptied.
-				if s.meet > 0 {
-					s.arrived <- struct{}{}
-				}
-				for len(s.arrived) < s.meet {
-					select {
-					case <-ctx.Done():
-						return tools.Result{}, ctx.Err()
-					case <-time.After(time.Millisecond):
-					}
-				}
 				res, err := fsops.Read(ctx, roots, s.cfg.Files, fsops.ReadInput{Path: a.Path})
 				if err != nil {
 					return tools.Result{}, err
 				}
 				return tools.Result{Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: res.Text}}}, nil
-			case "edit":
-				_, err := fsops.ApplyEdits(ctx, roots, s.cfg.Files, fsops.EditInput{Path: a.Path, Edits: []fsops.Edit{{Old: a.Old, New: a.New}}})
-				if err != nil {
-					return tools.Result{}, err
-				}
-				return tools.Result{Outcome: transcript.OutcomeCompleted}, nil
 			default:
 				res, err := shell.Run(ctx, s.env, s.cfg, shell.Input{Command: a.Command})
 				if err != nil {
@@ -127,95 +90,9 @@ func (s *session) put(t *testing.T, name, body string) {
 	require.NoError(t, os.WriteFile(filepath.Join(s.env.Cwd, name), []byte(body), 0o644))
 }
 
-func (s *session) get(t *testing.T, name string) string {
-	t.Helper()
-	got, err := os.ReadFile(filepath.Join(s.env.Cwd, name))
-	require.NoError(t, err)
-	return string(got)
-}
-
-// Each read waits until all three are running. Run one after the other,
-// they would wait until the deadline.
-func TestReadOnlyCallsRunAtTheSameTime(t *testing.T) {
-	s := newSession(t)
-	s.meet = 3
-	s.put(t, "a.txt", "a\n")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	items, err := batch.Run(ctx, s.cfg.Batch, s.dispatcher(), []batch.Call{
-		call("read", arg{Path: "a.txt"}), call("read", arg{Path: "a.txt"}), call("read", arg{Path: "a.txt"}),
-	})
-	require.NoError(t, err)
-	for _, item := range items {
-		require.NoError(t, item.Err)
-		require.Equal(t, "a\n", item.Result.Parts[0].Text)
-	}
-	require.Equal(t, transcript.OutcomeCompleted, batch.Outcome(items))
-}
-
-// The edits to one file build on each other, so they only all succeed when
-// they run in the order given. Run many times, any other order would show.
-func TestWritesToOnePathRunInOrder(t *testing.T) {
-	s := newSession(t)
-	for range 20 {
-		s.put(t, "chain.txt", "v0\n")
-		s.put(t, "other.txt", "x\n")
-		items, err := batch.Run(context.Background(), s.cfg.Batch, s.dispatcher(), []batch.Call{
-			call("edit", arg{Path: "chain.txt", Old: "v0", New: "v1"}),
-			call("edit", arg{Path: "other.txt", Old: "x", New: "y"}),
-			call("edit", arg{Path: "chain.txt", Old: "v1", New: "v2"}),
-			call("edit", arg{Path: "./chain.txt", Old: "v2", New: "v3"}),
-		})
-		require.NoError(t, err)
-		for i, item := range items {
-			require.NoError(t, item.Err, i)
-		}
-		require.Equal(t, "v3\n", s.get(t, "chain.txt"))
-		require.Equal(t, "y\n", s.get(t, "other.txt"))
-	}
-}
-
-// A read between two edits of its file must see the first edit whole and
-// none of the second. Without its path in the plan the read would start at
-// once, beside the first edit.
-func TestAReadWaitsForTheWriteBeforeIt(t *testing.T) {
-	s := newSession(t)
-	s.planReads = true
-	for range 20 {
-		s.put(t, "f.txt", "v0\n")
-		items, err := batch.Run(context.Background(), s.cfg.Batch, s.dispatcher(), []batch.Call{
-			call("edit", arg{Path: "f.txt", Old: "v0", New: "v1"}),
-			call("read", arg{Path: "f.txt"}),
-			call("edit", arg{Path: "f.txt", Old: "v1", New: "v2"}),
-		})
-		require.NoError(t, err)
-		for i, item := range items {
-			require.NoError(t, item.Err, i)
-		}
-		require.Equal(t, "v1\n", items[1].Result.Parts[0].Text)
-		require.Equal(t, "v2\n", s.get(t, "f.txt"))
-	}
-}
-
-// Each command fails if another is running, and the edit between them only
-// applies once the first command has written the file it changes.
-func TestACommandRunsAloneAndInItsPlace(t *testing.T) {
-	s := newSession(t)
-	alone := "mkdir lock && sleep 0.05 && rmdir lock"
-	items, err := batch.Run(context.Background(), s.cfg.Batch, s.dispatcher(), []batch.Call{
-		call("shell", arg{Command: alone + " && echo made > made.txt"}),
-		call("edit", arg{Path: "made.txt", Old: "made", New: "edited"}),
-		call("shell", arg{Command: alone + " && cat made.txt"}),
-		call("shell", arg{Command: alone}),
-	})
-	require.NoError(t, err)
-	for i, item := range items {
-		require.NoError(t, item.Err, i)
-		require.Equal(t, transcript.OutcomeCompleted, item.Result.Outcome, i)
-	}
-	require.Equal(t, "edited\n", items[2].Result.Parts[0].Text)
-}
-
+// The scheduling order is the loop's rule and is tested there
+// (TestConflicts, TestCallsRunTogetherUnlessTheyConflict). These tests cover
+// what Run adds: a failed call, a cancel and the limits.
 func TestOneFailedCallDoesNotStopTheOthers(t *testing.T) {
 	s := newSession(t)
 	s.put(t, "a.txt", "a\n")

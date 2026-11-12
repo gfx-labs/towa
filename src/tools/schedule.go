@@ -1,15 +1,13 @@
-package loop
+package tools
 
 import (
 	"slices"
 	"sync"
-
-	"github.com/gfx-labs/acpharness/src/tools"
 )
 
 // Job is what the scheduler needs to know about one tool call.
 type Job struct {
-	Effect tools.Effect
+	Effect Effect
 	// WritePaths are the absolute paths the call will write.
 	WritePaths []string
 	// ReadPaths are the absolute paths the call is known to read.
@@ -25,7 +23,8 @@ type Job struct {
 //   - a call that reads a path does not overlap one that writes it, so that
 //     it sees the file either before or after the write and never half of it.
 //
-// Calls that only read never conflict.
+// Calls that only read never conflict. Paths are compared as text, so the
+// caller gives them in one form.
 func Conflicts(a, b Job) bool {
 	if exclusive(a) || exclusive(b) {
 		return true
@@ -34,7 +33,7 @@ func Conflicts(a, b Job) bool {
 }
 
 func exclusive(j Job) bool {
-	return j.Effect == tools.Executes || (j.Effect == tools.Writes && len(j.WritePaths) == 0)
+	return j.Effect == Executes || (j.Effect == Writes && len(j.WritePaths) == 0)
 }
 
 func overlap(a, b []string) bool {
@@ -61,11 +60,11 @@ func Waits(jobs []Job) [][]int {
 	return waits
 }
 
-// runAll calls run once for every job, each on its own goroutine, starting
+// RunAll calls run once for every job, each on its own goroutine, starting
 // a job when the jobs it waits for have returned. It returns when every run
 // has returned. run decides for itself what a cancelled context means: a
 // job is never skipped here, so each one can record its outcome.
-func runAll(waits [][]int, run func(i int)) {
+func RunAll(waits [][]int, run func(i int)) {
 	done := make([]chan struct{}, len(waits))
 	for i := range done {
 		done[i] = make(chan struct{})
