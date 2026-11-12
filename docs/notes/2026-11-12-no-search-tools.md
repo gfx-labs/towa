@@ -80,6 +80,18 @@ After those runs the `edit` tool got a second rule, jcode's with towa's tool nam
 - The rule about reading through `bash` was kept all along ("Use read to examine files instead of cat or sed.") and the 4634 run still read with `sed` and `cat`, so a rule is not sufficient by itself.
 - One run of PR 4634 on the build with the rule (`ae5d4d5`, which also has the shorter opening of `eb665eb`): 11 requests and 344k tokens, with one `apply_patch` call, no edit by script, and 2 reads through `sed` or `head`. It again changed only the call site, this time to an `aria-label` reading "Toggle randomize", so the merged PR's test fails and the name differs from the ticket's "Randomize". The run said so. One run, with two changes since `78b4593`, so neither the lower count nor the choice of fix is attributed.
 
+## More rules for the edit tool
+
+pi gives its edit tool four rule lines and towa had two. Three were added, each stating something the tool's code does:
+
+- "Read a file with read before the first edit to it. Output of cat or sed in bash does not count as a read." `edit` and `write` refuse a file the session's read tracker has not seen, and only the `read` tool records one. In the 4634 runs the model read files with `sed` and `cat`, after which an `edit` call would have been refused.
+- "A file stays editable after your own edits. Read it again if a command, such as a formatter, changed it." The tracker remembers the content after a successful `edit`, `write` or `apply_patch`, and refuses when the file's fingerprint differs from the remembered one. The trade repository's workflow runs a formatter after every change.
+- "Keep old_string as small as possible while still being unique in the file. If it occurs more than once, add surrounding lines or set replace_all." The first sentence is pi's. The second is what the tool's error for a repeated match already says.
+
+pi's other two lines are about several replacements in one call (`edits[]`), which towa's `edit` does not take. `apply_patch` covers that case and has its own rule.
+
+The system prompt in a captured request grows from 65,489 to 65,852 characters. Not measured on a task.
+
 ## Not measured
 
 - Whether the all-`bash` run on 4634 repeats, and whether the rule "Use bash for file operations" is what pulls reads and edits away from their tools.
