@@ -111,6 +111,12 @@ func TestModeIsSwitchedBySetModeAndBySetConfigOption(t *testing.T) {
 		require.Equal(t, acp.SessionModeId("ask"), updates[0].Update.CurrentModeUpdate.CurrentModeId)
 		require.Equal(t, session.ModeAsk, updates[1].Update.ConfigOptionUpdate.ConfigOptions[0].Select.CurrentValue)
 
+		// Setting the mode the session already has sends nothing.
+		w.Send(request(`7`, "session/set_mode", `{"sessionId":"`+id+`","modeId":"ask"}`))
+		got, others = w.Await(`7`)
+		require.Nil(t, got[`7`].Error)
+		require.Empty(t, others)
+
 		// set_config_option answers with the options, so only the mode
 		// update is sent.
 		w.Send(request(`2`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"mode","value":"auto"}`))
@@ -129,9 +135,10 @@ func TestModeIsSwitchedBySetModeAndBySetConfigOption(t *testing.T) {
 			request(`4`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"opus"}`),
 			request(`5`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"mode","type":"boolean","value":true}`),
 			request(`6`, "session/set_mode", `{"sessionId":"nope","modeId":"ask"}`),
+			request(`8`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"mode","value":"yolo"}`),
 		)
-		got, others = w.Await(`3`, `4`, `5`, `6`)
-		for _, n := range []string{`3`, `4`, `5`} {
+		got, others = w.Await(`3`, `4`, `5`, `6`, `8`)
+		for _, n := range []string{`3`, `4`, `5`, `8`} {
 			require.Equal(t, acp.NewInvalidParams(nil).Code, got[n].Error.Code, n)
 		}
 		require.Equal(t, acp.NewResourceNotFound(nil).Code, got[`6`].Error.Code)

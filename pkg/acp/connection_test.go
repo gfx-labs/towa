@@ -275,6 +275,18 @@ func TestErrorResponses(t *testing.T) {
 			wantCode: acp.NewInvalidParams(nil).Code,
 		},
 		{
+			name:     "params member of the wrong type",
+			line:     `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"s","prompt":"not a list"}}`,
+			wantID:   `2`,
+			wantCode: acp.NewInvalidParams(nil).Code,
+		},
+		{
+			name:     "params that are not an object",
+			line:     `{"jsonrpc":"2.0","id":3,"method":"session/prompt","params":["not","an","object"]}`,
+			wantID:   `3`,
+			wantCode: acp.NewInvalidParams(nil).Code,
+		},
+		{
 			name:     "handler returns a plain error",
 			line:     `{"jsonrpc":"2.0","id":8,"method":"initialize","params":{"protocolVersion":1}}`,
 			wantID:   `8`,

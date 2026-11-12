@@ -3,7 +3,6 @@ package conformance
 import (
 	"context"
 	sdkjson "encoding/json" //nolint:depguard // the SDK's types are coded with the SDK's encoder
-	"encoding/json/jsontext"
 	"os"
 	"strings"
 	"testing"
@@ -146,116 +145,6 @@ func TestNewSession(t *testing.T) {
 	require.Equal(t, []string{"available_commands_update", "available_commands_update"}, kinds(c.take()))
 }
 
-// session/cancel is a notification. Without a model there is no running
-// turn to interrupt, so this covers idle cancellation and continued serving.
-func TestCancel(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	a := start(t)
-	conn, c := a.connect()
-	initialize(ctx, t, conn)
-	session := newSession(ctx, t, conn)
-
-	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: session.SessionId}))
-	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: unknownSession}))
-
-	_, err := conn.Prompt(ctx, acp.PromptRequest{
-		SessionId: session.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock("after the cancel")},
-	})
-	modelSelectionError(t, err)
-	require.Equal(t, []string{"available_commands_update"}, kinds(c.take()))
-	// A notification has no answer, whatever its session.
-	answers := 0
-	for _, m := range a.messages() {
-		if m.Method == "" {
-			answers++
-		}
-	}
-	require.Equal(t, 3, answers, "initialize, new session and prompt only")
-}
-
-func TestSetMode(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	a := start(t)
-	conn, c := a.connect()
-	initialize(ctx, t, conn)
-	session := newSession(ctx, t, conn)
-
-	_, err := conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "ask"})
-	require.NoError(t, err)
-	updates := c.take()
-	// The mode is one value with two names, so both updates are sent.
-	require.ElementsMatch(t,
-		[]string{"available_commands_update", "current_mode_update", "config_option_update"}, kinds(updates))
-	for _, n := range updates {
-		switch u := n.Update; {
-		case u.CurrentModeUpdate != nil:
-			require.Equal(t, acp.SessionModeId("ask"), u.CurrentModeUpdate.CurrentModeId)
-		case u.ConfigOptionUpdate != nil:
-			require.NotEmpty(t, u.ConfigOptionUpdate.ConfigOptions)
-			for _, option := range u.ConfigOptionUpdate.ConfigOptions {
-				require.NotNil(t, option.Select)
-				if option.Select.Id == "mode" {
-					require.Equal(t, acp.SessionConfigValueId("ask"), option.Select.CurrentValue)
-				}
-			}
-		}
-	}
-
-	// Setting the mode the session already has sends nothing.
-	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "ask"})
-	require.NoError(t, err)
-	require.Empty(t, kinds(c.take()))
-
-	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: session.SessionId, ModeId: "no-such-mode"})
-	require.Equal(t, -32602, requestError(t, err).Code)
-	_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: unknownSession, ModeId: "ask"})
-	require.Equal(t, -32002, requestError(t, err).Code)
-}
-
-func TestSetConfigOption(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	a := start(t)
-	conn, c := a.connect()
-	initialize(ctx, t, conn)
-	session := newSession(ctx, t, conn)
-
-	set := func(configID, value string) (acp.SetSessionConfigOptionResponse, error) {
-		return conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
-			ValueId: &acp.SetSessionConfigOptionValueId{
-				SessionId: session.SessionId,
-				ConfigId:  acp.SessionConfigId(configID),
-				Value:     acp.SessionConfigValueId(value),
-			},
-		})
-	}
-
-	resp, err := set("mode", "ask")
-	require.NoError(t, err)
-	require.Empty(t, notDecoded(t, a.lastResult(), resp), "raw result: %s", a.lastResult())
-	// The response carries every option with its new value.
-	found := false
-	for _, option := range resp.ConfigOptions {
-		require.NotNil(t, option.Select)
-		if option.Select.Id == "mode" {
-			found = true
-			require.Equal(t, acp.SessionConfigValueId("ask"), option.Select.CurrentValue)
-		}
-	}
-	require.True(t, found)
-	// The mode changed, so its own update is sent. The options are in the
-	// response and are not sent a second time.
-	require.ElementsMatch(t, []string{"available_commands_update", "current_mode_update"}, kinds(c.take()))
-
-	_, err = set("mode", "no-such-value")
-	require.Equal(t, -32602, requestError(t, err).Code)
-	_, err = set("no-such-option", "ask")
-	require.Equal(t, -32602, requestError(t, err).Code)
-}
-
 // Methods the agent does not implement answer Method not found: an
 // unstable provider method and an extension method nobody registered.
 func TestMethodNotFound(t *testing.T) {
@@ -285,37 +174,6 @@ func TestMethodNotFound(t *testing.T) {
 	require.Equal(t, 4, answers, "initialize, two unknown methods and session/new")
 }
 
-// Params that are not what the method takes answer Invalid params.
-func TestInvalidParams(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	a := start(t)
-	conn, _ := a.connect()
-	initialize(ctx, t, conn)
-
-	// What the SDK sends for a request it was given without its required
-	// members: {"cwd":"","mcpServers":null}.
-	_, err := conn.NewSession(ctx, acp.NewSessionRequest{})
-	require.Equal(t, -32602, requestError(t, err).Code)
-
-	// A member of the wrong JSON type, and params that are not an object.
-	// The SDK's typed calls cannot send these, so they go through its
-	// connection as an extension call would, under the real method name.
-	b := start(t)
-	raw := acp.NewConnection(nil, b.writer(), b.stdout)
-	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodInitialize,
-		map[string]any{"protocolVersion": acp.ProtocolVersionNumber})
-	require.NoError(t, err)
-	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodSessionNew,
-		map[string]any{"cwd": 5, "mcpServers": []any{}})
-	require.Equal(t, -32602, requestError(t, err).Code)
-	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodSessionNew, []any{"not", "an", "object"})
-	require.Equal(t, -32602, requestError(t, err).Code)
-	_, err = acp.SendRequest[jsontext.Value](raw, ctx, acp.AgentMethodSessionPrompt,
-		map[string]any{"sessionId": "x", "prompt": "not a list"})
-	require.Equal(t, -32602, requestError(t, err).Code)
-}
-
 // TestWire compares everything the agent writes in one conversation with
 // the file recorded from it. It is the check for a change of encoder: v1
 // and v2 differ in which empty members are left out and in how a nil list
@@ -331,6 +189,11 @@ func TestWire(t *testing.T) {
 	conn, _ := a.connect()
 	initialize(ctx, t, conn)
 	session := newSession(ctx, t, conn)
+	// A cancel is a notification: with no turn running and for a session
+	// nobody made it is not answered, which the line count below shows, and
+	// the connection goes on.
+	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: session.SessionId}))
+	require.NoError(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: unknownSession}))
 	_, err := conn.Prompt(ctx, acp.PromptRequest{
 		SessionId: session.SessionId,
 		Prompt:    []acp.ContentBlock{acp.TextBlock("hello")},

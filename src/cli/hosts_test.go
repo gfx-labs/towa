@@ -23,10 +23,20 @@ providers:
   - id: openrouter
     kind: chat
     base_url: https://openrouter.ai/api/v1
+  - id: local
+    kind: responses
+    base_url: "http://[::1]:8080/v1"
 accounts:
   - id: work
     provider: claude
     kind: oauth
+  - id: held
+    provider: codex
+    kind: proxied_oauth
+  - id: codex-key
+    provider: codex
+    kind: api_key
+    api_key_env: OPENAI_API_KEY
 jev:
   route: custom
   model: jev-local
@@ -42,6 +52,9 @@ mcp:
     - name: moved
       transport: streamable_http
       url: https://moved.example/mcp
+    - name: files
+      transport: stdio
+      command: mcp-files
 `), 0o600))
 	flow := auth.ClaudeFlow()
 	flow.AuthorizeURL, flow.TokenURL = "https://login.example/authorize", "https://login.example/token"
@@ -54,7 +67,7 @@ mcp:
 	require.NoError(t, err)
 	store := auth.NewStore(stateDir)
 	require.NoError(t, store.SaveMCP("docs", auth.MCPTokens{
-		ServerURL: "http://mcp.internal:9000/sse", AccessToken: "a", RefreshToken: "r", TokenEndpoint: "https://sso.example/oauth/token",
+		ServerURL: "http://mcp.internal:9000/sse", AccessToken: "a", RefreshToken: "r", TokenEndpoint: "https://sso.example:8443/oauth/token",
 	}))
 	require.NoError(t, store.SaveMCP("moved", auth.MCPTokens{
 		ServerURL: "https://old.example/mcp", AccessToken: "a", RefreshToken: "r", TokenEndpoint: "https://old-sso.example/token",
@@ -63,27 +76,41 @@ mcp:
 	var stdout, stderr bytes.Buffer
 	h := Host{
 		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
-		Environ: []string{"OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example:4318", "XDG_STATE_HOME=" + state},
+		Environ: []string{
+			"OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example:4318",
+			"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=https://metrics.example/v1/metrics",
+			"XDG_STATE_HOME=" + state,
+		},
 	}
 	env := builtInEnv()
 	env.hosts = hostsEnv{
-		flows:   map[string]auth.Flow{"claude": flow},
-		builtIn: hosts.BuiltIn{Claude: "https://claude-api.example"},
+		flows: map[string]auth.Flow{"claude": flow},
+		builtIn: hosts.BuiltIn{
+			Claude: "https://claude-api.example", CodexAPIKey: "https://codex-api.example/v1", CodexOAuth: "https://codex-login-api.example/backend",
+		},
 	}
 	// A config key is a flag, before or after the command.
 	require.NoError(t, run(t.Context(), []string{"acpharness", "--config", file, "--telemetry.otel", "hosts", "--websearch.enabled=false"}, h, env))
 
 	// The authorize and token endpoints share a host, which is one line.
+	// The proxied codex account goes to the login endpoint and lists no
+	// flow, since its proxy refreshes the token. The API key for the same
+	// provider goes to another endpoint. Traces and logs fall back to the
+	// general OTLP variable, and metrics have their own.
 	require.Equal(t, strings.Join([]string{
+		"[::1]:8080\tproviders[1].base_url",
 		"claude-api.example:443\taccounts[0].provider",
+		"codex-api.example:443\taccounts[2].provider",
+		"codex-login-api.example:443\taccounts[1].provider",
 		"embed.internal:8080\tembeddings.base_url",
 		"jev.internal.example:443\tjev.base_url",
 		"login.example:443\taccounts[0].provider",
 		"mcp.internal:9000\tmcp.servers[0].url",
+		"metrics.example:443\ttelemetry.otel:OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
 		"moved.example:443\tmcp.servers[1].url",
 		"openrouter.ai:443\tproviders[0].base_url",
 		"otlp.example:4318\ttelemetry.otel:OTEL_EXPORTER_OTLP_ENDPOINT",
-		"sso.example:443\tmcp.servers[0].oauth",
+		"sso.example:8443\tmcp.servers[0].oauth",
 		"",
 	}, "\n"), stdout.String())
 	for line := range strings.Lines(stderr.String()) {
@@ -91,6 +118,7 @@ mcp:
 	}
 	require.Contains(t, stderr.String(), `"moved" has no stored login`)
 	require.NotContains(t, stderr.String(), `"docs" has no stored login`)
+	require.Contains(t, stderr.String(), `"files" is a stdio server`)
 	// Webfetch is said to reach any host, and is not in the list.
 	require.Contains(t, stderr.String(), "webfetch: the tool fetches any URL the model names, so it reaches any host")
 	require.NotContains(t, stdout.String(), "webfetch")

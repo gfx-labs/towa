@@ -385,42 +385,6 @@ func (p *process) exit() {
 	require.NoError(p.t, p.cmd.Wait())
 }
 
-// The claim itself: a process runs a session and exits, and a new process
-// that is given the same directory loads the session and carries on.
-func TestSessionMovesToANewProcess(t *testing.T) {
-	root := t.TempDir()
-
-	old := startProcess(t, root)
-	old.call(`"init"`, initialize)
-	made, _ := old.call(`"new"`, newSession)
-	var created acp.NewSessionResponse
-	require.NoError(t, json.Unmarshal(made.Result, &created))
-	id := string(created.SessionId)
-	answer, sent := old.call(`1`, prompt(`1`, id, "first"))
-	require.JSONEq(t, endTurn, string(answer.Result))
-	live, _ := shown(t, sent)
-	require.Len(t, live, 4)
-	titled, _ := old.call(`2`, request(`2`, "session/set_title", `{"sessionId":"`+id+`","title":"Moved"}`))
-	require.Nil(t, titled.Error)
-	old.exit()
-
-	fresh := startProcess(t, root)
-	fresh.call(`"init"`, initialize)
-	status, _ := fresh.call(`1`, request(`1`, "session/status", `{"sessionId":"`+id+`"}`))
-	require.JSONEq(t, `{"status":"saved"}`, string(status.Result))
-	loaded, sent := fresh.call(`2`, loadRequest(`2`, id, "/work"))
-	require.Nil(t, loaded.Error)
-	replayed, rest := shown(t, sent)
-	require.Equal(t, append([]string{userChunk(t, "first")}, live...), replayed)
-	require.Equal(t, "Moved", *rest[0].SessionInfoUpdate.Title)
-
-	answer, sent = fresh.call(`3`, prompt(`3`, id, "second"))
-	require.JSONEq(t, endTurn, string(answer.Result))
-	continued, _ := shown(t, sent)
-	require.Len(t, continued, 4)
-	fresh.exit()
-}
-
 func TestTornSessionMovesToANewProcess(t *testing.T) {
 	for _, method := range []string{"session/load", "session/resume"} {
 		t.Run(method, func(t *testing.T) {
