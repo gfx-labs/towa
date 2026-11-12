@@ -238,7 +238,12 @@ func (c *Client) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 			return
 		}
 		p := &parser{provider: ep.provider, model: req.Model, account: req.Credential.Account}
+		// One stream event can produce several provider events, and the
+		// range must not be called again once it has returned false.
 		emit := func(ev provider.Event) bool {
+			if p.stopped {
+				return false
+			}
 			if !yield(ev, nil) {
 				p.stopped = true
 			}

@@ -347,3 +347,38 @@ func recordedSettings(t *testing.T, ex *providertest.Exchange) (model, effort st
 	require.NotEmpty(t, body.Model, "the recorded request names no model")
 	return body.Model, body.Reasoning.Effort
 }
+
+// A consumer may stop at any event, including one of several that a single
+// stream event produces, such as the usage before the stop.
+func TestStoppingAtAnyEventEndsTheStream(t *testing.T) {
+	path := filepath.Join("testdata", "api_text.json")
+	ex, err := providertest.Load(path)
+	require.NoError(t, err)
+	model, effort := recordedSettings(t, ex)
+	server := providertest.Replay(t, path)
+	client, err := openai.New(openai.Config{HTTPClient: httpclient.New(), BaseURL: server.URL + "/v1"})
+	require.NoError(t, err)
+	s := scenarios()[1]
+	require.Equal(t, "api_text", s.name)
+	s.effort = effort
+	req := s.request(model, auth.Credential{Account: accountInTest, Scheme: auth.SchemeAPIKey, Token: providertest.Redacted})
+
+	var total int
+	for _, err := range client.Stream(t.Context(), req) {
+		require.NoError(t, err)
+		total++
+	}
+	for stop := 1; stop <= total; stop++ {
+		seen := 0
+		require.NotPanics(t, func() {
+			for _, err := range client.Stream(t.Context(), req) {
+				require.NoError(t, err)
+				seen++
+				if seen == stop {
+					break
+				}
+			}
+		})
+		require.Equal(t, stop, seen)
+	}
+}
