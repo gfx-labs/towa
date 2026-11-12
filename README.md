@@ -1,6 +1,6 @@
 # towa
 
-towa is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode and https://github.com/vercel-labs/fx, designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
+towa ([insp.](https://boogiepop.fandom.com/wiki/Towa_Organization)) is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode and https://github.com/vercel-labs/fx, designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
 
 there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
