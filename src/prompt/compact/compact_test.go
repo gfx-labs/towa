@@ -21,8 +21,8 @@ func TestBoundedSummaryRequest(t *testing.T) {
 			old := strings.Repeat("earlier 記録\n", 3000)
 			recent := "Most recent instruction: preserve the output file."
 			entries := session(
-				transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: old}}}},
-				transcript.Item{Text: &transcript.Text{Text: recent}},
+				transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: old}}}},
+				transcript.Item{Body: transcript.Text{Text: recent}},
 			)
 			in := SummaryInput{Prompt: prompt, Model: "summary", MaxOutputTokens: 1000, Replaced: entries}
 			const window = 6000
@@ -31,11 +31,11 @@ func TestBoundedSummaryRequest(t *testing.T) {
 			require.LessOrEqual(t, report.InputTokens+report.ReservedTokens, int64(window))
 			require.NotEmpty(t, report.Omissions)
 			require.Positive(t, report.Omissions[len(report.Omissions)-1].Bytes)
-			text := req.Items[0].User.Parts[0].Text
+			text := req.Items[0].Body.(transcript.User).Parts[0].Text
 			require.True(t, utf8.ValidString(text))
 			require.Contains(t, text, recent)
 			require.Contains(t, text, "Oldest conversation text omitted")
-			require.Equal(t, old, entries[0].Item.User.Parts[0].Text)
+			require.Equal(t, old, entries[0].Item.Body.(transcript.User).Parts[0].Text)
 			in.Previous = strings.Repeat("previous summary ", 3000)
 			_, _, err = BoundedSummaryRequest(in, window)
 			require.Error(t, err)
@@ -209,17 +209,17 @@ func session(items ...transcript.Item) []transcript.Entry {
 }
 
 func user(text string) transcript.Item {
-	return transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}
+	return transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}}
 }
 
-func text(s string) transcript.Item { return transcript.Item{Text: &transcript.Text{Text: s}} }
+func text(s string) transcript.Item { return transcript.Item{Body: transcript.Text{Text: s}} }
 
 func call(id, name, input string) transcript.Item {
-	return transcript.Item{ToolCall: &transcript.ToolCall{ID: id, Name: name, Input: jsontext.Value(input)}}
+	return transcript.Item{Body: transcript.ToolCall{ID: id, Name: name, Input: jsontext.Value(input)}}
 }
 
 func result(id, name, out string) transcript.Item {
-	return transcript.Item{ToolResult: &transcript.ToolResult{
+	return transcript.Item{Body: transcript.ToolResult{
 		CallID: id, Name: name, Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: out}},
 	}}
 }
@@ -248,7 +248,7 @@ func TestCutKeepsACallWithItsResult(t *testing.T) {
 // compaction is the entry a finished compaction appends.
 func compaction(parent uuid.UUID, summary string, firstKept uuid.UUID, mode string) transcript.Entry {
 	return transcript.NewEntry(parent, time.Unix(1, 0), transcript.Item{
-		Compaction: &transcript.Compaction{Summary: summary, FirstKept: firstKept, Mode: mode},
+		Body: transcript.Compaction{Summary: summary, FirstKept: firstKept, Mode: mode},
 	})
 }
 
@@ -260,7 +260,7 @@ func TestItemsAfterCompactions(t *testing.T) {
 	items, err := Items(entries, "anthropic")
 	require.NoError(t, err)
 	require.Len(t, items, 6)
-	require.Contains(t, items[0].User.Parts[0].Text, "summary of first")
+	require.Contains(t, items[0].Body.(transcript.User).Parts[0].Text, "summary of first")
 	require.Equal(t, []transcript.Item{user("second"), text("two"), user("third"), text("three"), user("fourth")}, items[1:])
 
 	// A later compaction replaces the earlier summary too.
@@ -269,8 +269,8 @@ func TestItemsAfterCompactions(t *testing.T) {
 	items, err = Items(entries, "anthropic")
 	require.NoError(t, err)
 	require.Len(t, items, 3)
-	require.Contains(t, items[0].User.Parts[0].Text, "summary of both")
-	require.NotContains(t, items[0].User.Parts[0].Text, "summary of first")
+	require.Contains(t, items[0].Body.(transcript.User).Parts[0].Text, "summary of both")
+	require.NotContains(t, items[0].Body.(transcript.User).Parts[0].Text, "summary of first")
 	require.Equal(t, []transcript.Item{text("three"), user("fourth")}, items[1:])
 	require.Equal(t, before, entries[:len(before)], "every earlier entry is still there, unchanged")
 
@@ -284,7 +284,7 @@ func TestItemsAfterCompactions(t *testing.T) {
 func TestNativeCompactionGoesOnlyToItsProvider(t *testing.T) {
 	entries := session(user("first"), text("one"), user("second"))
 	origin := transcript.Origin{Model: "model", Account: "account"}
-	native := transcript.Item{Native: &transcript.Native{Kind: "compaction"}, Provider: "openai", Origin: &origin, Opaque: jsontext.Value(`{"encrypted_content":"x"}`)}
+	native := transcript.Item{Body: transcript.Native{Kind: "compaction"}, Provider: "openai", Origin: &origin, Opaque: jsontext.Value(`{"encrypted_content":"x"}`)}
 	item, err := NativeItem(NativeResult{Items: []transcript.Item{native}}, "openai", entries[2].ID)
 	require.NoError(t, err)
 	entry := transcript.NewEntry(entries[2].ID, time.Unix(1, 0), item)
@@ -311,7 +311,7 @@ func TestSummaryRequest(t *testing.T) {
 	replaced := session(
 		user("fix the parser"), text("looking"), call("c1", "read", `{"path":"p.go","limit":20}`),
 		result("c1", "read", strings.Repeat("x", 3000)), text("fixed"),
-		transcript.Item{Usage: &transcript.Usage{Model: "m"}},
+		transcript.Item{Body: transcript.Usage{Model: "m"}},
 	)
 	for _, c := range []struct {
 		prompt, previous string
@@ -332,7 +332,7 @@ func TestSummaryRequest(t *testing.T) {
 		require.Empty(t, req.Tools)
 		require.Equal(t, []provider.SystemBlock{{Name: "compaction", Text: c.system}}, req.System)
 		require.Len(t, req.Items, 1, "the conversation is one message of text, not messages to carry on with")
-		got := req.Items[0].User.Parts[0].Text
+		got := req.Items[0].Body.(transcript.User).Parts[0].Text
 		require.True(t, strings.HasSuffix(got, c.ending), "the request ends with the prompt: %q", got[max(len(got)-200, 0):])
 		require.Equal(t, c.search, strings.Contains(got, searchSentence))
 		require.Equal(t, c.previous != "", strings.Contains(got, "earlier summary"))
@@ -348,7 +348,7 @@ func TestSummaryRequest(t *testing.T) {
 }
 
 func TestSummaryTextRefusesWhatCannotStandForTheEntries(t *testing.T) {
-	summary, err := SummaryText([]transcript.Item{{Thinking: &transcript.Thinking{Text: "hm"}}, text("## Goal\n")}, provider.StopEndTurn)
+	summary, err := SummaryText([]transcript.Item{{Body: transcript.Thinking{Text: "hm"}}, text("## Goal\n")}, provider.StopEndTurn)
 	require.NoError(t, err)
 	require.Equal(t, "## Goal\n", summary)
 

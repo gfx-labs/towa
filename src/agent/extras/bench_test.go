@@ -24,7 +24,7 @@ func BenchmarkConversationSearch(b *testing.B) {
 	var entries []transcript.Entry
 	var prev uuid.UUID
 	for range 10 {
-		e := transcript.NewEntry(prev, now, transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: strings.Repeat("before ", 20) + "needle" + strings.Repeat(" after", 20)}}}})
+		e := transcript.NewEntry(prev, now, transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: strings.Repeat("before ", 20) + "needle" + strings.Repeat(" after", 20)}}}})
 		prev = e.ID
 		entries = append(entries, e)
 	}

@@ -138,24 +138,24 @@ func TestSettle(t *testing.T) {
 
 func TestConversation(t *testing.T) {
 	user := func(text string) transcript.Item {
-		return transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}
+		return transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}}
 	}
 	callItem := func(id string) transcript.Item {
-		return transcript.Item{ToolCall: &transcript.ToolCall{ID: id, Name: "write"}}
+		return transcript.Item{Body: transcript.ToolCall{ID: id, Name: "write"}}
 	}
 	resultItem := func(id string) transcript.Item {
-		return transcript.Item{ToolResult: &transcript.ToolResult{
+		return transcript.Item{Body: transcript.ToolResult{
 			CallID: id, Name: "write", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "wrote it"}},
 		}}
 	}
-	text := transcript.Item{Text: &transcript.Text{Text: "done"}}
+	text := transcript.Item{Body: transcript.Text{Text: "done"}}
 
 	t.Run("an interruption becomes a user message and bookkeeping is left out", func(t *testing.T) {
 		items, repairs, err := loop.Conversation([]transcript.Item{
 			user("go"), callItem("1"), resultItem("1"),
-			{Usage: &transcript.Usage{Model: "m"}},
-			{ModelSwitch: &transcript.ModelSwitch{From: "a", To: "b"}},
-			{Interrupted: &transcript.Interrupted{}},
+			{Body: transcript.Usage{Model: "m"}},
+			{Body: transcript.ModelSwitch{From: "a", To: "b"}},
+			{Body: transcript.Interrupted{}},
 			user("again"), text,
 		}, "[interrupted]")
 		require.NoError(t, err)
@@ -169,48 +169,46 @@ func TestConversation(t *testing.T) {
 		}, "[interrupted]")
 		require.NoError(t, err)
 		require.Len(t, repairs, 1)
-		assert.Equal(t, "2", repairs[0].ToolResult.CallID)
-		assert.Equal(t, transcript.OutcomeUnknown, repairs[0].ToolResult.Outcome)
+		assert.Equal(t, "2", repairs[0].Body.(transcript.ToolResult).CallID)
+		assert.Equal(t, transcript.OutcomeUnknown, repairs[0].Body.(transcript.ToolResult).Outcome)
 		assert.Equal(t, repairs[0], items[len(items)-1], "the model is sent the result that is stored")
 	})
 
 	t.Run("a result stored with nothing in it is sent with a text", func(t *testing.T) {
-		silent := resultItem("1")
-		silent.ToolResult.Parts = []transcript.Part{{Text: ""}}
+		silent := transcript.Item{Body: transcript.ToolResult{CallID: "1", Name: "read", Parts: []transcript.Part{{Text: ""}}, Outcome: transcript.OutcomeCompleted}}
 		items, repairs, err := loop.Conversation([]transcript.Item{user("go"), callItem("1"), silent}, "[interrupted]")
 		require.NoError(t, err)
 		assert.Empty(t, repairs)
-		require.Len(t, items[2].ToolResult.Parts, 1)
-		assert.NotEmpty(t, items[2].ToolResult.Parts[0].Text)
-		assert.Equal(t, []transcript.Part{{Text: ""}}, silent.ToolResult.Parts, "the stored item is not changed")
+		require.Len(t, items[2].Body.(transcript.ToolResult).Parts, 1)
+		assert.NotEmpty(t, items[2].Body.(transcript.ToolResult).Parts[0].Text)
+		assert.Equal(t, []transcript.Part{{Text: ""}}, silent.Body.(transcript.ToolResult).Parts, "the stored item is not changed")
 	})
 
 	t.Run("a user message stored with a part that holds nothing is sent without it", func(t *testing.T) {
-		padded := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: ""}, {Text: "go"}}}}
-		blank := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: ""}}}}
+		padded := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: ""}, {Text: "go"}}}}
+		blank := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: ""}}}}
 		items, repairs, err := loop.Conversation([]transcript.Item{blank, padded, text}, "[interrupted]")
 		require.NoError(t, err)
 		assert.Empty(t, repairs)
 		assert.Equal(t, []transcript.Item{user("go"), text}, items)
-		assert.Len(t, padded.User.Parts, 2, "the stored item is not changed")
+		assert.Len(t, padded.Body.(transcript.User).Parts, 2, "the stored item is not changed")
 	})
 
 	t.Run("an interruption keeps the user messages around it", func(t *testing.T) {
 		before, after := user("go"), user("again")
 		items, repairs, err := loop.Conversation([]transcript.Item{
-			before, {Interrupted: &transcript.Interrupted{}}, after,
+			before, {Body: transcript.Interrupted{}}, after,
 		}, "[interrupted]")
 		require.NoError(t, err)
 		assert.Empty(t, repairs)
 		require.Len(t, items, 3)
 		assert.Equal(t, before, items[0])
 		assert.Equal(t, after, items[2])
-		assert.Equal(t, "[interrupted]", items[1].User.Parts[0].Text)
+		assert.Equal(t, "[interrupted]", items[1].Body.(transcript.User).Parts[0].Text)
 	})
 
 	t.Run("unsupported roles fail before preparing a request", func(t *testing.T) {
-		invalid := user("injected")
-		invalid.User.Role = "assistant"
+		invalid := transcript.Item{Body: transcript.User{Role: "assistant", Parts: []transcript.Part{{Text: "injected"}}}}
 		_, _, err := loop.Conversation([]transcript.Item{invalid}, "[interrupted]")
 		require.Error(t, err)
 	})
@@ -240,13 +238,13 @@ func TestResponseShowsEachPieceOnce(t *testing.T) {
 		}
 	}
 	add(provider.Event{ThinkingDelta: "hm"})
-	add(provider.Event{Item: &transcript.Item{Thinking: &transcript.Thinking{Text: "hm"}}})
+	add(provider.Event{Item: &transcript.Item{Body: transcript.Thinking{Text: "hm"}}})
 	add(provider.Event{TextDelta: "Hel"})
 	add(provider.Event{TextDelta: "lo"})
-	add(provider.Event{Item: &transcript.Item{Text: &transcript.Text{Text: "Hello"}}})
+	add(provider.Event{Item: &transcript.Item{Body: transcript.Text{Text: "Hello"}}})
 	// A provider that sends a finished text without deltas.
-	add(provider.Event{Item: &transcript.Item{Text: &transcript.Text{Text: "whole"}}})
-	add(provider.Event{Item: &transcript.Item{ToolCall: &transcript.ToolCall{ID: "c1", Name: "read"}}})
+	add(provider.Event{Item: &transcript.Item{Body: transcript.Text{Text: "whole"}}})
+	add(provider.Event{Item: &transcript.Item{Body: transcript.ToolCall{ID: "c1", Name: "read"}}})
 	// A call the model is seen writing: a start without an id is not shown,
 	// and the finished call updates the one already announced.
 	add(provider.Event{ToolCall: &provider.ToolCallProgress{Name: "read"}})
@@ -254,7 +252,7 @@ func TestResponseShowsEachPieceOnce(t *testing.T) {
 	add(provider.Event{ToolCall: &provider.ToolCallProgress{ID: "c2", Name: "read", InputDelta: `{"a"`}})
 	add(provider.Event{ToolCall: &provider.ToolCallProgress{ID: "c3", Name: "read", InputDelta: `{`}})
 	require.Equal(t, []string{"c2", "c3"}, r.Writing())
-	add(provider.Event{Item: &transcript.Item{ToolCall: &transcript.ToolCall{ID: "c2", Name: "read"}}})
+	add(provider.Event{Item: &transcript.Item{Body: transcript.ToolCall{ID: "c2", Name: "read"}}})
 	require.Equal(t, []string{"c3"}, r.Writing(), "c3 was announced and never finished")
 	add(provider.Event{Usage: &transcript.Usage{OutputTokens: 1}})
 	add(provider.Event{Usage: &transcript.Usage{OutputTokens: 9}})

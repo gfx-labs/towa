@@ -59,7 +59,7 @@ func SummaryRequest(in SummaryInput) (provider.Request, error) {
 		Model:           in.Model,
 		Credential:      in.Credential,
 		System:          []provider.SystemBlock{{Name: "compaction", Text: system}},
-		Items:           []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}},
+		Items:           []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}}},
 		MaxOutputTokens: in.MaxOutputTokens,
 		Effort:          in.Effort,
 	}, nil
@@ -78,26 +78,30 @@ func checkpointConversation(replaced []transcript.Entry) string {
 		entries := replaced[m.start:m.end]
 		if m.role == roleUser {
 			for _, e := range entries {
-				switch {
-				case e.Item.User != nil:
-					if text := partsText(e.Item.User.Parts, ""); text != "" {
+				switch body := e.Item.Body.(type) {
+				case transcript.User:
+					if text := partsText(body.Parts, ""); text != "" {
 						parts = append(parts, "[User]: "+text)
 					}
-				case e.Item.ToolResult != nil:
-					if text := partsText(e.Item.ToolResult.Parts, ""); text != "" {
+				case transcript.ToolResult:
+					if text := partsText(body.Parts, ""); text != "" {
 						parts = append(parts, "[Tool result]: "+cutUTF16(text, checkpointResultChars))
 					}
+				default:
+					// Nothing else on the user's side has text.
 				}
 			}
 			continue
 		}
 		var texts, calls []string
 		for _, e := range entries {
-			switch {
-			case e.Item.Text != nil:
-				texts = append(texts, e.Item.Text.Text)
-			case e.Item.ToolCall != nil:
-				calls = append(calls, e.Item.ToolCall.Name+"("+callArguments(e.Item.ToolCall.Input)+")")
+			switch body := e.Item.Body.(type) {
+			case transcript.Text:
+				texts = append(texts, body.Text)
+			case transcript.ToolCall:
+				calls = append(calls, body.Name+"("+callArguments(body.Input)+")")
+			default:
+				// Thinking and native items are left out of a summary's input.
 			}
 		}
 		if len(texts) > 0 {
@@ -141,21 +145,23 @@ func shortConversation(replaced []transcript.Entry) string {
 			b.WriteString("**Assistant:**\n")
 		}
 		for _, e := range replaced[m.start:m.end] {
-			switch {
-			case e.Item.User != nil:
-				if text := partsText(e.Item.User.Parts, "[Image]"); text != "" {
+			switch body := e.Item.Body.(type) {
+			case transcript.User:
+				if text := partsText(body.Parts, "[Image]"); text != "" {
 					b.WriteString(text + "\n")
 				}
-			case e.Item.Text != nil:
-				b.WriteString(e.Item.Text.Text + "\n")
-			case e.Item.ToolCall != nil:
-				fmt.Fprintf(&b, "[Tool: %s - %s]\n", e.Item.ToolCall.Name, e.Item.ToolCall.Input)
-			case e.Item.ToolResult != nil:
-				text := partsText(e.Item.ToolResult.Parts, "[Image]")
+			case transcript.Text:
+				b.WriteString(body.Text + "\n")
+			case transcript.ToolCall:
+				fmt.Fprintf(&b, "[Tool: %s - %s]\n", body.Name, body.Input)
+			case transcript.ToolResult:
+				text := partsText(body.Parts, "[Image]")
 				if len(text) > shortResultBytes {
 					text = cutBytes(text, shortResultBytes) + "... (truncated)"
 				}
 				fmt.Fprintf(&b, "[Result: %s]\n", text)
+			default:
+				// Thinking and native items are left out of a summary's input.
 			}
 		}
 		b.WriteString("\n")
@@ -281,11 +287,13 @@ var (
 func SummaryText(items []transcript.Item, stop provider.StopReason) (string, error) {
 	var texts []string
 	for _, item := range items {
-		switch {
-		case item.ToolCall != nil:
+		switch body := item.Body.(type) {
+		case transcript.ToolCall:
 			return "", ErrSummaryToolCall
-		case item.Text != nil:
-			texts = append(texts, item.Text.Text)
+		case transcript.Text:
+			texts = append(texts, body.Text)
+		default:
+			// A summary is the text of the response.
 		}
 	}
 	switch stop {

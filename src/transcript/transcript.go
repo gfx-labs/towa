@@ -5,6 +5,7 @@ package transcript
 
 import (
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -28,9 +29,46 @@ func NewEntry(parent uuid.UUID, now time.Time, item Item) Entry {
 	return Entry{ID: uuid.NewV7(), ParentID: parent, Time: now, Item: item}
 }
 
-// Item is one element of a conversation. Exactly one of the pointer fields
-// is set.
+// Item is one element of a conversation: its Body, and what its provider
+// needs to replay it.
 type Item struct {
+	// Body is what the item is. It holds one of the body types by value.
+	Body Body
+
+	// Provider names the provider that produced the item, and Opaque holds
+	// what that provider needs to get the item back unchanged: a thinking
+	// signature, encrypted reasoning, an item id. Only that provider reads
+	// Opaque. Any other provider renders the item from its plain fields, or
+	// leaves it out when it has none.
+	Provider string
+	Opaque   jsontext.Value
+	// Origin is nil when the request that produced the item is not known.
+	Origin *Origin
+}
+
+// Body is what an item is: a User, Text, Thinking, ToolCall, ToolResult,
+// Native, Usage, ModelSwitch, Compaction or Interrupted value. No other
+// package can add to them.
+//
+//sumtype:decl
+type Body interface {
+	body()
+}
+
+func (User) body()        {}
+func (Text) body()        {}
+func (Thinking) body()    {}
+func (ToolCall) body()    {}
+func (ToolResult) body()  {}
+func (Native) body()      {}
+func (Usage) body()       {}
+func (ModelSwitch) body() {}
+func (Compaction) body()  {}
+func (Interrupted) body() {}
+
+// stored is an item as it is written: an object with one member named after
+// its body, beside the provider's members.
+type stored struct {
 	User        *User        `json:"user,omitzero"`
 	Text        *Text        `json:"text,omitzero"`
 	Thinking    *Thinking    `json:"thinking,omitzero"`
@@ -42,15 +80,91 @@ type Item struct {
 	Compaction  *Compaction  `json:"compaction,omitzero"`
 	Interrupted *Interrupted `json:"interrupted,omitzero"`
 
-	// Provider names the provider that produced the item, and Opaque holds
-	// what that provider needs to get the item back unchanged: a thinking
-	// signature, encrypted reasoning, an item id. Only that provider reads
-	// Opaque. Any other provider renders the item from its plain fields, or
-	// leaves it out when it has none.
 	Provider string         `json:"provider,omitzero"`
 	Opaque   jsontext.Value `json:"opaque,omitzero"`
-	// Origin is nil for legacy items with unknown request provenance.
-	Origin *Origin `json:"origin,omitzero"`
+	Origin   *Origin        `json:"origin,omitzero"`
+}
+
+// MarshalJSONTo writes the item as an object with one member named after its
+// body. An item that is not valid is not written.
+func (i Item) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if err := i.Validate(); err != nil {
+		return err
+	}
+	s := stored{Provider: i.Provider, Opaque: i.Opaque, Origin: i.Origin}
+	switch b := i.Body.(type) {
+	case User:
+		s.User = &b
+	case Text:
+		s.Text = &b
+	case Thinking:
+		s.Thinking = &b
+	case ToolCall:
+		s.ToolCall = &b
+	case ToolResult:
+		s.ToolResult = &b
+	case Native:
+		s.Native = &b
+	case Usage:
+		s.Usage = &b
+	case ModelSwitch:
+		s.ModelSwitch = &b
+	case Compaction:
+		s.Compaction = &b
+	case Interrupted:
+		s.Interrupted = &b
+	}
+	return json.MarshalEncode(enc, &s)
+}
+
+// UnmarshalJSONFrom reads what MarshalJSONTo writes. An object with no body
+// member, or with more than one, is an error.
+func (i *Item) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	var s stored
+	if err := json.UnmarshalDecode(dec, &s); err != nil {
+		return err
+	}
+	var body Body
+	found := 0
+	is := func(b Body) {
+		body = b
+		found++
+	}
+	if s.User != nil {
+		is(*s.User)
+	}
+	if s.Text != nil {
+		is(*s.Text)
+	}
+	if s.Thinking != nil {
+		is(*s.Thinking)
+	}
+	if s.ToolCall != nil {
+		is(*s.ToolCall)
+	}
+	if s.ToolResult != nil {
+		is(*s.ToolResult)
+	}
+	if s.Native != nil {
+		is(*s.Native)
+	}
+	if s.Usage != nil {
+		is(*s.Usage)
+	}
+	if s.ModelSwitch != nil {
+		is(*s.ModelSwitch)
+	}
+	if s.Compaction != nil {
+		is(*s.Compaction)
+	}
+	if s.Interrupted != nil {
+		is(*s.Interrupted)
+	}
+	if found != 1 {
+		return fmt.Errorf("transcript: item has %d bodies", found)
+	}
+	*i = Item{Body: body, Provider: s.Provider, Opaque: s.Opaque, Origin: s.Origin}
+	return i.Validate()
 }
 
 // Origin identifies the request that produced opaque content, without credentials.
@@ -65,36 +179,25 @@ func (i Item) OpaqueCompatible(provider string, origin Origin) bool {
 		i.Origin != nil && origin.Model != "" && origin.Account != "" && *i.Origin == origin
 }
 
-// Validate checks that exactly one variant is set, that a declared origin is
-// complete and that a user message has a role.
+// Validate checks that the item has a body, that a declared origin is
+// complete and that a user message has a role. A body held by pointer is not
+// one of the body types.
 func (i Item) Validate() error {
-	switch set := i.variants(); {
-	case set == 0:
-		return errors.New("transcript: item has no variant set")
-	case set > 1:
-		return fmt.Errorf("transcript: item has %d variants set", set)
+	switch b := i.Body.(type) {
+	case nil:
+		return errors.New("transcript: item has no body")
+	case User:
+		if err := b.validate(); err != nil {
+			return err
+		}
+	case Text, Thinking, ToolCall, ToolResult, Native, Usage, ModelSwitch, Compaction, Interrupted:
+	default:
+		return fmt.Errorf("transcript: %T is not an item body", b)
 	}
 	if i.Origin != nil && (i.Origin.Model == "" || i.Origin.Account == "") {
 		return errors.New("transcript: origin requires a model and an account")
 	}
-	if i.User != nil {
-		return i.User.validate()
-	}
 	return nil
-}
-
-// variants counts the variants that are set.
-func (i Item) variants() int {
-	set := 0
-	for _, present := range [...]bool{
-		i.User != nil, i.Text != nil, i.Thinking != nil, i.ToolCall != nil, i.ToolResult != nil,
-		i.Native != nil, i.Usage != nil, i.ModelSwitch != nil, i.Compaction != nil, i.Interrupted != nil,
-	} {
-		if present {
-			set++
-		}
-	}
-	return set
 }
 
 // User is a user or developer message.
@@ -255,4 +358,10 @@ type Link struct {
 	URI      string `json:"uri"`
 	Name     string `json:"name"`
 	MimeType string `json:"mime_type,omitzero"`
+}
+
+// Is reports whether the item's body is a B.
+func Is[B Body](i Item) bool {
+	_, ok := i.Body.(B)
+	return ok
 }

@@ -62,7 +62,14 @@ func (v View) Summary() string {
 	if v.Compaction == nil {
 		return ""
 	}
-	return v.Compaction.Item.Compaction.Summary
+	return v.compaction().Summary
+}
+
+// compaction is the body of the view's compaction entry, which Read took
+// from an entry that holds one.
+func (v View) compaction() transcript.Compaction {
+	c, _ := v.Compaction.Item.Body.(transcript.Compaction)
+	return c
 }
 
 // Read finds the latest compaction in entries and the entries it kept. It
@@ -70,14 +77,14 @@ func (v View) Summary() string {
 func Read(entries []transcript.Entry) (View, error) {
 	last := -1
 	for i := range entries {
-		if entries[i].Item.Compaction != nil {
+		if transcript.Is[transcript.Compaction](entries[i].Item) {
 			last = i
 		}
 	}
 	if last < 0 {
 		return View{Active: entries}, nil
 	}
-	c := entries[last].Item.Compaction
+	c, _ := entries[last].Item.Body.(transcript.Compaction)
 	// A nil id means nothing before the compaction was kept.
 	first := last
 	if c.FirstKept != uuid.Nil() {
@@ -95,7 +102,7 @@ func Read(entries []transcript.Entry) (View, error) {
 	}
 	active := make([]transcript.Entry, 0, len(entries)-first)
 	for _, e := range entries[first:] {
-		if e.Item.Compaction == nil {
+		if !transcript.Is[transcript.Compaction](e.Item) {
 			active = append(active, e)
 		}
 	}
@@ -149,7 +156,8 @@ func standIn(entry transcript.Entry, providerName string, target ...transcript.O
 		}
 		return native, nil
 	}
-	summary := item.Compaction.Summary
+	compaction, _ := item.Body.(transcript.Compaction)
+	summary := compaction.Summary
 	if strings.TrimSpace(summary) == "" {
 		if len(item.Opaque) > 0 {
 			return nil, &UnreadableError{Entry: entry.ID, Provider: item.Provider, Wanted: providerName}
@@ -157,7 +165,7 @@ func standIn(entry transcript.Entry, providerName string, target ...transcript.O
 		return nil, fmt.Errorf("compaction %s: %w", entry.ID, ErrEmptySummary)
 	}
 	text := summaryPrefix + summary + summarySuffix
-	return []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}}, nil
+	return []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}}}, nil
 }
 
 // Native asks a provider to compact a conversation itself. The OpenAI
@@ -205,17 +213,17 @@ func NativeItem(result NativeResult, providerName string, firstKept uuid.UUID) (
 	}
 	var origin *transcript.Origin
 	for _, item := range result.Items {
-		if item.Native != nil && item.Native.Kind == "compaction" && item.Origin != nil {
+		if n, ok := item.Body.(transcript.Native); ok && n.Kind == "compaction" && item.Origin != nil {
 			value := *item.Origin
 			origin = &value
 			break
 		}
 	}
 	return transcript.Item{
-		Compaction: &transcript.Compaction{FirstKept: firstKept, Mode: ModeNative},
-		Provider:   providerName,
-		Opaque:     opaque,
-		Origin:     origin,
+		Body:     transcript.Compaction{FirstKept: firstKept, Mode: ModeNative},
+		Provider: providerName,
+		Opaque:   opaque,
+		Origin:   origin,
 	}, nil
 }
 
@@ -225,14 +233,16 @@ func validateNativeWindow(items []transcript.Item, providerName string) error {
 		if err := item.Validate(); err != nil {
 			return fmt.Errorf("compact: native item %d: %w", i, err)
 		}
-		if item.Compaction != nil || item.Usage != nil || item.ModelSwitch != nil || item.Interrupted != nil {
+		switch body := item.Body.(type) {
+		case transcript.Compaction, transcript.Usage, transcript.ModelSwitch, transcript.Interrupted:
 			return fmt.Errorf("compact: native item %d is not a provider request item", i)
-		}
-		if item.Native != nil {
+		case transcript.Native:
 			if item.Provider != providerName || len(item.Opaque) == 0 {
 				return fmt.Errorf("compact: native item %d has a different provider or no content", i)
 			}
-			found = found || item.Native.Kind == "compaction"
+			found = found || body.Kind == "compaction"
+		case transcript.User, transcript.Text, transcript.Thinking, transcript.ToolCall, transcript.ToolResult:
+			// A request item with a plain form.
 		}
 	}
 	if !found {
@@ -247,7 +257,7 @@ func validateNativeWindow(items []transcript.Item, providerName string) error {
 // for stateless input-array chaining, never previous_response_id chaining.
 // Non-compaction items are returned unchanged with converted false.
 func AutoItem(item transcript.Item) (out transcript.Item, converted bool, err error) {
-	if item.Native == nil || item.Native.Kind != "compaction" {
+	if n, ok := item.Body.(transcript.Native); !ok || n.Kind != "compaction" {
 		return item, false, nil
 	}
 	if len(item.Opaque) == 0 {

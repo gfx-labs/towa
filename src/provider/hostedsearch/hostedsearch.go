@@ -88,10 +88,11 @@ type source struct {
 // Read returns what a native item says about a hosted search, and false
 // for an item that is not one.
 func Read(item transcript.Item) (Event, bool) {
-	if item.Native == nil || len(item.Opaque) == 0 {
+	native, ok := item.Body.(transcript.Native)
+	if !ok || len(item.Opaque) == 0 {
 		return Event{}, false
 	}
-	switch item.Native.Kind {
+	switch native.Kind {
 	case kindAnthropicUse:
 		var use struct {
 			ID    string `json:"id"`
@@ -220,7 +221,7 @@ func Portable(items []transcript.Item, providerName string, origin transcript.Or
 		if query := queries[ev.ID]; query != "" {
 			head = fmt.Sprintf("[%s for %q]", Name, query)
 		}
-		out = append(out, transcript.Item{Text: &transcript.Text{Text: head + " " + standInNote + "\n" + ev.Output}})
+		out = append(out, transcript.Item{Body: transcript.Text{Text: head + " " + standInNote + "\n" + ev.Output}})
 	}
 	if out == nil {
 		return items

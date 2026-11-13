@@ -224,18 +224,19 @@ func buildInput(own string, origin transcript.Origin, items []transcript.Item) (
 		}
 		var op opaque
 		mine := item.OpaqueCompatible(own, origin)
-		if mine && item.Native == nil {
+		_, native := item.Body.(transcript.Native)
+		if mine && !native {
 			if err := json.Unmarshal(item.Opaque, &op); err != nil {
 				return nil, invalidRequest(fmt.Sprintf("item %d: its opaque data cannot be read: %v", i, err))
 			}
 		}
-		switch {
-		case item.User != nil:
-			role := item.User.Role
+		switch body := item.Body.(type) {
+		case transcript.User:
+			role := body.Role
 			if role == "" {
 				role = "user"
 			}
-			content, perr := buildContent(item.User.Parts, false)
+			content, perr := buildContent(body.Parts, false)
 			if perr != nil {
 				return nil, at(perr, i)
 			}
@@ -243,17 +244,17 @@ func buildInput(own string, origin transcript.Origin, items []transcript.Item) (
 				return nil, invalidRequest(fmt.Sprintf("item %d: the user message has nothing to send", i))
 			}
 			out = append(out, messageItem{Type: typeMessage, Role: role, Content: content})
-		case item.Text != nil:
+		case transcript.Text:
 			// The API rejects an empty text part, and an empty message says
 			// nothing.
-			if item.Text.Text == "" {
+			if body.Text == "" {
 				continue
 			}
 			out = append(out, messageItem{
 				Type: typeMessage, ID: op.ID, Role: "assistant", Phase: op.Phase,
-				Content: []contentPart{{Type: "output_text", Text: item.Text.Text}},
+				Content: []contentPart{{Type: "output_text", Text: body.Text}},
 			})
-		case item.Thinking != nil:
+		case transcript.Thinking:
 			// Reasoning goes back only as the item this endpoint made. The
 			// API has no input form for another provider's reasoning.
 			if !mine || op.ID == "" {
@@ -264,34 +265,34 @@ func buildInput(own string, origin transcript.Origin, items []transcript.Item) (
 				summary = append(summary, contentPart{Type: "summary_text", Text: text})
 			}
 			out = append(out, reasoningItem{Type: typeReasoning, ID: op.ID, Summary: summary, EncryptedContent: op.EncryptedContent})
-		case item.ToolCall != nil:
+		case transcript.ToolCall:
 			// Another endpoint's call goes as a plain function call without
 			// its extensions. Text input has no plain form to fall back to.
-			if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
+			if len(item.Opaque) > 0 && !mine && body.Input.Kind() == '"' {
 				return nil, invalidRequest(fmt.Sprintf("item %d: tool call with text input has opaque provenance that does not match provider, model and account", i))
 			}
-			call, custom, perr := buildCall(item.ToolCall, op)
+			call, custom, perr := buildCall(body, op)
 			if perr != nil {
 				return nil, at(perr, i)
 			}
-			customCalls[item.ToolCall.ID] = custom
+			customCalls[body.ID] = custom
 			out = append(out, call)
-		case item.ToolResult != nil:
-			output, perr := buildOutput(item.ToolResult.Parts)
+		case transcript.ToolResult:
+			output, perr := buildOutput(body.Parts)
 			if perr != nil {
 				return nil, at(perr, i)
 			}
 			typ := typeFunctionOutput
-			if customCalls[item.ToolResult.CallID] {
+			if customCalls[body.CallID] {
 				typ = typeCustomCallOutput
 			}
-			out = append(out, callOutputItem{Type: typ, CallID: item.ToolResult.CallID, Output: output})
-		case item.Native != nil:
+			out = append(out, callOutputItem{Type: typ, CallID: body.CallID, Output: output})
+		case transcript.Native:
 			if !mine {
-				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
+				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, body.Kind))
 			}
 			if !item.Opaque.IsValid() {
-				return nil, invalidRequest(fmt.Sprintf("item %d: the %s item is not valid JSON", i, item.Native.Kind))
+				return nil, invalidRequest(fmt.Sprintf("item %d: the %s item is not valid JSON", i, body.Kind))
 			}
 			out = append(out, item.Opaque)
 		default:
@@ -309,7 +310,7 @@ func at(e *provider.Error, i int) *provider.Error {
 
 // buildCall returns the wire item of a tool call and whether it is a
 // free-text call.
-func buildCall(call *transcript.ToolCall, op opaque) (any, bool, *provider.Error) {
+func buildCall(call transcript.ToolCall, op opaque) (any, bool, *provider.Error) {
 	if call.ID == "" || call.Name == "" {
 		return nil, false, invalidRequest("the tool call has no id or no name")
 	}

@@ -281,30 +281,30 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 		if err := item.Validate(); err != nil {
 			return nil, invalid("items[%d]: %v", i, err)
 		}
-		if item.ToolResult == nil {
+		if _, result := item.Body.(transcript.ToolResult); !result {
 			if perr := attach(i); perr != nil {
 				return nil, perr
 			}
 		}
 		mine := item.OpaqueCompatible(c.cfg.ID, origin)
-		switch {
-		case item.User != nil:
-			role := item.User.Role
+		switch body := item.Body.(type) {
+		case transcript.User:
+			role := body.Role
 			if role == "" {
 				role = "user"
 			}
 			flush()
-			content, perr := userContent(i, item.User.Parts)
+			content, perr := userContent(i, body.Parts)
 			if perr != nil {
 				return nil, perr
 			}
 			if content != nil {
 				out = append(out, wireMessage{Role: role, Content: content})
 			}
-		case item.Text != nil:
-			text.WriteString(item.Text.Text)
+		case transcript.Text:
+			text.WriteString(body.Text)
 			assistant()
-		case item.Thinking != nil:
+		case transcript.Thinking:
 			// Incompatible reasoning has no plain form here.
 			if !mine || item.Opaque == nil {
 				continue
@@ -318,19 +318,19 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 			case len(op.Details) > 0:
 				m.ReasoningDetails = append(m.ReasoningDetails, op.Details...)
 			case op.Field == fieldReasoningContent:
-				m.ReasoningContent += item.Thinking.Text
+				m.ReasoningContent += body.Text
 			case op.Field == fieldReasoning:
-				m.Reasoning += item.Thinking.Text
+				m.Reasoning += body.Text
 			default:
 				return nil, invalid("items[%d]: thinking opaque names the field %q", i, op.Field)
 			}
-		case item.ToolCall != nil:
+		case transcript.ToolCall:
 			// Another provider's call goes without its extensions. Text input
 			// has no plain form to fall back to.
-			if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
+			if len(item.Opaque) > 0 && !mine && body.Input.Kind() == '"' {
 				return nil, invalid("items[%d]: tool call with text input has opaque provenance that does not match provider, model and account", i)
 			}
-			tc := item.ToolCall
+			tc := body
 			if tc.ID == "" || tc.Name == "" {
 				return nil, invalid("items[%d]: tool call has no id or no name", i)
 			}
@@ -348,9 +348,9 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 			}
 			m := assistant()
 			m.ToolCalls = append(m.ToolCalls, call)
-		case item.ToolResult != nil:
+		case transcript.ToolResult:
 			flush()
-			tr := item.ToolResult
+			tr := body
 			if tr.CallID == "" {
 				return nil, invalid("items[%d]: tool result has no call id", i)
 			}
@@ -395,8 +395,8 @@ func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]
 				b.WriteString(note)
 			}
 			out = append(out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(b.String())})
-		case item.Native != nil:
-			return nil, invalid("items[%d]: Chat Completions cannot replay native item of kind %q", i, item.Native.Kind)
+		case transcript.Native:
+			return nil, invalid("items[%d]: Chat Completions cannot replay native item of kind %q", i, body.Kind)
 		default:
 			return nil, invalid("items[%d]: not an item a request can hold", i)
 		}

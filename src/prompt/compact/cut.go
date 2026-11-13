@@ -17,10 +17,10 @@ const (
 // role says which side of the conversation an item is on. Usage and
 // ModelSwitch items are on neither.
 func role(item transcript.Item) byte {
-	switch {
-	case item.User != nil, item.ToolResult != nil, item.Interrupted != nil:
+	switch item.Body.(type) {
+	case transcript.User, transcript.ToolResult, transcript.Interrupted:
 		return roleUser
-	case item.Text != nil, item.Thinking != nil, item.ToolCall != nil, item.Native != nil:
+	case transcript.Text, transcript.Thinking, transcript.ToolCall, transcript.Native:
 		return roleAssistant
 	default:
 		return roleNone
@@ -78,17 +78,18 @@ func Cut(active []transcript.Entry, keep int) (replace int, firstKept uuid.UUID)
 	cut := msgs[len(msgs)-keep].start
 	calls := map[string]int{}
 	for i, e := range active {
-		if e.Item.ToolCall != nil {
-			calls[e.Item.ToolCall.ID] = i
+		if call, ok := e.Item.Body.(transcript.ToolCall); ok {
+			calls[call.ID] = i
 		}
 	}
 	for moved := true; moved; {
 		moved = false
 		for _, e := range active[cut:] {
-			if e.Item.ToolResult == nil {
+			result, ok := e.Item.Body.(transcript.ToolResult)
+			if !ok {
 				continue
 			}
-			if at, ok := calls[e.Item.ToolResult.CallID]; ok && at < cut {
+			if at, ok := calls[result.CallID]; ok && at < cut {
 				cut, moved = at, true
 			}
 		}
@@ -109,7 +110,7 @@ func Cut(active []transcript.Entry, keep int) (replace int, firstKept uuid.UUID)
 func toolNames(entries []transcript.Entry) []string {
 	var names []string
 	for _, e := range entries {
-		if c := e.Item.ToolCall; c != nil && !slices.Contains(names, c.Name) {
+		if c, ok := e.Item.Body.(transcript.ToolCall); ok && !slices.Contains(names, c.Name) {
 			names = append(names, c.Name)
 		}
 	}

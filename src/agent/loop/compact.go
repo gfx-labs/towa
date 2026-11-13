@@ -119,30 +119,32 @@ func searchTools(specs []provider.Tool, entry router.Preparation) ([]provider.To
 
 func (tn *turn) applyCompaction(ctx context.Context, effects []transcript.Item) error {
 	for _, effect := range effects {
-		if effect.Usage != nil {
-			tn.add(*effect.Usage)
+		if usage, ok := effect.Body.(transcript.Usage); ok {
+			tn.add(usage)
 		}
 	}
 	if err := tn.store(ctx, effects); err != nil {
 		return err
 	}
 	for i, effect := range effects {
-		if effect.Usage != nil {
-			if update, ok := tn.mapper.Usage(*effect.Usage); ok {
+		switch body := effect.Body.(type) {
+		case transcript.Usage:
+			if update, ok := tn.mapper.Usage(body); ok {
 				tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
 			}
-		}
-		if effect.Compaction != nil {
+		case transcript.Compaction:
 			entry := tn.entries[len(tn.entries)-len(effects)+i]
 			update := acp.SessionUpdate{CompactionUpdate: &acp.SessionCompactionUpdate{
 				CompactionId: acp.CompactionId(entry.ID.String()), Status: acp.CompactionStatusCompleted,
 			}}
-			if effect.Compaction.Summary != "" {
-				update.CompactionUpdate.Summary = []acp.ContentBlock{textBlock(effect.Compaction.Summary)}
+			if body.Summary != "" {
+				update.CompactionUpdate.Summary = []acp.ContentBlock{textBlock(body.Summary)}
 			}
 			if tn.t.Sendable != nil && tn.t.Sendable(update) {
 				tn.send(ctx, update)
 			}
+		default:
+			// A compaction has no other effect to report.
 		}
 	}
 	return tn.sendErr

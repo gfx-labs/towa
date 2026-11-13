@@ -31,10 +31,10 @@ func (m Mapper) Updates(item transcript.Item) ([]acp.SessionUpdate, error) {
 	if err := item.Validate(); err != nil {
 		return nil, err
 	}
-	switch {
-	case item.User != nil:
+	switch body := item.Body.(type) {
+	case transcript.User:
 		var out []acp.SessionUpdate
-		for _, part := range item.User.Parts {
+		for _, part := range body.Parts {
 			block, ok, err := Block(part)
 			if err != nil {
 				return nil, err
@@ -44,29 +44,31 @@ func (m Mapper) Updates(item transcript.Item) ([]acp.SessionUpdate, error) {
 			}
 		}
 		return out, nil
-	case item.Text != nil:
-		return []acp.SessionUpdate{TextChunk(item.Text.Text)}, nil
-	case item.Thinking != nil:
+	case transcript.Text:
+		return []acp.SessionUpdate{TextChunk(body.Text)}, nil
+	case transcript.Thinking:
 		// Reasoning only its provider can read has no text to show.
-		if item.Thinking.Text == "" {
+		if body.Text == "" {
 			return nil, nil
 		}
-		return []acp.SessionUpdate{ThoughtChunk(item.Thinking.Text)}, nil
-	case item.ToolCall != nil:
-		call := m.ToolCall(*item.ToolCall)
+		return []acp.SessionUpdate{ThoughtChunk(body.Text)}, nil
+	case transcript.ToolCall:
+		call := m.ToolCall(body)
 		return []acp.SessionUpdate{{ToolCall: &call}}, nil
-	case item.ToolResult != nil:
-		update, err := ToolResult(*item.ToolResult, nil)
+	case transcript.ToolResult:
+		update, err := ToolResult(body, nil)
 		if err != nil {
 			return nil, err
 		}
 		return []acp.SessionUpdate{{ToolCallUpdate: &update}}, nil
-	case item.Native != nil:
+	case transcript.Native:
 		return HostedSearch(item), nil
-	case item.Usage != nil:
-		if update, ok := m.Usage(*item.Usage); ok {
+	case transcript.Usage:
+		if update, ok := m.Usage(body); ok {
 			return []acp.SessionUpdate{{UsageUpdate: &update}}, nil
 		}
+	case transcript.ModelSwitch, transcript.Compaction, transcript.Interrupted:
+		// A client is not shown these.
 	}
 	return nil, nil
 }
@@ -305,5 +307,5 @@ func UserItem(prompt []acp.ContentBlock) (transcript.Item, error) {
 	if len(parts) == 0 {
 		return transcript.Item{}, acp.NewInvalidParams(map[string]any{"error": "the prompt has no content"})
 	}
-	return transcript.Item{User: &transcript.User{Parts: parts}}, nil
+	return transcript.Item{Body: transcript.User{Parts: parts}}, nil
 }

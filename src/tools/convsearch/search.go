@@ -203,21 +203,21 @@ func (s *searcher) blob(ctx context.Context, session uuid.UUID, ref *transcript.
 // content returns an item's field, its tool name, its text in pieces and
 // the stored blobs it references.
 func content(item transcript.Item) (Field, string, []string, []*transcript.Stored) {
-	switch {
-	case item.User != nil:
-		texts, stored := parts(item.User.Parts)
+	switch body := item.Body.(type) {
+	case transcript.User:
+		texts, stored := parts(body.Parts)
 		return FieldUser, "", texts, stored
-	case item.Text != nil:
-		return FieldText, "", []string{item.Text.Text}, nil
-	case item.Thinking != nil:
-		return FieldThinking, "", []string{item.Thinking.Text}, nil
-	case item.ToolCall != nil:
-		return FieldToolCall, item.ToolCall.Name, []string{item.ToolCall.Name, callInput(item.ToolCall)}, nil
-	case item.ToolResult != nil:
-		texts, stored := parts(item.ToolResult.Parts)
-		return FieldToolResult, item.ToolResult.Name, texts, stored
-	case item.Compaction != nil:
-		return FieldCompaction, "", []string{item.Compaction.Summary}, nil
+	case transcript.Text:
+		return FieldText, "", []string{body.Text}, nil
+	case transcript.Thinking:
+		return FieldThinking, "", []string{body.Text}, nil
+	case transcript.ToolCall:
+		return FieldToolCall, body.Name, []string{body.Name, callInput(body)}, nil
+	case transcript.ToolResult:
+		texts, stored := parts(body.Parts)
+		return FieldToolResult, body.Name, texts, stored
+	case transcript.Compaction:
+		return FieldCompaction, "", []string{body.Summary}, nil
 	default:
 		return FieldOther, "", nil, nil
 	}
@@ -227,7 +227,7 @@ func content(item transcript.Item) (Field, string, []string, []*transcript.Store
 // that takes free text, and the JSON as the model wrote it otherwise. A
 // quote or a backslash inside a JSON argument is therefore searched in its
 // escaped form.
-func callInput(call *transcript.ToolCall) string {
+func callInput(call transcript.ToolCall) string {
 	if call.Input.Kind() == '"' {
 		var text string
 		if err := json.Unmarshal(call.Input, &text); err == nil {

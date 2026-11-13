@@ -90,8 +90,8 @@ func TestControllerExchange(t *testing.T) {
 	// Lower only the decision's model budget to the observed input size,
 	// forcing the emergency wait without changing the summary's request.
 	for _, e := range entries {
-		if e.Item.Usage != nil {
-			in.ContextWindow = compact.ContextTokens(*e.Item.Usage)
+		if transcript.Is[transcript.Usage](e.Item) {
+			in.ContextWindow = compact.ContextTokens(e.Item.Body.(transcript.Usage))
 		}
 	}
 	require.Positive(t, in.ContextWindow)
@@ -99,8 +99,8 @@ func TestControllerExchange(t *testing.T) {
 	effects, err = controller.Before(t.Context(), in)
 	require.NoError(t, err)
 	require.Len(t, effects, 2)
-	require.NotNil(t, effects[0].Usage)
-	require.NotEmpty(t, effects[1].Compaction.Summary)
+	require.IsType(t, transcript.Usage{}, effects[0].Body)
+	require.NotEmpty(t, effects[1].Body.(transcript.Compaction).Summary)
 	parent := entries[len(entries)-1].ID
 	for _, item := range effects {
 		e := transcript.NewEntry(parent, time.Now(), item)
@@ -208,7 +208,7 @@ func TestSummaryExchange(t *testing.T) {
 	// Append while the model is working. A nil captured FirstKept must not
 	// cause this new entry to disappear from the next context.
 	followup := transcript.NewEntry(entries[len(entries)-1].ID, time.Now(), transcript.Item{
-		User: &transcript.User{Parts: []transcript.Part{{Text: "Continue from this checkpoint."}}},
+		Body: transcript.User{Parts: []transcript.Part{{Text: "Continue from this checkpoint."}}},
 	})
 	require.NoError(t, st.Append(t.Context(), id, []transcript.Entry{followup}))
 	entries = history(t, st, id)
@@ -236,8 +236,8 @@ func TestSummaryExchange(t *testing.T) {
 	require.NoError(t, err)
 	item, err := got.ItemFor(entries)
 	require.NoError(t, err)
-	require.Equal(t, followup.ID, item.Compaction.FirstKept)
-	require.NotEmpty(t, item.Compaction.Summary)
+	require.Equal(t, followup.ID, item.Body.(transcript.Compaction).FirstKept)
+	require.NotEmpty(t, item.Body.(transcript.Compaction).Summary)
 	require.NotNil(t, got.Usage)
 	entry := transcript.NewEntry(followup.ID, time.Now(), item)
 	require.NoError(t, st.Append(t.Context(), id, []transcript.Entry{entry}))
@@ -253,7 +253,7 @@ func TestSummaryExchange(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, repairs)
 	require.Len(t, items, 2)
-	require.Contains(t, items[0].User.Parts[0].Text, item.Compaction.Summary)
+	require.Contains(t, items[0].Body.(transcript.User).Parts[0].Text, item.Body.(transcript.Compaction).Summary)
 	require.Equal(t, followup.Item, items[1])
 	require.Equal(t, looptest.ReadTurn.Requests, fixture.Served())
 	_, err = got.ItemFor(all)

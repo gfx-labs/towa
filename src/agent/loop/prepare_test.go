@@ -17,7 +17,7 @@ func TestPreparationUsesSelectedEntry(t *testing.T) {
 	tn := &turn{
 		l: &Loop{o: Options{Now: time.Now}}, started: time.Now(),
 		model:   Resolved{ContextSize: 4096, Interruption: "first prompt"},
-		entries: []transcript.Entry{{Item: transcript.Item{Interrupted: &transcript.Interrupted{}}}},
+		entries: []transcript.Entry{{Item: transcript.Item{Body: transcript.Interrupted{}}}},
 	}
 	selected := &router.Preparation{
 		ContextWindow: 2048, MaxOutputTokens: 128, Interruption: "selected prompt",
@@ -28,11 +28,11 @@ func TestPreparationUsesSelectedEntry(t *testing.T) {
 	require.Equal(t, selected.System, req.System)
 	require.Equal(t, selected.MaxOutputTokens, req.MaxOutputTokens)
 	require.Len(t, req.Items, 1)
-	require.Equal(t, selected.Interruption, req.Items[0].User.Parts[0].Text)
+	require.Equal(t, selected.Interruption, req.Items[0].Body.(transcript.User).Parts[0].Text)
 	size, ok := tn.mapper.ContextSize("selected")
 	require.True(t, ok)
 	require.EqualValues(t, selected.ContextWindow, size)
-	require.NotNil(t, tn.entries[0].Item.Interrupted, "rendering must not rewrite history")
+	require.IsType(t, transcript.Interrupted{}, tn.entries[0].Item.Body, "rendering must not rewrite history")
 	selected.ContextWindow = 0
 	_, err = tn.prepareRequest(t.Context(), router.Entry{Preparation: selected}, provider.Request{})
 	require.Error(t, err, "an invalid entry must not reuse the first model's window")

@@ -6,11 +6,16 @@ linters:
     - depguard
     - errorlint
     - forbidigo
+    - gochecksumtype
     - gocritic
     - misspell
     - revive
     - unconvert
   settings:
+    gochecksumtype:
+      # A switch that lists some of the bodies and has a default is one that
+      # means the rest, so it is not asked to list them all.
+      default-signifies-exhaustive: true
     depguard:
       rules:
         json:

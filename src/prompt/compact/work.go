@@ -40,7 +40,11 @@ type Result struct {
 // summary was running are kept, even when the captured cut kept nothing.
 // The caller serializes this check and its append with other session writes.
 func (r *Result) ItemFor(history []transcript.Entry) (transcript.Item, error) {
-	if r == nil || r.item.Compaction == nil {
+	if r == nil {
+		return transcript.Item{}, errors.New("compact: no completed result to append")
+	}
+	c, ok := r.item.Body.(transcript.Compaction)
+	if !ok {
 		return transcript.Item{}, errors.New("compact: no completed result to append")
 	}
 	first, err := r.Source.firstKept(history)
@@ -48,9 +52,8 @@ func (r *Result) ItemFor(history []transcript.Entry) (transcript.Item, error) {
 		return transcript.Item{}, err
 	}
 	item := r.item
-	c := *item.Compaction
 	c.FirstKept = first
-	item.Compaction = &c
+	item.Body = c
 	return item, nil
 }
 
@@ -110,7 +113,7 @@ func Run(ctx context.Context, work Work) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.item = transcript.Item{Compaction: &transcript.Compaction{
+	result.item = transcript.Item{Body: transcript.Compaction{
 		Summary: summary, FirstKept: work.Source.FirstKept, Mode: work.Mode,
 	}}
 	return result, nil

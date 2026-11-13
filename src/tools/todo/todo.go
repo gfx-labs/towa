@@ -154,7 +154,7 @@ const pokePrefix = "[auto] You have "
 func Open(entries []transcript.Entry) (open []string, sent int, err error) {
 	accepted := make(map[string]bool)
 	for _, e := range entries {
-		if r := e.Item.ToolResult; r != nil && r.Name == Name && r.Outcome == transcript.OutcomeCompleted {
+		if r, ok := e.Item.Body.(transcript.ToolResult); ok && r.Name == Name && r.Outcome == transcript.OutcomeCompleted {
 			accepted[r.CallID] = true
 		}
 	}
@@ -163,15 +163,15 @@ func Open(entries []transcript.Entry) (open []string, sent int, err error) {
 	found, counting, pending := false, true, 0
 	for i := len(entries) - 1; i >= 0 && (counting || !found); i-- {
 		item := entries[i].Item
-		if u := item.User; u != nil {
+		if u, ok := item.Body.(transcript.User); ok {
 			if len(u.Parts) == 1 && strings.HasPrefix(u.Parts[0].Text, pokePrefix) {
 				pending++
 			} else {
 				counting = false
 			}
 		}
-		call := item.ToolCall
-		if call == nil || call.Name != Name || !accepted[call.ID] {
+		call, ok := item.Body.(transcript.ToolCall)
+		if !ok || call.Name != Name || !accepted[call.ID] {
 			continue
 		}
 		var args struct {

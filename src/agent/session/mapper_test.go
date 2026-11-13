@@ -44,7 +44,7 @@ func TestRuntimeMapperReplaysForkedSourceHistory(t *testing.T) {
 			sourceID, err := uuid.Parse(source)
 			require.NoError(t, err)
 			require.NoError(t, st.Append(t.Context(), sourceID, []transcript.Entry{
-				transcript.NewEntry(uuid.Nil(), time.Now(), transcript.Item{Usage: &transcript.Usage{Model: "session-model", InputTokens: 7, OutputTokens: 3}}),
+				transcript.NewEntry(uuid.Nil(), time.Now(), transcript.Item{Body: transcript.Usage{Model: "session-model", InputTokens: 7, OutputTokens: 3}}),
 			}))
 			w.Send(request(`2`, "session/fork", `{"sessionId":"`+source+`","cwd":"/work","mcpServers":[]}`))
 			got, _ = w.Await(`2`)

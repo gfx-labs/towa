@@ -54,7 +54,7 @@ type outcome struct {
 }
 
 func userSays(text string) []transcript.Item {
-	return []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}}
+	return []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}}}
 }
 
 var openRouterExchanges = []exchange{
@@ -64,7 +64,7 @@ var openRouterExchanges = []exchange{
 		check: func(t *testing.T, got outcome) {
 			require.Equal(t, provider.StopEndTurn, got.stop)
 			require.Len(t, got.items, 1)
-			require.NotEmpty(t, got.items[0].Text.Text)
+			require.NotEmpty(t, got.items[0].Body.(transcript.Text).Text)
 		},
 	},
 	{
@@ -85,7 +85,7 @@ var openRouterExchanges = []exchange{
 		req:  provider.Request{Model: "deepseek/deepseek-r1", Items: userSays("What is 17 times 23?"), MaxOutputTokens: 2048, Effort: "low"},
 		check: func(t *testing.T, got outcome) {
 			require.Equal(t, provider.StopEndTurn, got.stop)
-			require.NotNil(t, got.items[0].Thinking, "the reasoning comes before the text")
+			require.IsType(t, transcript.Thinking{}, got.items[0].Body, "the reasoning comes before the text")
 			require.NotEmpty(t, got.items[0].Opaque)
 			require.Positive(t, got.usage.ThoughtTokens)
 		},
@@ -111,7 +111,7 @@ var ollamaExchanges = []exchange{
 		check: func(t *testing.T, got outcome) {
 			require.Equal(t, provider.StopEndTurn, got.stop)
 			require.Len(t, got.items, 1)
-			require.NotEmpty(t, got.items[0].Text.Text)
+			require.NotEmpty(t, got.items[0].Body.(transcript.Text).Text)
 		},
 	},
 	{
@@ -141,14 +141,14 @@ func checkShellCall(t *testing.T, got outcome) {
 	require.Equal(t, provider.StopToolUse, got.stop)
 	var calls int
 	for _, item := range got.items {
-		if item.ToolCall == nil {
+		if !transcript.Is[transcript.ToolCall](item) {
 			continue
 		}
 		calls++
-		require.Equal(t, "shell", item.ToolCall.Name)
-		require.Equal(t, jsontext.Kind('{'), item.ToolCall.Input.Kind())
+		require.Equal(t, "shell", item.Body.(transcript.ToolCall).Name)
+		require.Equal(t, jsontext.Kind('{'), item.Body.(transcript.ToolCall).Input.Kind())
 		// The argument deltas add up to the finished argument.
-		require.JSONEq(t, string(item.ToolCall.Input), got.progress[item.ToolCall.ID].String())
+		require.JSONEq(t, string(item.Body.(transcript.ToolCall).Input), got.progress[item.Body.(transcript.ToolCall).ID].String())
 	}
 	require.Positive(t, calls)
 }
@@ -277,10 +277,10 @@ func TestReplay(t *testing.T) {
 					require.Equal(t, contextName, item.Provider)
 					require.Equal(t, &transcript.Origin{Model: ex.req.Model, Account: "main"}, item.Origin)
 					switch {
-					case item.Text != nil:
-						text.WriteString(item.Text.Text)
-					case item.Thinking != nil:
-						thinking.WriteString(item.Thinking.Text)
+					case transcript.Is[transcript.Text](item):
+						text.WriteString(item.Body.(transcript.Text).Text)
+					case transcript.Is[transcript.Thinking](item):
+						thinking.WriteString(item.Body.(transcript.Thinking).Text)
 					}
 				}
 				require.Equal(t, got.text.String(), text.String(), "the deltas add up to the finished text")

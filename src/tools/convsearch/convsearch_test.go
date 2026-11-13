@@ -54,17 +54,17 @@ func (s *session) add(items ...transcript.Item) {
 }
 
 func user(text string) transcript.Item {
-	return transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}
+	return transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}}
 }
 
-func text(text string) transcript.Item { return transcript.Item{Text: &transcript.Text{Text: text}} }
+func text(text string) transcript.Item { return transcript.Item{Body: transcript.Text{Text: text}} }
 
 func call(id, name, input string) transcript.Item {
-	return transcript.Item{ToolCall: &transcript.ToolCall{ID: id, Name: name, Input: jsontext.Value(input)}}
+	return transcript.Item{Body: transcript.ToolCall{ID: id, Name: name, Input: jsontext.Value(input)}}
 }
 
 func result(id, name string, parts ...transcript.Part) transcript.Item {
-	return transcript.Item{ToolResult: &transcript.ToolResult{
+	return transcript.Item{Body: transcript.ToolResult{
 		CallID: id, Name: name, Parts: parts, Outcome: transcript.OutcomeCompleted,
 	}}
 }
@@ -86,15 +86,15 @@ func TestSearchReadsEveryKindOfEntryAndHistoryBeforeACompaction(t *testing.T) {
 	s := newSession(t, st, uuid.UUID{}, start)
 	s.add(
 		user("Why does the Flock test fail on darwin?"),
-		transcript.Item{Thinking: &transcript.Thinking{Text: "the flock call differs there"}},
+		transcript.Item{Body: transcript.Thinking{Text: "the flock call differs there"}},
 		call("c1", "shell", `{"command":"go test ./src/auth -run Flock"}`),
 		result("c1", "shell", transcript.Part{Text: "--- FAIL: TestFlock"}),
 		text("unrelated answer"),
 	)
 	last := s.last
 	s.add(
-		transcript.Item{Compaction: &transcript.Compaction{Summary: "flock was discussed", FirstKept: last, Mode: "reactive"}},
-		transcript.Item{Usage: &transcript.Usage{Model: "m", InputTokens: 10, OutputTokens: 2}},
+		transcript.Item{Body: transcript.Compaction{Summary: "flock was discussed", FirstKept: last, Mode: "reactive"}},
+		transcript.Item{Body: transcript.Usage{Model: "m", InputTokens: 10, OutputTokens: 2}},
 		text("Nothing about it after the compaction."),
 	)
 	access := convsearch.Access{Session: s.id, Widest: convsearch.ScopeDescendants}
@@ -286,13 +286,13 @@ func TestStatsSumsUsageAndSpansTheTimeRange(t *testing.T) {
 	parent.add(
 		user("first"),
 		call("c1", "read", `{}`),
-		transcript.Item{Usage: &transcript.Usage{Model: "m", InputTokens: 100, OutputTokens: 20, CacheReadTokens: 50, ThoughtTokens: 5}},
+		transcript.Item{Body: transcript.Usage{Model: "m", InputTokens: 100, OutputTokens: 20, CacheReadTokens: 50, ThoughtTokens: 5}},
 	)
 	last := parent.last
 	parent.add(
-		transcript.Item{Compaction: &transcript.Compaction{Summary: "s", FirstKept: last, Mode: "reactive"}},
+		transcript.Item{Body: transcript.Compaction{Summary: "s", FirstKept: last, Mode: "reactive"}},
 		user("second"),
-		transcript.Item{Usage: &transcript.Usage{Model: "m", InputTokens: 30, OutputTokens: 7, CacheWriteTokens: 9}},
+		transcript.Item{Body: transcript.Usage{Model: "m", InputTokens: 30, OutputTokens: 7, CacheWriteTokens: 9}},
 	)
 	child := newSession(t, st, parent.id, start.Add(time.Hour))
 	child.add(user("subtask"))

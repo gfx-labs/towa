@@ -125,7 +125,7 @@ func TestSubagentToolChargesSuccessfulAndFailedChildUsage(t *testing.T) {
 				require.NoError(t, err)
 				for entry, err := range entries {
 					require.NoError(t, err)
-					if usage := entry.Item.Usage; usage != nil {
+					if usage, ok := entry.Item.Body.(transcript.Usage); ok {
 						inputTokens += usage.InputTokens
 						outputTokens += usage.OutputTokens
 						if id == childID {

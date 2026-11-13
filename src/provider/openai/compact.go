@@ -80,7 +80,7 @@ func (c *Client) Compact(ctx context.Context, req provider.Request) (*Compacted,
 		}
 		found = found || (item.Type == typeCompaction && item.EncryptedContent != "")
 		result.Items = append(result.Items, transcript.Item{
-			Native: &transcript.Native{Kind: item.Type}, Provider: ep.provider, Opaque: raw.Clone(),
+			Body: transcript.Native{Kind: item.Type}, Provider: ep.provider, Opaque: raw.Clone(),
 			Origin: &transcript.Origin{Model: req.Model, Account: req.Credential.Account},
 		})
 	}

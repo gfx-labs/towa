@@ -224,7 +224,7 @@ func (p *parser) convert(raw jsontext.Value) (*transcript.Item, *provider.Error)
 				text.WriteString(c.Refusal)
 			}
 		}
-		out.Text = &transcript.Text{Text: text.String()}
+		out.Body = transcript.Text{Text: text.String()}
 		op.Phase = item.Phase
 	case typeReasoning:
 		for _, s := range item.Summary {
@@ -235,7 +235,7 @@ func (p *parser) convert(raw jsontext.Value) (*transcript.Item, *provider.Error)
 		if len(op.Summary) == 0 && item.EncryptedContent == "" {
 			return nil, nil
 		}
-		out.Thinking = &transcript.Thinking{Text: strings.Join(op.Summary, summarySeparator)}
+		out.Body = transcript.Thinking{Text: strings.Join(op.Summary, summarySeparator)}
 		op.EncryptedContent = item.EncryptedContent
 	case typeFunctionCall:
 		if item.CallID == "" || item.Name == "" {
@@ -252,7 +252,7 @@ func (p *parser) convert(raw jsontext.Value) (*transcript.Item, *provider.Error)
 			}
 		}
 		p.sawToolCall = true
-		out.ToolCall = &transcript.ToolCall{ID: item.CallID, Name: item.Name, Input: input}
+		out.Body = transcript.ToolCall{ID: item.CallID, Name: item.Name, Input: input}
 		op.Type = typeFunctionCall
 	case typeCustomCall:
 		if item.CallID == "" || item.Name == "" {
@@ -263,14 +263,14 @@ func (p *parser) convert(raw jsontext.Value) (*transcript.Item, *provider.Error)
 			return nil, protocolError("a custom tool call's input cannot be stored: " + err.Error())
 		}
 		p.sawToolCall = true
-		out.ToolCall = &transcript.ToolCall{ID: item.CallID, Name: item.Name, Input: input}
+		out.Body = transcript.ToolCall{ID: item.CallID, Name: item.Name, Input: input}
 		op.Type = typeCustomCall
 	case "":
 		return nil, protocolError("an output item has no type")
 	default:
 		// A server-side tool call, a compaction item, or a type newer than
 		// this client: kept whole and sent back whole.
-		out.Native = &transcript.Native{Kind: item.Type}
+		out.Body = transcript.Native{Kind: item.Type}
 		out.Opaque = raw.Clone()
 		return out, nil
 	}

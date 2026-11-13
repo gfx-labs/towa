@@ -325,12 +325,12 @@ func (s *streamState) end() *provider.Error {
 			return s.malformed(err, "reasoning details")
 		}
 		s.out = append(s.out, provider.Event{Item: &transcript.Item{
-			Thinking: &transcript.Thinking{Text: s.thinking.String()}, Provider: id, Opaque: opaque,
+			Body: transcript.Thinking{Text: s.thinking.String()}, Provider: id, Opaque: opaque,
 		}})
 	}
 	if s.text.Len() > 0 {
 		s.out = append(s.out, provider.Event{Item: &transcript.Item{
-			Text: &transcript.Text{Text: s.text.String()}, Provider: id,
+			Body: transcript.Text{Text: s.text.String()}, Provider: id,
 		}})
 	}
 	for i, call := range s.calls {
@@ -338,7 +338,7 @@ func (s *streamState) end() *provider.Error {
 			return s.malformed(nil, "tool call %d has no id or no name", i)
 		}
 		item := &transcript.Item{
-			ToolCall: &transcript.ToolCall{ID: call.id, Name: call.name, Input: argument(call.args.String())}, Provider: id,
+			Body: transcript.ToolCall{ID: call.id, Name: call.name, Input: argument(call.args.String())}, Provider: id,
 		}
 		if call.extra != nil {
 			opaque, err := json.Marshal(toolCallOpaque{ExtraContent: call.extra})

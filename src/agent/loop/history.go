@@ -64,14 +64,14 @@ func told(parts []transcript.Part) []transcript.Part {
 // and a user message stored with one as UserItem would have: without the
 // part, and not at all when no part is left.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
-	interrupted := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: interruption}}}}
+	interrupted := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: interruption}}}}
 	if err := interrupted.Validate(); err != nil {
 		return nil, nil, err
 	}
 	answered := map[string]bool{}
 	for _, item := range history {
-		if item.ToolResult != nil {
-			answered[item.ToolResult.CallID] = true
+		if result, ok := item.Body.(transcript.ToolResult); ok {
+			answered[result.CallID] = true
 		}
 	}
 	// A call is stored before it is dispatched and its result before
@@ -82,44 +82,47 @@ func Conversation(history []transcript.Item, interruption string) (items []trans
 		if len(open) == 0 {
 			return nil
 		}
-		return fmt.Errorf("loop: tool call %s has no result and is not at the end of the session", open[0].ToolResult.CallID)
+		lost, _ := open[0].Body.(transcript.ToolResult)
+		return fmt.Errorf("loop: tool call %s has no result and is not at the end of the session", lost.CallID)
 	}
 	for _, item := range history {
 		if err := item.Validate(); err != nil {
 			return nil, nil, err
 		}
-		switch {
-		case item.ToolCall != nil:
+		switch body := item.Body.(type) {
+		case transcript.ToolCall:
 			items = append(items, item)
-			if !answered[item.ToolCall.ID] {
-				lost := result(*item.ToolCall, transcript.OutcomeUnknown, textLost)
-				open = append(open, transcript.Item{ToolResult: &lost})
+			if !answered[body.ID] {
+				lost := result(body, transcript.OutcomeUnknown, textLost)
+				open = append(open, transcript.Item{Body: lost})
 			}
-		case item.Text != nil, item.Thinking != nil, item.Native != nil:
+		case transcript.Text, transcript.Thinking, transcript.Native:
 			items = append(items, item)
-		case item.ToolResult != nil:
-			result := *item.ToolResult
+		case transcript.ToolResult:
+			result := body
 			result.Parts = told(result.Parts)
-			item.ToolResult = &result
+			item.Body = result
 			items = append(items, item)
-		case item.User != nil:
+		case transcript.User:
 			if err := dangling(); err != nil {
 				return nil, nil, err
 			}
-			user := *item.User
+			user := body
 			user.Parts = filled(user.Parts)
 			if len(user.Parts) == 0 {
 				continue
 			}
-			item.User = &user
+			item.Body = user
 			items = append(items, item)
-		case item.Interrupted != nil:
+		case transcript.Interrupted:
 			if err := dangling(); err != nil {
 				return nil, nil, err
 			}
 			items = append(items, interrupted)
-		case item.Compaction != nil:
+		case transcript.Compaction:
 			return nil, nil, errors.New("loop: compaction must be materialized before Conversation")
+		case transcript.Usage, transcript.ModelSwitch:
+			// Not part of the conversation.
 		}
 	}
 	return append(items, open...), open, nil

@@ -79,7 +79,7 @@ func encodeLines(dst *bytebufferpool.ByteBuffer, entries []transcript.Entry) (co
 			return false, fmt.Errorf("store/dir: entry %d (%s): %w", i, e.ID, err)
 		}
 		_ = dst.WriteByte('\n') // Never fails.
-		compaction = compaction || e.Item.Compaction != nil
+		compaction = compaction || transcript.Is[transcript.Compaction](e.Item)
 	}
 	return compaction, nil
 }

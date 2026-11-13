@@ -79,15 +79,15 @@ func (s *session) entry(item transcript.Item) transcript.Entry {
 }
 
 func (s *session) user(text string) transcript.Entry {
-	return s.entry(transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}})
+	return s.entry(transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: text}}}})
 }
 
 func (s *session) text(text string) transcript.Entry {
-	return s.entry(transcript.Item{Text: &transcript.Text{Text: text}})
+	return s.entry(transcript.Item{Body: transcript.Text{Text: text}})
 }
 
 func (s *session) compaction(summary string) transcript.Entry {
-	return s.entry(transcript.Item{Compaction: &transcript.Compaction{Summary: summary, FirstKept: s.last, Mode: "summary"}})
+	return s.entry(transcript.Item{Body: transcript.Compaction{Summary: summary, FirstKept: s.last, Mode: "summary"}})
 }
 
 // collect reads a sequence to its end or its first error.
@@ -277,7 +277,7 @@ func continueMoved(root string) error {
 	}
 	last := report.Context[len(report.Context)-1]
 	report.Appended = transcript.NewEntry(last.ID, last.Time.Add(time.Minute), transcript.Item{
-		User: &transcript.User{Parts: []transcript.Part{{Text: "continued on the other machine"}}},
+		Body: transcript.User{Parts: []transcript.Part{{Text: "continued on the other machine"}}},
 	})
 	if err := s.Append(ctx, id, []transcript.Entry{report.Appended}); err != nil {
 		return err
@@ -302,11 +302,11 @@ func TestMovedSessionContinues(t *testing.T) {
 				sess.compaction("the summary"),
 				sess.user("read the file"),
 				sess.entry(transcript.Item{
-					Thinking: &transcript.Thinking{Text: "which file"},
+					Body:     transcript.Thinking{Text: "which file"},
 					Provider: "anthropic", Opaque: jsontext.Value(`{"signature":"c2ln"}`),
 				}),
-				sess.entry(transcript.Item{ToolCall: &transcript.ToolCall{ID: "call_1", Name: "read", Input: jsontext.Value(`{"path":"a.go"}`)}}),
-				sess.entry(transcript.Item{ToolResult: &transcript.ToolResult{
+				sess.entry(transcript.Item{Body: transcript.ToolCall{ID: "call_1", Name: "read", Input: jsontext.Value(`{"path":"a.go"}`)}}),
+				sess.entry(transcript.Item{Body: transcript.ToolResult{
 					CallID: "call_1", Name: "read", Outcome: transcript.OutcomeCompleted,
 					Parts: []transcript.Part{{Text: "the first lines"}, {Stored: &stored}},
 				}}),
@@ -377,10 +377,10 @@ func TestLoadStartsAtTheLatestCompaction(t *testing.T) {
 			add(sess.compaction("first summary"), sess.user("two"))
 			// Two compactions in one append: the context starts at the second.
 			add(sess.text("three"), sess.compaction("second summary"), sess.compaction("third summary"), sess.user("four"))
-			add(sess.entry(transcript.Item{Native: &transcript.Native{Kind: "server_tool"}, Provider: "openai", Opaque: decoy}), sess.text(long))
+			add(sess.entry(transcript.Item{Body: transcript.Native{Kind: "server_tool"}, Provider: "openai", Opaque: decoy}), sess.text(long))
 			_, entries = load(t, s, id)
 			same(t, all[6:], entries)
-			assert.Equal(t, "third summary", entries[0].Item.Compaction.Summary)
+			assert.Equal(t, "third summary", entries[0].Item.Body.(transcript.Compaction).Summary)
 
 			same(t, all, history(t, s, id, store.Range{}))
 			same(t, all[1:4], history(t, s, id, store.Range{From: 1, To: 4}))

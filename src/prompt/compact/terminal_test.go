@@ -57,7 +57,7 @@ func TestControllerFinishesReadyReplay(t *testing.T) {
 		for _, part := range message.Content {
 			parts = append(parts, transcript.Part{Text: part.Text})
 		}
-		req.Items = append(req.Items, transcript.Item{User: &transcript.User{Parts: parts}})
+		req.Items = append(req.Items, transcript.Item{Body: transcript.User{Parts: parts}})
 	}
 	require.NotEmpty(t, req.Items)
 	entries := []transcript.Entry{transcript.NewEntry(uuid.Nil(), time.Now(), req.Items[0])}
@@ -96,7 +96,7 @@ func TestControllerFinishesReadyReplay(t *testing.T) {
 			task.err = err
 			return
 		}
-		result.item = transcript.Item{Compaction: &transcript.Compaction{Summary: summary, Mode: config.CompactionReactive}}
+		result.item = transcript.Item{Body: transcript.Compaction{Summary: summary, Mode: config.CompactionReactive}}
 		task.result = result
 	}()
 	controller := &Controller{pending: task}
@@ -107,20 +107,21 @@ func TestControllerFinishesReadyReplay(t *testing.T) {
 		t.Fatal(context.Cause(ctx))
 	}
 	require.NoError(t, task.err)
-	followup := transcript.NewEntry(source.Tail, time.Now(), transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "Continue."}}}})
+	followup := transcript.NewEntry(source.Tail, time.Now(), transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: "Continue."}}}})
 	entries = append(entries, followup)
 	effects, err := controller.Finish(ctx, BeforeInput{Entries: entries, ProviderName: "ollama"})
 	require.NoError(t, err)
 	require.Len(t, effects, 2)
-	require.Equal(t, task.result.Usage, effects[0].Usage)
-	require.NotEmpty(t, effects[1].Compaction.Summary)
-	require.Equal(t, followup.ID, effects[1].Compaction.FirstKept)
+	require.Equal(t, *task.result.Usage, effects[0].Body)
+	summary := effects[1].Body.(transcript.Compaction)
+	require.NotEmpty(t, summary.Summary)
+	require.Equal(t, followup.ID, summary.FirstKept)
 	for _, item := range effects {
 		entries = append(entries, transcript.NewEntry(entries[len(entries)-1].ID, time.Now(), item))
 	}
 	view, err := Read(entries)
 	require.NoError(t, err)
-	require.Equal(t, task.result.item.Compaction.Summary, view.Summary())
+	require.Equal(t, task.result.item.Body.(transcript.Compaction).Summary, view.Summary())
 	require.Equal(t, []transcript.Entry{followup, entries[len(entries)-2]}, view.Active)
 	effects, err = controller.Finish(ctx, BeforeInput{Entries: entries})
 	require.NoError(t, err)
@@ -156,7 +157,7 @@ func TestControllerCancelsAndJoinsProvider(t *testing.T) {
 			require.NoError(t, err)
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			entry := transcript.NewEntry(uuid.Nil(), time.Now(), transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "Summarize this context."}}}})
+			entry := transcript.NewEntry(uuid.Nil(), time.Now(), transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: "Summarize this context."}}}})
 			source, err := Select([]transcript.Entry{entry}, 0)
 			require.NoError(t, err)
 			controller := &Controller{pending: Start(ctx, Work{
