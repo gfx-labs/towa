@@ -52,7 +52,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
+	"syscall"
 
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -194,23 +194,36 @@ type resultEvent struct {
 
 // answer is what a command writes to its standard output.
 type answer struct {
-	Decision string         `json:"decision"`
+	Decision Action         `json:"decision"`
 	Reason   string         `json:"reason,omitzero"`
 	Input    jsontext.Value `json:"input,omitzero"`
+}
+
+// invalid says what is wrong with the answer to an event, or "" when it can
+// be used.
+func (a answer) invalid(event string) string {
+	switch {
+	case a.Decision != Allow && a.Decision != Deny:
+		return fmt.Sprintf("decision %q is not %q or %q", a.Decision, Allow, Deny)
+	case a.Decision == Deny && strings.TrimSpace(a.Reason) == "":
+		return "a deny needs a reason"
+	case a.Decision == Allow && a.Reason != "":
+		return "an allow takes no reason"
+	case a.Input != nil && event != config.HookPreTool:
+		return "only a pre_tool hook can change the input"
+	case a.Input != nil && a.Decision == Deny:
+		return "a deny takes no input"
+	}
+	return ""
 }
 
 // PreTool runs the pre_tool hooks that match the tool, in config order,
 // before a call is run. A hook that changes the input passes the changed
 // input to the hooks after it. The first deny ends the run.
 func (r *Runner) PreTool(ctx context.Context, s Session, callID, tool string, input jsontext.Value) (Decision, error) {
-	current := input
-	return r.run(ctx, s, config.HookPreTool, tool, func() event {
-		return event{Tool: &toolEvent{Name: tool, CallID: callID, Input: current}}
-	}, func(a answer) {
-		if a.Input != nil {
-			current = a.Input
-		}
-	}, func(d *Decision) { d.Input = current })
+	return r.run(ctx, s, config.HookPreTool, tool, event{
+		Tool: &toolEvent{Name: tool, CallID: callID, Input: input},
+	})
 }
 
 // PostTool runs the post_tool hooks that match the tool, in config order,
@@ -219,54 +232,201 @@ func (r *Runner) PostTool(
 	ctx context.Context, s Session, callID, tool string, input jsontext.Value,
 	outcome transcript.Outcome, parts []transcript.Part,
 ) (Decision, error) {
-	ev := event{
+	return r.run(ctx, s, config.HookPostTool, tool, event{
 		Tool:   &toolEvent{Name: tool, CallID: callID, Input: input},
 		Result: &resultEvent{Outcome: outcome, Parts: parts},
-	}
-	return r.run(ctx, s, config.HookPostTool, tool, func() event { return ev }, nil, nil)
+	})
 }
 
 // Prompt runs the prompt hooks, in config order, when a prompt arrives.
 func (r *Runner) Prompt(ctx context.Context, s Session, parts []transcript.Part) (Decision, error) {
-	return r.run(ctx, s, config.HookPrompt, "", func() event { return event{Prompt: parts} }, nil, nil)
+	return r.run(ctx, s, config.HookPrompt, "", event{Prompt: parts})
 }
 
 // Stop runs the stop hooks, in config order, when a turn is about to end.
 // reason is why it is ending.
 func (r *Runner) Stop(ctx context.Context, s Session, reason string) (Decision, error) {
-	return r.run(ctx, s, config.HookStop, "", func() event { return event{StopReason: reason} }, nil, nil)
+	return r.run(ctx, s, config.HookStop, "", event{StopReason: reason})
 }
 
-// run runs every hook of one event that matches. build makes the event for
-// the next hook, accept sees each allow, and finish completes the decision
-// when every hook allowed.
-func (r *Runner) run(
-	ctx context.Context, s Session, name, tool string,
-	build func() event, accept func(answer), finish func(*Decision),
-) (Decision, error) {
+// run sends ev to every hook of the named event that matches the tool, until
+// one denies or fails.
+func (r *Runner) run(ctx context.Context, s Session, name, tool string, ev event) (Decision, error) {
+	ev.Event, ev.SessionID, ev.Cwd = name, s.ID, s.Cwd
 	for i, h := range r.hooks {
 		if h.Event != name || (len(h.Tools) > 0 && !slices.Contains(h.Tools, tool)) {
 			continue
 		}
-		ev := build()
-		ev.Event, ev.SessionID, ev.Cwd = name, s.ID, s.Cwd
-		a, herr := runOne(ctx, h, ev)
-		if herr != nil {
-			herr.Event, herr.Index, herr.Command = name, i, h.Command
-			return Decision{Action: Deny, Reason: herr.Error()}, herr
+		a, failure := ask(ctx, h, ev)
+		if failure != nil {
+			failure.Event, failure.Index, failure.Command = name, i, h.Command
+			return Decision{Action: Deny, Reason: failure.Error()}, failure
 		}
-		if a.Decision == string(Deny) {
+		if a.Decision == Deny {
 			return Decision{Action: Deny, Reason: a.Reason}, nil
 		}
-		if accept != nil {
-			accept(a)
+		if a.Input != nil {
+			ev.Tool.Input = a.Input
 		}
 	}
 	d := Decision{Action: Allow}
-	if finish != nil {
-		finish(&d)
+	if name == config.HookPreTool {
+		d.Input = ev.Tool.Input
 	}
 	return d, nil
+}
+
+// ask runs one hook's command with the event and returns its answer. The
+// caller adds which hook it was to a failure.
+func ask(ctx context.Context, h config.Hook, ev event) (answer, *Error) {
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return answer{}, &Error{Kind: KindStart, Detail: "the event cannot be encoded", Err: err}
+	}
+	stdout, stderr, failure := execute(ctx, h, ev.Cwd, payload)
+	if failure == nil {
+		var a answer
+		if a, failure = decode(stdout, h.MaxOutputBytes, ev.Event); failure == nil {
+			return a, nil
+		}
+	}
+	if stderr != nil {
+		failure.Stderr, failure.StderrDropped = stderr.buf.String(), stderr.dropped
+	}
+	return answer{}, failure
+}
+
+// decode reads the answer to an event from what a command printed.
+func decode(stdout *capped, limit int64, event string) (answer, *Error) {
+	if stdout.dropped > 0 {
+		return answer{}, &Error{Kind: KindOutput, Detail: fmt.Sprintf(
+			"%d bytes of output is over max_output_bytes = %d", int64(stdout.buf.Len())+stdout.dropped, limit,
+		)}
+	}
+	var a answer
+	if err := json.Unmarshal(stdout.buf.Bytes(), &a, json.RejectUnknownMembers(true)); err != nil {
+		return answer{}, &Error{Kind: KindOutput, Detail: "not a JSON answer", Err: err}
+	}
+	if detail := a.invalid(event); detail != "" {
+		return answer{}, &Error{Kind: KindOutput, Detail: detail}
+	}
+	return a, nil
+}
+
+// errTimeout is the cause of a context that ended at a hook's timeout.
+var errTimeout = errors.New("hooks: the timeout passed")
+
+// execute runs a hook's command in cwd with payload on its standard input,
+// and returns what it wrote once it and everything holding its output have
+// gone. stderr is nil when the command did not start.
+func execute(ctx context.Context, h config.Hook, cwd string, payload []byte) (stdout, stderr *capped, _ *Error) {
+	// The pipes are ours, not os/exec's, so that Wait returns when the
+	// command exits even if a process it started still holds one, and so
+	// that closing our ends stops the reads.
+	child, ours, err := openPipes()
+	if err != nil {
+		return nil, nil, &Error{Kind: KindStart, Err: err}
+	}
+	cmd := exec.Command(h.Command[0], h.Command[1:]...) //nolint:gosec // the operator's configured command
+	cmd.Dir = cwd
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = child[0], child[1], child[2]
+	// The command leads a new process group, so that it and everything it
+	// starts can be killed together.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	startErr := cmd.Start()
+	// The child has its own copies of these ends.
+	closeErr := closeAll(child[:])
+	if startErr != nil || closeErr != nil {
+		err := errors.Join(startErr, closeErr, closeAll(ours[:]))
+		if startErr == nil {
+			err = errors.Join(err, killGroup(cmd.Process.Pid), cmd.Wait())
+		}
+		return nil, nil, &Error{Kind: KindStart, Err: err}
+	}
+	// Errors are not kept: an end may already be closed, and a read that
+	// fails is reported by the kind of failure that closed it.
+	closeOurs := sync.OnceFunc(func() { _ = closeAll(ours[:]) })
+	defer closeOurs()
+
+	go func() {
+		// A command need not read its input, so a broken pipe is not a
+		// failure. A command that needed it fails on its own.
+		_, _ = ours[0].Write(payload)
+		_ = ours[0].Close()
+	}()
+	stdout, stderr = &capped{limit: h.MaxOutputBytes}, &capped{limit: h.MaxOutputBytes}
+	var reads sync.WaitGroup
+	reads.Go(func() { _, _ = io.Copy(stdout, ours[1]) })
+	reads.Go(func() { _, _ = io.Copy(stderr, ours[2]) })
+	var waitErr error
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		waitErr = cmd.Wait()
+		reads.Wait()
+	}()
+
+	ctx, cancel := context.WithTimeoutCause(ctx, h.Timeout, errTimeout)
+	defer cancel()
+	select {
+	case <-exited:
+		return stdout, stderr, exitFailure(waitErr)
+	case <-ctx.Done():
+	}
+	failure := &Error{Kind: KindCancelled, Err: context.Cause(ctx)}
+	if errors.Is(failure.Err, errTimeout) {
+		failure = &Error{Kind: KindTimeout, Detail: "after " + h.Timeout.String()}
+	}
+	// Kill first, so nothing in the group writes after the close.
+	if err := killGroup(cmd.Process.Pid); err != nil {
+		failure.Err = errors.Join(failure.Err, err)
+	}
+	closeOurs()
+	// What Wait returns now is the kill we just sent, which Kind already says.
+	<-exited
+	return stdout, stderr, failure
+}
+
+// exitFailure is the failure of a command that Wait returned err for, or nil
+// when it exited with status zero.
+func exitFailure(err error) *Error {
+	if err == nil {
+		return nil
+	}
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return &Error{Kind: KindExit, ExitCode: -1, Err: err}
+	}
+	failure := &Error{Kind: KindExit, ExitCode: exit.ExitCode()}
+	if failure.ExitCode < 0 {
+		failure.Detail = exit.String()
+	}
+	return failure
+}
+
+// openPipes opens the pipes of a command's standard input, output and error,
+// in that order. child holds the ends the command gets and ours the others.
+func openPipes() (child, ours [3]*os.File, err error) {
+	for i := range child {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return child, ours, errors.Join(err, closeAll(child[:i]), closeAll(ours[:i]))
+		}
+		if i == 0 {
+			child[i], ours[i] = r, w
+		} else {
+			child[i], ours[i] = w, r
+		}
+	}
+	return child, ours, nil
+}
+
+func closeAll(files []*os.File) error {
+	var errs []error
+	for _, f := range files {
+		errs = append(errs, f.Close())
+	}
+	return errors.Join(errs...)
 }
 
 // capped keeps what is written to it up to a limit and counts the rest, so
@@ -281,146 +441,9 @@ type capped struct {
 func (c *capped) Write(p []byte) (int, error) {
 	keep := len(p)
 	if c.limit > 0 {
-		if room := c.limit - int64(c.buf.Len()); int64(keep) > room {
-			keep = int(room)
-		}
+		keep = int(min(int64(keep), c.limit-int64(c.buf.Len())))
 	}
 	c.buf.Write(p[:keep])
 	c.dropped += int64(len(p) - keep)
 	return len(p), nil
-}
-
-// runOne runs one hook's command and checks its answer. The returned Error
-// has its Kind and details set, and the caller adds which hook it was.
-func runOne(ctx context.Context, h config.Hook, ev event) (answer, *Error) {
-	payload, err := json.Marshal(ev)
-	if err != nil {
-		return answer{}, &Error{Kind: KindStart, Detail: "the event cannot be encoded", Err: err}
-	}
-
-	// The pipes are ours, not os/exec's, so that Wait returns when the
-	// command exits even if a process it started still holds one, and so
-	// that closing our ends stops the reads.
-	stdinR, stdinW, err := os.Pipe()
-	if err != nil {
-		return answer{}, &Error{Kind: KindStart, Err: err}
-	}
-	stdoutR, stdoutW, err := os.Pipe()
-	if err != nil {
-		return answer{}, &Error{Kind: KindStart, Err: errors.Join(err, stdinR.Close(), stdinW.Close())}
-	}
-	stderrR, stderrW, err := os.Pipe()
-	if err != nil {
-		return answer{}, &Error{Kind: KindStart, Err: errors.Join(
-			err, stdinR.Close(), stdinW.Close(), stdoutR.Close(), stdoutW.Close(),
-		)}
-	}
-
-	cmd := exec.Command(h.Command[0], h.Command[1:]...) //nolint:gosec // the operator's configured command
-	cmd.Dir = ev.Cwd
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinR, stdoutW, stderrW
-	cmd.SysProcAttr = groupAttr()
-	startErr := cmd.Start()
-	// The child has its own copies of these ends.
-	closeErr := errors.Join(stdinR.Close(), stdoutW.Close(), stderrW.Close())
-	if startErr != nil || closeErr != nil {
-		err := errors.Join(startErr, closeErr, stdinW.Close(), stdoutR.Close(), stderrR.Close())
-		if startErr == nil {
-			err = errors.Join(err, killGroup(cmd.Process.Pid), cmd.Wait())
-		}
-		return answer{}, &Error{Kind: KindStart, Err: err}
-	}
-
-	var closeOnce sync.Once
-	closeOurs := func() {
-		// Errors are not kept: an end may already be closed, and a read
-		// that fails is reported by the kind of failure that closed it.
-		closeOnce.Do(func() { _, _, _ = stdinW.Close(), stdoutR.Close(), stderrR.Close() })
-	}
-	defer closeOurs()
-
-	go func() {
-		// A command need not read its input, so a broken pipe is not a
-		// failure. A command that needed it fails on its own.
-		_, _ = stdinW.Write(payload)
-		_ = stdinW.Close()
-	}()
-	stdout, stderr := &capped{limit: h.MaxOutputBytes}, &capped{limit: h.MaxOutputBytes}
-	var reads sync.WaitGroup
-	reads.Go(func() { _, _ = io.Copy(stdout, stdoutR) })
-	reads.Go(func() { _, _ = io.Copy(stderr, stderrR) })
-	finished := make(chan error, 1)
-	go func() {
-		waitErr := cmd.Wait()
-		reads.Wait()
-		finished <- waitErr
-	}()
-
-	timer := time.NewTimer(h.Timeout)
-	defer timer.Stop()
-	var waitErr error
-	failure := &Error{}
-	select {
-	case waitErr = <-finished:
-	case <-timer.C:
-		failure.Kind = KindTimeout
-		failure.Detail = "after " + h.Timeout.String()
-	case <-ctx.Done():
-		failure.Kind = KindCancelled
-		failure.Err = context.Cause(ctx)
-	}
-	if failure.Kind != "" {
-		// Kill first, so nothing in the group writes after the close.
-		if err := killGroup(cmd.Process.Pid); err != nil {
-			failure.Err = errors.Join(failure.Err, err)
-		}
-		closeOurs()
-		// The wait error is the kill we just sent, which Kind already says.
-		waitErr = <-finished
-	}
-	failure.Stderr, failure.StderrDropped = stderr.buf.String(), stderr.dropped
-	if failure.Kind != "" {
-		return answer{}, failure
-	}
-
-	if waitErr != nil {
-		failure.Kind = KindExit
-		var exit *exec.ExitError
-		if errors.As(waitErr, &exit) {
-			failure.ExitCode = exit.ExitCode()
-			if failure.ExitCode < 0 {
-				failure.Detail = exit.String()
-			}
-		} else {
-			failure.ExitCode, failure.Err = -1, waitErr
-		}
-		return answer{}, failure
-	}
-
-	failure.Kind = KindOutput
-	if stdout.dropped > 0 {
-		failure.Detail = fmt.Sprintf("%d bytes of output is over max_output_bytes = %d",
-			int64(stdout.buf.Len())+stdout.dropped, h.MaxOutputBytes)
-		return answer{}, failure
-	}
-	var a answer
-	if err := json.Unmarshal(stdout.buf.Bytes(), &a, json.RejectUnknownMembers(true)); err != nil {
-		failure.Detail, failure.Err = "not a JSON answer", err
-		return answer{}, failure
-	}
-	switch {
-	case a.Decision != string(Allow) && a.Decision != string(Deny):
-		failure.Detail = fmt.Sprintf("decision %q is not %q or %q", a.Decision, Allow, Deny)
-	case a.Decision == string(Deny) && strings.TrimSpace(a.Reason) == "":
-		failure.Detail = "a deny needs a reason"
-	case a.Decision == string(Allow) && a.Reason != "":
-		failure.Detail = "an allow takes no reason"
-	case a.Input != nil && ev.Event != config.HookPreTool:
-		failure.Detail = "only a pre_tool hook can change the input"
-	case a.Input != nil && a.Decision == string(Deny):
-		failure.Detail = "a deny takes no input"
-	default:
-		return a, nil
-	}
-	return answer{}, failure
 }
