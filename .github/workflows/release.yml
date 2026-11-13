@@ -67,7 +67,11 @@ jobs:
               -ldflags "-s -w -X github.com/gfx-labs/towa/src/cli.buildVersion=$TAG" \
               -o "dist/$name/towa" ./cmd/towa
             cp LICENSE README.md "dist/$name/"
-            tar -C dist -czf "dist/$name.tar.gz" "$name"
+            # The runner workspace is setgid, and extracting a setgid
+            # directory fails with EPERM where setgid is restricted
+            # (systemd RestrictSUIDSGID, which mise installs hit).
+            tar -C dist --mode=g-s --owner=0 --group=0 --numeric-owner \
+              -czf "dist/$name.tar.gz" "$name"
           done
           (cd dist && sha256sum ./*.tar.gz | sed 's| \./| |' > checksums.txt)
           gh release upload "$TAG" dist/*.tar.gz dist/checksums.txt
