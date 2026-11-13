@@ -45,3 +45,29 @@ jobs:
           body=$(gh release view "$TAG" --json body -q .body)
           printf '%s\n\nRelease notes: %s/%s/blob/%s/%s\n' "$body" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$TAG" "$note" |
             gh release edit "$TAG" --notes-file -
+      # Static binaries for the targets the Nix package builds, one tarball
+      # each, with their sha256 sums. The tag is the version the binary
+      # reports: a build from a checkout has no module version to read.
+      - uses: actions/setup-go@v6
+        if: steps.rp.outputs.release_created
+        with:
+          go-version-file: go.mod
+      - name: attach binaries
+        if: steps.rp.outputs.release_created
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: |
+          mkdir dist
+          for target in linux/amd64 linux/arm64 darwin/arm64; do
+            os=${target%/*} arch=${target#*/}
+            name=towa_${TAG#v}_${os}_${arch}
+            mkdir "dist/$name"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/gfx-labs/towa/src/cli.buildVersion=$TAG" \
+              -o "dist/$name/towa" ./cmd/towa
+            cp LICENSE README.md "dist/$name/"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+          done
+          (cd dist && sha256sum ./*.tar.gz | sed 's| \./| |' > checksums.txt)
+          gh release upload "$TAG" dist/*.tar.gz dist/checksums.txt

@@ -30,7 +30,12 @@ the package is one static binary for x86_64-linux, aarch64-linux and aarch64-dar
 
 with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`, with `GOPRIVATE=github.com/gfx-labs`.
 
-releases are tagged `vX.Y.Z` by release-please. pin one with `?ref=vX.Y.Z` on the flake url or `@vX.Y.Z` with go install.
+releases are tagged `vX.Y.Z` by release-please. pin one with `?ref=vX.Y.Z` on the flake url or `@vX.Y.Z` with go install. each github release also has static binaries for linux amd64, linux arm64 and darwin arm64, with `checksums.txt`:
+
+```sh
+gh release download --repo gfx-labs/towa --pattern 'towa_*_linux_amd64.tar.gz' --pattern checksums.txt
+sha256sum -c --ignore-missing checksums.txt && tar -xzf towa_*_linux_amd64.tar.gz
+```
 
 ## key features
 
