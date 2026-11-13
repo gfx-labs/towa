@@ -168,7 +168,7 @@ func TestOAuthManualLogin(t *testing.T) {
 				_, err = io.WriteString(in, resp.Header.Get("Location")+"\n")
 				return err
 			}
-			return errors.New("no authorization page was printed")
+			return errors.Join(errors.New("no authorization page was printed"), lines.Err())
 		}()
 	}()
 

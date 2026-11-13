@@ -357,7 +357,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 					// Default: omit if empty for optional fields.
 					// Keep always-present behavior only for defaults where the zero value is nil (slice/map).
 					// For typed object defaults (non-nilable), still allow omission on the wire.
-					if dp == nil || (dp.kind != KindArray && dp.kind != KindObject) || (dp != nil && !dp.nilable) {
+					if dp == nil || (dp.kind != KindArray && dp.kind != KindObject) || !dp.nilable {
 						tag = pk + omitOption(schema, fieldType)
 					}
 				}

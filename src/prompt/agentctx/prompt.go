@@ -224,7 +224,8 @@ func list(lines []string) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("- " + line)
+		b.WriteString("- ")
+		b.WriteString(line)
 	}
 	return b.String()
 }

@@ -112,10 +112,10 @@ func checkpointConversation(replaced []transcript.Entry) string {
 
 func checkpointWrap(in SummaryInput, conversation string) string {
 	var b strings.Builder
-	b.WriteString("<conversation>\n" + conversation + "\n</conversation>\n\n")
+	fmt.Fprintf(&b, "<conversation>\n%s\n</conversation>\n\n", conversation)
 	prompt := checkpointPrompt
 	if in.Previous != "" {
-		b.WriteString("<previous-summary>\n" + in.Previous + "\n</previous-summary>\n\n")
+		fmt.Fprintf(&b, "<previous-summary>\n%s\n</previous-summary>\n\n", in.Previous)
 		prompt = checkpointMergePrompt
 	}
 	b.WriteString(prompt)
@@ -144,10 +144,12 @@ func shortConversation(replaced []transcript.Entry) string {
 			switch {
 			case e.Item.User != nil:
 				if text := partsText(e.Item.User.Parts, "[Image]"); text != "" {
-					b.WriteString(text + "\n")
+					b.WriteString(text)
+					b.WriteString("\n")
 				}
 			case e.Item.Text != nil:
-				b.WriteString(e.Item.Text.Text + "\n")
+				b.WriteString(e.Item.Text.Text)
+				b.WriteString("\n")
 			case e.Item.ToolCall != nil:
 				fmt.Fprintf(&b, "[Tool: %s - %s]\n", e.Item.ToolCall.Name, e.Item.ToolCall.Input)
 			case e.Item.ToolResult != nil:
@@ -166,7 +168,7 @@ func shortConversation(replaced []transcript.Entry) string {
 func shortWrap(in SummaryInput, conversation string) string {
 	var b strings.Builder
 	if in.Previous != "" {
-		b.WriteString("## Previous Summary\n\n" + in.Previous + "\n\n## New Conversation\n\n")
+		fmt.Fprintf(&b, "## Previous Summary\n\n%s\n\n## New Conversation\n\n", in.Previous)
 	}
 	b.WriteString(conversation)
 	b.WriteString("\n\n---\n\n" + shortPrompt)

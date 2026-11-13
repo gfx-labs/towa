@@ -139,16 +139,20 @@ func (e *Error) Error() string {
 	default:
 		b.WriteString(string(e.Kind))
 	}
-	if e.Detail != "" {
-		b.WriteString(": " + e.Detail)
-	}
-	if e.Err != nil {
-		b.WriteString(": " + e.Err.Error())
-	}
-	if s := strings.TrimSpace(e.Stderr); s != "" {
-		b.WriteString(": " + s)
+	for _, part := range []string{e.Detail, errorText(e.Err), strings.TrimSpace(e.Stderr)} {
+		if part != "" {
+			b.WriteString(": ")
+			b.WriteString(part)
+		}
 	}
 	return b.String()
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (e *Error) Unwrap() error { return e.Err }

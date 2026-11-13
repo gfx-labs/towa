@@ -66,6 +66,9 @@ func (t *stdioTransport) Connect(context.Context) (sdk.Connection, error) {
 		for lines.Scan() {
 			t.logger.Debug("mcp: server stderr", "server", t.server.Name, "line", lines.Text())
 		}
+		if err := lines.Err(); err != nil {
+			t.logger.Debug("mcp: server stderr is no longer logged", "server", t.server.Name, "err", err)
+		}
 		_, _ = io.Copy(io.Discard, stderr)
 	}()
 	go func() {
