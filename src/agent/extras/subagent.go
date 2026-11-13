@@ -49,43 +49,57 @@ func Subagent(spawner *subagent.Spawner, runner subagent.Runner) (tools.Tool, er
 		}
 		return tools.Description{Title: title, Kind: acp.ToolKindOther}, nil
 	}
-	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
-		var in struct {
-			Prompt      string `json:"prompt"`
-			Model       string `json:"model"`
-			Description string `json:"description"`
-		}
-		if err := json.Unmarshal(call.Input, &in); err != nil {
-			return tools.Result{}, err
-		}
-		current, ok := loop.Current(ctx)
-		if !ok {
-			return tools.Result{}, errors.New("subagent: call has no current turn")
-		}
-		if call.Env.SessionID != current.Turn.SessionID {
-			return tools.Result{}, fmt.Errorf("subagent: calling session %q differs from current turn %q", call.Env.SessionID, current.Turn.SessionID)
-		}
-		res, err := spawner.Run(ctx, subagent.Parent{Loop: runner, Turn: current.Turn, Progress: call.Env.Progress}, subagent.Input{Prompt: in.Prompt, Model: in.Model, Description: in.Description})
-		out := subagentOutput{Final: res.Final, SessionID: res.SessionID, StopReason: res.StopReason, Usage: res.Usage, Charged: res.Charged}
-		outcome := transcript.OutcomeCompleted
-		if err != nil {
-			failed, ok := errors.AsType[*subagent.Error](err)
-			if !ok {
-				return tools.Result{}, err
-			}
-			outcome = transcript.OutcomeFailed
-			out = subagentOutput{
-				SessionID: failed.SessionID, StopReason: failed.StopReason, Usage: failed.Usage, Charged: failed.Charged,
-				Error: &subagentFailure{Kind: failed.Kind, Message: failed.Error(), Limit: failed.Limit, Stop: failed.Stop},
-			}
-		}
-		body, err := json.Marshal(out)
-		if err != nil {
-			return tools.Result{}, err
-		}
-		return tools.TextResult(outcome, string(body)), nil
-	}
+	t.Run = subagentTool{spawner: spawner, runner: runner}.run
 	return t, nil
+}
+
+// subagentTool holds what one call needs besides its input.
+type subagentTool struct {
+	spawner *subagent.Spawner
+	runner  subagent.Runner
+}
+
+func (s subagentTool) run(ctx context.Context, call tools.Call) (tools.Result, error) {
+	var in struct {
+		Prompt      string `json:"prompt"`
+		Model       string `json:"model"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(call.Input, &in); err != nil {
+		return tools.Result{}, err
+	}
+	current, ok := loop.Current(ctx)
+	if !ok {
+		return tools.Result{}, errors.New("subagent: call has no current turn")
+	}
+	if call.Env.SessionID != current.Turn.SessionID {
+		return tools.Result{}, fmt.Errorf("subagent: calling session %q differs from current turn %q", call.Env.SessionID, current.Turn.SessionID)
+	}
+	res, err := s.spawner.Run(ctx, subagent.Parent{Loop: s.runner, Turn: current.Turn, Progress: call.Env.Progress}, subagent.Input{Prompt: in.Prompt, Model: in.Model, Description: in.Description})
+	out, outcome, err := childOutput(res, err)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	return tools.TextResult(outcome, string(body)), nil
+}
+
+// childOutput turns the child's result, or its failure, into the tool's JSON shape.
+func childOutput(res subagent.Result, err error) (subagentOutput, transcript.Outcome, error) {
+	if err == nil {
+		return subagentOutput{Final: res.Final, SessionID: res.SessionID, StopReason: res.StopReason, Usage: res.Usage, Charged: res.Charged}, transcript.OutcomeCompleted, nil
+	}
+	failed, ok := errors.AsType[*subagent.Error](err)
+	if !ok {
+		return subagentOutput{}, "", err
+	}
+	return subagentOutput{
+		SessionID: failed.SessionID, StopReason: failed.StopReason, Usage: failed.Usage, Charged: failed.Charged,
+		Error: &subagentFailure{Kind: failed.Kind, Message: failed.Error(), Limit: failed.Limit, Stop: failed.Stop},
+	}, transcript.OutcomeFailed, nil
 }
 
 type subagentOutput struct {

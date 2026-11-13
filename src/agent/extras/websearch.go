@@ -43,36 +43,48 @@ func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
 		[]byte(`{"type":"object","required":["query"],"properties":{"intent":{"type":"string"},"query":{"type":"string","description":"Search query."},"num_results":{"type":"integer","description":"How many results to return. Omit for the configured default."}}}`))
 	t.Summary = SearchSummary
 	t.Guidance = []string{searchGuidance(NameWebSearch)}
-	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
-		var in struct {
-			Query      string `json:"query"`
-			NumResults int    `json:"num_results"`
-		}
-		if err := json.Unmarshal(call.Input, &in); err != nil {
+	t.Run = webSearchTool{cfg: cfg, client: client}.run
+	return t, nil
+}
+
+// webSearchTool holds what one call needs besides its input.
+type webSearchTool struct {
+	cfg    config.WebSearch
+	client *http.Client
+}
+
+func (w webSearchTool) run(ctx context.Context, call tools.Call) (tools.Result, error) {
+	var in struct {
+		Query      string `json:"query"`
+		NumResults int    `json:"num_results"`
+	}
+	if err := json.Unmarshal(call.Input, &in); err != nil {
+		return tools.Result{}, err
+	}
+	results, err := websearch.Search(ctx, w.client, w.cfg, websearch.Input{Query: in.Query, Results: in.NumResults})
+	if err != nil {
+		e, ok := errors.AsType[*websearch.Error](err)
+		if !ok {
 			return tools.Result{}, err
 		}
-		results, err := websearch.Search(ctx, client, cfg, websearch.Input{Query: in.Query, Results: in.NumResults})
-		if err != nil {
-			e, ok := errors.AsType[*websearch.Error](err)
-			if !ok {
-				return tools.Result{}, err
-			}
-			return tools.TextResult(transcript.OutcomeFailed, searchError(e)), nil
-		}
-		if len(results) == 0 {
-			return tools.TextResult(transcript.OutcomeCompleted, "No results found for: "+in.Query), nil
-		}
-		var out strings.Builder
-		fmt.Fprintf(&out, "Search results for: %s\n", in.Query)
-		for i, r := range results {
-			fmt.Fprintf(&out, "\n%d. %s\n   %s\n", i+1, r.Title, r.URL)
-			if r.Snippet != "" {
-				fmt.Fprintf(&out, "   %s\n", r.Snippet)
-			}
-		}
-		return tools.TextResult(transcript.OutcomeCompleted, out.String()), nil
+		return tools.TextResult(transcript.OutcomeFailed, searchError(e)), nil
 	}
-	return t, nil
+	return tools.TextResult(transcript.OutcomeCompleted, formatSearch(in.Query, results)), nil
+}
+
+func formatSearch(query string, results []websearch.Result) string {
+	if len(results) == 0 {
+		return "No results found for: " + query
+	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "Search results for: %s\n", query)
+	for i, r := range results {
+		fmt.Fprintf(&out, "\n%d. %s\n   %s\n", i+1, r.Title, r.URL)
+		if r.Snippet != "" {
+			fmt.Fprintf(&out, "   %s\n", r.Snippet)
+		}
+	}
+	return out.String()
 }
 
 func searchError(e *websearch.Error) string {

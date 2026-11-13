@@ -35,84 +35,118 @@ func Batch(cfg config.ToolsBatch, dispatcher func(context.Context) (batch.Dispat
 	if err != nil {
 		return tools.Tool{}, err
 	}
+	b := batchTool{cfg: cfg, dispatcher: dispatcher}
 	t := newTool(NameBatch, "Run several independent tool calls in one call and return every result. Each entry contains tool and that tool's own arguments as sibling fields, and nothing else. Calls that only read run at the same time, and a call that writes or executes runs in the order given. Do not batch calls that depend on each other's results, and do not nest batch.", acp.ToolKindExecute, schema)
 	t.Summary = "Run several independent tool calls in one call"
 	// Children can execute. Serialize the parent against outer calls as well.
 	t.Effect = tools.Executes
-	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
-		var in struct {
-			Calls []map[string]jsontext.Value `json:"tool_calls"`
-		}
-		if err := json.Unmarshal(call.Input, &in); err != nil {
+	t.Run = b.run
+	return t, nil
+}
+
+// batchTool holds what one call needs besides its input.
+type batchTool struct {
+	cfg        config.ToolsBatch
+	dispatcher func(context.Context) (batch.Dispatcher, bool)
+}
+
+var errNestedBatch = errors.New("batch: nested batch")
+
+func (b batchTool) run(ctx context.Context, call tools.Call) (tools.Result, error) {
+	calls, err := decodeBatchCalls(call.Input)
+	if errors.Is(err, errNestedBatch) {
+		return tools.TextResult(transcript.OutcomeFailed, "Cannot batch the 'batch' tool"), nil
+	}
+	if err != nil {
+		return tools.Result{}, err
+	}
+	d, ok := b.dispatcher(ctx)
+	if !ok || d.Plan == nil || d.Run == nil {
+		return tools.Result{}, errors.New("batch: no dispatcher for this call")
+	}
+	items, err := batch.Run(ctx, b.cfg, d, calls)
+	if err != nil {
+		e, ok := errors.AsType[*batch.Error](err)
+		if !ok {
 			return tools.Result{}, err
 		}
-		calls := make([]batch.Call, 0, len(in.Calls))
-		for _, raw := range in.Calls {
-			var name string
-			if err := json.Unmarshal(raw["tool"], &name); err != nil {
-				return tools.Result{}, err
-			}
-			if name == NameBatch {
-				return tools.TextResult(transcript.OutcomeFailed, "Cannot batch the 'batch' tool"), nil
-			}
-			delete(raw, "tool")
-			input, err := json.Marshal(raw)
-			if err != nil {
-				return tools.Result{}, err
-			}
-			calls = append(calls, batch.Call{Name: name, Input: input})
+		text := "No tool calls provided"
+		if e.Kind == batch.KindTooMany {
+			text = fmt.Sprintf("Maximum %d tool calls allowed", e.Limit)
 		}
-		d, ok := dispatcher(ctx)
-		if !ok || d.Plan == nil || d.Run == nil {
-			return tools.Result{}, errors.New("batch: no dispatcher for this call")
-		}
-		items, err := batch.Run(ctx, cfg, d, calls)
-		if err != nil {
-			e, ok := errors.AsType[*batch.Error](err)
-			if !ok {
-				return tools.Result{}, err
-			}
-			text := "No tool calls provided"
-			if e.Kind == batch.KindTooMany {
-				text = fmt.Sprintf("Maximum %d tool calls allowed", e.Limit)
-			}
-			return tools.TextResult(transcript.OutcomeFailed, text), nil
-		}
-		result := tools.Result{Outcome: batch.Outcome(items)}
-		succeeded, failed := 0, 0
-		for i, item := range items {
-			heading := fmt.Sprintf("--- [%d] %s ---\n", i+1, calls[i].Name)
-			result.Parts = append(result.Parts, transcript.Part{Text: heading})
-			result.Content = append(result.Content, tools.TextContent(heading))
-			if item.Err != nil {
-				failed++
-				text := fmt.Sprintf("Error: %v\n\n", item.Err)
-				result.Parts = append(result.Parts, transcript.Part{Text: text})
-				result.Content = append(result.Content, tools.TextContent(text))
-			} else {
-				if item.Result.Outcome == transcript.OutcomeCompleted {
-					succeeded++
-				} else {
-					failed++
-				}
-				result.Parts = append(result.Parts, item.Result.Parts...)
-				update, err := loop.ToolResult(transcript.ToolResult{Outcome: item.Result.Outcome, Parts: item.Result.Parts}, item.Result.Content)
-				if err != nil {
-					return tools.Result{}, err
-				}
-				result.Content = append(result.Content, update.Content...)
-				if !item.Started {
-					result.Parts = append(result.Parts, transcript.Part{Text: "The call was cancelled before it started."})
-					result.Content = append(result.Content, tools.TextContent("The call was cancelled before it started."))
-				}
-				result.Parts = append(result.Parts, transcript.Part{Text: "\n\n"})
-				result.Content = append(result.Content, tools.TextContent("\n\n"))
-			}
-		}
-		footer := fmt.Sprintf("Completed: %d succeeded, %d failed", succeeded, failed)
-		result.Parts = append(result.Parts, transcript.Part{Text: footer})
-		result.Content = append(result.Content, tools.TextContent(footer))
-		return result, nil
+		return tools.TextResult(transcript.OutcomeFailed, text), nil
 	}
-	return t, nil
+	return formatBatch(calls, items)
+}
+
+// decodeBatchCalls splits each entry into the tool name and that tool's own input.
+func decodeBatchCalls(input jsontext.Value) ([]batch.Call, error) {
+	var in struct {
+		Calls []map[string]jsontext.Value `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil {
+		return nil, err
+	}
+	calls := make([]batch.Call, 0, len(in.Calls))
+	for _, raw := range in.Calls {
+		var name string
+		if err := json.Unmarshal(raw["tool"], &name); err != nil {
+			return nil, err
+		}
+		if name == NameBatch {
+			return nil, errNestedBatch
+		}
+		delete(raw, "tool")
+		childInput, err := json.Marshal(raw)
+		if err != nil {
+			return nil, err
+		}
+		calls = append(calls, batch.Call{Name: name, Input: childInput})
+	}
+	return calls, nil
+}
+
+// batchResult builds the model text and the client content in step.
+type batchResult struct{ tools.Result }
+
+func (r *batchResult) addText(text string) {
+	r.Parts = append(r.Parts, transcript.Part{Text: text})
+	r.Content = append(r.Content, tools.TextContent(text))
+}
+
+func formatBatch(calls []batch.Call, items []batch.Item) (tools.Result, error) {
+	result := batchResult{tools.Result{Outcome: batch.Outcome(items)}}
+	succeeded, failed := 0, 0
+	for i, item := range items {
+		result.addText(fmt.Sprintf("--- [%d] %s ---\n", i+1, calls[i].Name))
+		if item.Err != nil {
+			failed++
+			result.addText(fmt.Sprintf("Error: %v\n\n", item.Err))
+			continue
+		}
+		if item.Result.Outcome == transcript.OutcomeCompleted {
+			succeeded++
+		} else {
+			failed++
+		}
+		if err := result.addChildResult(item); err != nil {
+			return tools.Result{}, err
+		}
+	}
+	result.addText(fmt.Sprintf("Completed: %d succeeded, %d failed", succeeded, failed))
+	return result.Result, nil
+}
+
+func (r *batchResult) addChildResult(item batch.Item) error {
+	r.Parts = append(r.Parts, item.Result.Parts...)
+	update, err := loop.ToolResult(transcript.ToolResult{Outcome: item.Result.Outcome, Parts: item.Result.Parts}, item.Result.Content)
+	if err != nil {
+		return err
+	}
+	r.Content = append(r.Content, update.Content...)
+	if !item.Started {
+		r.addText("The call was cancelled before it started.")
+	}
+	r.addText("\n\n")
+	return nil
 }

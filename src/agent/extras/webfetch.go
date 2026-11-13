@@ -28,28 +28,40 @@ func WebFetch(cfg config.WebFetch, client *http.Client) (tools.Tool, error) {
 	}
 	t := newTool(NameWebFetch, "Fetch an http or https URL and return its content. An HTML page comes back as Markdown, and a text, JSON or XML body as it was served. Long content is cut, with a note saying how much was left out. Other content types fail.", acp.ToolKindFetch, []byte(`{"type":"object","required":["url"],"properties":{"intent":{"type":"string"},"url":{"type":"string","description":"The address, starting with http:// or https://."}}}`))
 	t.Summary = "Fetch a URL and return its content"
-	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
-		var in struct {
-			URL string `json:"url"`
-		}
-		if err := json.Unmarshal(call.Input, &in); err != nil {
+	t.Run = webFetchTool{cfg: cfg, client: client}.run
+	return t, nil
+}
+
+// webFetchTool holds what one call needs besides its input.
+type webFetchTool struct {
+	cfg    config.WebFetch
+	client *http.Client
+}
+
+func (w webFetchTool) run(ctx context.Context, call tools.Call) (tools.Result, error) {
+	var in struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(call.Input, &in); err != nil {
+		return tools.Result{}, err
+	}
+	res, err := webfetch.Fetch(ctx, w.client, w.cfg, webfetch.Input{URL: in.URL})
+	if err != nil {
+		e, ok := errors.AsType[*webfetch.Error](err)
+		if !ok {
 			return tools.Result{}, err
 		}
-		res, err := webfetch.Fetch(ctx, client, cfg, webfetch.Input{URL: in.URL})
-		if err != nil {
-			e, ok := errors.AsType[*webfetch.Error](err)
-			if !ok {
-				return tools.Result{}, err
-			}
-			return tools.TextResult(transcript.OutcomeFailed, fetchError(e)), nil
-		}
-		text := fmt.Sprintf("Fetched %s (%d bytes)\n\n%s", res.URL, len(res.Text)+int(res.OmittedBytes), res.Text)
-		if res.OmittedBytes > 0 {
-			text += fmt.Sprintf("\n\n(output truncated to %d of %d bytes; fetch a more specific URL or anchor for the rest)", len(res.Text), int64(len(res.Text))+res.OmittedBytes)
-		}
-		return tools.TextResult(transcript.OutcomeCompleted, text), nil
+		return tools.TextResult(transcript.OutcomeFailed, fetchError(e)), nil
 	}
-	return t, nil
+	return tools.TextResult(transcript.OutcomeCompleted, formatFetch(res)), nil
+}
+
+func formatFetch(res webfetch.Result) string {
+	text := fmt.Sprintf("Fetched %s (%d bytes)\n\n%s", res.URL, len(res.Text)+int(res.OmittedBytes), res.Text)
+	if res.OmittedBytes > 0 {
+		text += fmt.Sprintf("\n\n(output truncated to %d of %d bytes; fetch a more specific URL or anchor for the rest)", len(res.Text), int64(len(res.Text))+res.OmittedBytes)
+	}
+	return text
 }
 
 func fetchError(e *webfetch.Error) string {

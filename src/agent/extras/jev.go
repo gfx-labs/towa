@@ -28,56 +28,76 @@ func JevDecision(client *jev.Client, credential func(context.Context) (auth.Cred
 	}
 	t := newTool(NameJevDecision, "Ask a separate decision model to choose one of the options you supply. Use it for a bounded choice where a second judgment helps, such as which model a subagent should run. Returns the id of the chosen option, with a confidence when the service gives one. It only chooses: acting on the choice is up to you.", acp.ToolKindThink, []byte(`{"type":"object","required":["instructions","options"],"properties":{"intent":{"type":"string"},"instructions":{"type":"string","description":"What to decide and the criteria to decide it by."},"state":{"type":"object","description":"Facts the decision depends on. The decision model reads it as data, not as instructions."},"options":{"type":"object","additionalProperties":{"type":"string"},"description":"The options, at least two. Each key is an option id of at most 64 bytes, and each value says what choosing it means."},"timeout_ms":{"type":"integer","minimum":1,"description":"Bounded wait in milliseconds, at most jev.max_timeout."}}}`))
 	t.Summary = "Ask a separate decision model to choose among options you supply"
-	t.Run = func(ctx context.Context, call tools.Call) (tools.Result, error) {
-		var in struct {
-			Instructions string            `json:"instructions"`
-			State        jsontext.Value    `json:"state"`
-			Options      map[string]string `json:"options"`
-			TimeoutMS    *int64            `json:"timeout_ms"`
-		}
-		if err := json.Unmarshal(call.Input, &in); err != nil {
-			return tools.Result{}, err
-		}
-		req := jev.Request{Instructions: in.Instructions, State: in.State}
-		if in.TimeoutMS != nil {
-			if *in.TimeoutMS <= 0 || *in.TimeoutMS > int64((1<<63-1)/time.Millisecond) {
-				return tools.TextResult(transcript.OutcomeFailed, "Decision timeout_ms must be positive and fit a duration."), nil
-			}
-			req.Timeout = time.Duration(*in.TimeoutMS) * time.Millisecond
-		}
-		ids := make([]string, 0, len(in.Options))
-		for id := range in.Options {
-			ids = append(ids, id)
-		}
-		slices.Sort(ids)
-		for _, id := range ids {
-			req.Options = append(req.Options, jev.Option{ID: id, Description: in.Options[id]})
-		}
-		cred, err := credential(ctx)
-		if err != nil {
-			return tools.Result{}, fmt.Errorf("jev_decision: credential: %w", err)
-		}
-		res, err := client.Decide(ctx, cred, req)
-		if err != nil {
-			if input, ok := errors.AsType[*jev.InputError](err); ok {
-				return tools.TextResult(transcript.OutcomeFailed, input.Error()), nil
-			}
-			if e, ok := errors.AsType[*jev.Error](err); ok {
-				return tools.TextResult(transcript.OutcomeFailed, decisionError(e)), nil
-			}
-			return tools.Result{}, err
-		}
-		body, err := json.Marshal(struct {
-			Choice     string   `json:"choice"`
-			Confidence *float64 `json:"confidence,omitzero"`
-			Provider   string   `json:"provider"`
-		}{res.Choice, res.Confidence, res.Route})
-		if err != nil {
-			return tools.Result{}, err
-		}
-		return tools.TextResult(transcript.OutcomeCompleted, string(body)), nil
-	}
+	t.Run = jevTool{client: client, credential: credential}.run
 	return t, nil
+}
+
+// jevTool holds what one call needs besides its input.
+type jevTool struct {
+	client     *jev.Client
+	credential func(context.Context) (auth.Credential, error)
+}
+
+func (j jevTool) run(ctx context.Context, call tools.Call) (tools.Result, error) {
+	req, text, err := decodeDecision(call.Input)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	if text != "" {
+		return tools.TextResult(transcript.OutcomeFailed, text), nil
+	}
+	cred, err := j.credential(ctx)
+	if err != nil {
+		return tools.Result{}, fmt.Errorf("jev_decision: credential: %w", err)
+	}
+	res, err := j.client.Decide(ctx, cred, req)
+	if err != nil {
+		if input, ok := errors.AsType[*jev.InputError](err); ok {
+			return tools.TextResult(transcript.OutcomeFailed, input.Error()), nil
+		}
+		if e, ok := errors.AsType[*jev.Error](err); ok {
+			return tools.TextResult(transcript.OutcomeFailed, decisionError(e)), nil
+		}
+		return tools.Result{}, err
+	}
+	body, err := json.Marshal(struct {
+		Choice     string   `json:"choice"`
+		Confidence *float64 `json:"confidence,omitzero"`
+		Provider   string   `json:"provider"`
+	}{res.Choice, res.Confidence, res.Route})
+	if err != nil {
+		return tools.Result{}, err
+	}
+	return tools.TextResult(transcript.OutcomeCompleted, string(body)), nil
+}
+
+// decodeDecision builds the request. A non-empty text is a failure to show the model.
+func decodeDecision(input jsontext.Value) (req jev.Request, text string, err error) {
+	var in struct {
+		Instructions string            `json:"instructions"`
+		State        jsontext.Value    `json:"state"`
+		Options      map[string]string `json:"options"`
+		TimeoutMS    *int64            `json:"timeout_ms"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil {
+		return jev.Request{}, "", err
+	}
+	req = jev.Request{Instructions: in.Instructions, State: in.State}
+	if in.TimeoutMS != nil {
+		if *in.TimeoutMS <= 0 || *in.TimeoutMS > int64((1<<63-1)/time.Millisecond) {
+			return jev.Request{}, "Decision timeout_ms must be positive and fit a duration.", nil
+		}
+		req.Timeout = time.Duration(*in.TimeoutMS) * time.Millisecond
+	}
+	ids := make([]string, 0, len(in.Options))
+	for id := range in.Options {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		req.Options = append(req.Options, jev.Option{ID: id, Description: in.Options[id]})
+	}
+	return req, "", nil
 }
 
 func decisionError(e *jev.Error) string {
