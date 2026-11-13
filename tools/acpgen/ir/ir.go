@@ -17,13 +17,14 @@ import (
 // MethodBinding describes which interface a method belongs to on each side.
 type MethodBinding int
 
+// Bindings of a method. BindUnknown is a method no interface has. The
+// BindAgent ones are interfaces of the agent side and the BindClient ones of
+// the client side.
 const (
 	BindUnknown MethodBinding = iota
-	// Agent bindings
 	BindAgent
 	BindAgentLoader
 	BindAgentExperimental
-	// Client bindings
 	BindClient
 	BindClientExperimental
 	BindClientTerminal

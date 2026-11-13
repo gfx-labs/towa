@@ -9,19 +9,19 @@ import (
 
 // invInvalid: return invalid params with compact json-like message
 func jInvInvalid() Code {
-	return Return(Nil(), Id("NewInvalidParams").Call(Map(String()).Any().Values(Dict{Lit("error"): Id("err").Dot("Error").Call()})))
+	return Return(Nil(), ID("NewInvalidParams").Call(Map(String()).Any().Values(Dict{Lit("error"): ID("err").Dot("Error").Call()})))
 }
 
 // retToReqErr: wrap error to JSON-RPC request error
-func jRetToReqErr() Code { return Return(Nil(), Id("toReqErr").Call(Id("err"))) }
+func jRetToReqErr() Code { return Return(Nil(), ID("toReqErr").Call(ID("err"))) }
 
 // jUnmarshalValidate emits var p T; json.Unmarshal; p.Validate
 func jUnmarshalValidate(typeName string) []Code {
 	return []Code{
 		Var().Id("p").Id(typeName),
-		If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Id("params"), Op("&").Id("p")), Id("err").Op("!=").Nil()).
+		If(List(ID("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(ID("params"), Op("&").Id("p")), ID("err").Op("!=").Nil()).
 			Block(jInvInvalid()),
-		If(List(Id("err")).Op(":=").Id("p").Dot("Validate").Call(), Id("err").Op("!=").Nil()).
+		If(List(ID("err")).Op(":=").Id("p").Dot("Validate").Call(), ID("err").Op("!=").Nil()).
 			Block(jInvInvalid()),
 	}
 }
@@ -31,11 +31,11 @@ func jAgentAssert(binding ir.MethodBinding, methodName, paramType, respType stri
 	switch binding {
 	case ir.BindAgentLoader:
 		return []Code{
-			List(Id("loader"), Id("ok")).Op(":=").Id("a").Dot("agent").Assert(Id("AgentLoader")),
-			If(Op("!").Id("ok")).Block(Return(Nil(), Id("NewMethodNotFound").Call(Id("method")))),
+			List(ID("loader"), ID("ok")).Op(":=").Id("a").Dot("agent").Assert(ID("AgentLoader")),
+			If(Op("!").Id("ok")).Block(Return(Nil(), ID("NewMethodNotFound").Call(ID("method")))),
 		}, "loader"
 	case ir.BindAgentExperimental:
-		return jSingleMethodAssert(Id("a").Dot("agent"), "exp", methodName, paramType, respType, hasResponse)
+		return jSingleMethodAssert(ID("a").Dot("agent"), "exp", methodName, paramType, respType, hasResponse)
 	default:
 		return nil, "a.agent"
 	}
@@ -45,11 +45,11 @@ func jAgentAssert(binding ir.MethodBinding, methodName, paramType, respType stri
 func jClientAssert(binding ir.MethodBinding, methodName, paramType, respType string, hasResponse bool) ([]Code, string) {
 	switch binding {
 	case ir.BindClientExperimental:
-		return jSingleMethodAssert(Id("c").Dot("client"), "exp", methodName, paramType, respType, hasResponse)
+		return jSingleMethodAssert(ID("c").Dot("client"), "exp", methodName, paramType, respType, hasResponse)
 	case ir.BindClientTerminal:
 		return []Code{
-			List(Id("t"), Id("ok")).Op(":=").Id("c").Dot("client").Assert(Id("ClientTerminal")),
-			If(Op("!").Id("ok")).Block(Return(Nil(), Id("NewMethodNotFound").Call(Id("method")))),
+			List(ID("t"), ID("ok")).Op(":=").Id("c").Dot("client").Assert(ID("ClientTerminal")),
+			If(Op("!").Id("ok")).Block(Return(Nil(), ID("NewMethodNotFound").Call(ID("method")))),
 		}, "t"
 	default:
 		return nil, "c.client"
@@ -58,38 +58,38 @@ func jClientAssert(binding ir.MethodBinding, methodName, paramType, respType str
 
 func jSingleMethodAssert(receiver Code, assertedName, methodName, paramType, respType string, hasResponse bool) ([]Code, string) {
 	ifaceType := InterfaceFunc(func(g *Group) {
-		method := g.Id(methodName).Params(Qual("context", "Context"), Id(paramType))
+		method := g.Id(methodName).Params(Qual("context", "Context"), ID(paramType))
 		if hasResponse {
-			method.Params(Id(respType), Error())
+			method.Params(ID(respType), Error())
 		} else {
 			method.Error()
 		}
 	})
 	return []Code{
-		List(Id(assertedName), Id("ok")).Op(":=").Add(receiver).Assert(ifaceType),
-		If(Op("!").Id("ok")).Block(Return(Nil(), Id("NewMethodNotFound").Call(Id("method")))),
+		List(ID(assertedName), ID("ok")).Op(":=").Add(receiver).Assert(ifaceType),
+		If(Op("!").Id("ok")).Block(Return(Nil(), ID("NewMethodNotFound").Call(ID("method")))),
 	}, assertedName
 }
 
 // Request call emitters for handlers
 func jCallRequestNoResp(recv, methodName string) []Code {
 	return []Code{
-		If(List(Id("err")).Op(":=").Id(recv).Dot(methodName).Call(Id("ctx"), Id("p")), Id("err").Op("!=").Nil()).Block(jRetToReqErr()),
+		If(List(ID("err")).Op(":=").Id(recv).Dot(methodName).Call(ID("ctx"), ID("p")), ID("err").Op("!=").Nil()).Block(jRetToReqErr()),
 		Return(Nil(), Nil()),
 	}
 }
 
 func jCallRequestWithResp(recv, methodName string) []Code {
 	return []Code{
-		List(Id("resp"), Id("err")).Op(":=").Id(recv).Dot(methodName).Call(Id("ctx"), Id("p")),
-		If(Id("err").Op("!=").Nil()).Block(jRetToReqErr()),
-		Return(Id("resp"), Nil()),
+		List(ID("resp"), ID("err")).Op(":=").Id(recv).Dot(methodName).Call(ID("ctx"), ID("p")),
+		If(ID("err").Op("!=").Nil()).Block(jRetToReqErr()),
+		Return(ID("resp"), Nil()),
 	}
 }
 
 func jCallNotification(recv, methodName string) []Code {
 	return []Code{
-		If(List(Id("err")).Op(":=").Id(recv).Dot(methodName).Call(Id("ctx"), Id("p")), Id("err").Op("!=").Nil()).Block(jRetToReqErr()),
+		If(List(ID("err")).Op(":=").Id(recv).Dot(methodName).Call(ID("ctx"), ID("p")), ID("err").Op("!=").Nil()).Block(jRetToReqErr()),
 		Return(Nil(), Nil()),
 	}
 }

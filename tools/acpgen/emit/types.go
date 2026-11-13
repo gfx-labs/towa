@@ -191,7 +191,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 			defs := []Code{}
 			for _, v := range def.Enum {
 				s := fmt.Sprint(v)
-				defs = append(defs, Id(util.ToEnumConst(name, s)).Id(name).Op("=").Lit(s))
+				defs = append(defs, ID(util.ToEnumConst(name, s)).Id(name).Op("=").Lit(s))
 			}
 			if len(defs) > 0 {
 				f.Const().Defs(defs...)
@@ -203,7 +203,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 			for _, v := range def.OneOf {
 				if v != nil && v.Const != nil {
 					s := fmt.Sprint(v.Const)
-					defs = append(defs, Id(util.ToEnumConst(name, s)).Id(name).Op("=").Lit(s))
+					defs = append(defs, ID(util.ToEnumConst(name, s)).Id(name).Op("=").Lit(s))
 				}
 			}
 			if len(defs) > 0 {
@@ -225,7 +225,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 				if !ok {
 					continue
 				}
-				defs = append(defs, Id(util.ToEnumConst(name, s)).Id(name).Op("=").Lit(s))
+				defs = append(defs, ID(util.ToEnumConst(name, s)).Id(name).Op("=").Lit(s))
 			}
 			if len(defs) > 0 {
 				f.Const().Defs(defs...)
@@ -290,7 +290,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 						if _, ok := nestedReq[npk]; !ok {
 							ntag = npk + omitOption(schema, ntype)
 						}
-						nestedFields = append(nestedFields, Id(nfield).Add(ntype).Tag(map[string]string{"json": ntag}))
+						nestedFields = append(nestedFields, ID(nfield).Add(ntype).Tag(map[string]string{"json": ntag}))
 					}
 					f.Type().Id(nestedTypeName).Struct(nestedFields...)
 					f.Line()
@@ -329,19 +329,17 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 					k := defaultKindOf(prop.Default)
 					// Whether field zero is nil (slice/map) for Marshal fill-in
 					nilable := ir.PrimaryType(prop) == "array" || (ir.PrimaryType(prop) == "object" && len(prop.Properties) == 0 && prop.Ref == "")
-					// Capture canonical JSON of default
-					defJSON := "null"
+					// Capture canonical JSON of default.
 					// Deterministic: a default that is an object must be
 					// written with the same member order on every run.
 					b, err := json.Marshal(prop.Default, json.Deterministic(true))
 					if err != nil {
 						panic(fmt.Sprintf("%s.%s: default: %v", name, pk, err))
 					}
-					defJSON = string(b)
 					dp = &defaultProp{
 						fieldName:   field,
 						propName:    pk,
-						defaultJSON: defJSON,
+						defaultJSON: string(b),
 						kind:        DefaultKind(k),
 						allowNull:   includesNull(prop),
 						nilable:     nilable,
@@ -351,7 +349,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 				// Use generated nested type if available, otherwise use jenTypeForOptional
 				var fieldType Code
 				if nestedTypeName, hasNested := nestedTypes[pk]; hasNested {
-					fieldType = Id(nestedTypeName)
+					fieldType = ID(nestedTypeName)
 				} else {
 					fieldType = jenTypeForOptional(prop)
 				}
@@ -371,7 +369,7 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 					}
 					st = append(st, Comment(fmt.Sprintf("Defaults to %s if unset.", dp.defaultJSON)))
 				}
-				st = append(st, Id(field).Add(fieldType).Tag(map[string]string{"json": tag}))
+				st = append(st, ID(field).Add(fieldType).Tag(map[string]string{"json": tag}))
 			}
 			f.Type().Id(name).Struct(st...)
 			f.Line()
@@ -436,14 +434,14 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 		}
 		if mi.Notif != "" {
 			name := ir.DispatchMethodNameForNotification(k, mi.Notif)
-			*target = append(*target, Id(name).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Notif)).Error())
+			*target = append(*target, ID(name).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Notif)).Error())
 		} else if mi.Req != "" {
 			respName := strings.TrimSuffix(mi.Req, "Request") + "Response"
 			methodName := strings.TrimSuffix(mi.Req, "Request")
 			if ir.IsNullResponse(schema.Defs[respName]) {
-				*target = append(*target, Id(methodName).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Error())
+				*target = append(*target, ID(methodName).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Error())
 			} else {
-				*target = append(*target, Id(methodName).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Params(Id(respName), Error()))
+				*target = append(*target, ID(methodName).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Params(ID(respName), Error()))
 			}
 		}
 	}
@@ -479,14 +477,14 @@ func buildTypesJen(schema *load.Schema, meta *load.Meta) (*File, map[string][]un
 		}
 		if mi.Notif != "" {
 			name := ir.DispatchMethodNameForNotification(k, mi.Notif)
-			*target = append(*target, Id(name).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Notif)).Error())
+			*target = append(*target, ID(name).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Notif)).Error())
 		} else if mi.Req != "" {
 			respName := strings.TrimSuffix(mi.Req, "Request") + "Response"
 			methodName := strings.TrimSuffix(mi.Req, "Request")
 			if ir.IsNullResponse(schema.Defs[respName]) {
-				*target = append(*target, Id(methodName).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Error())
+				*target = append(*target, ID(methodName).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Error())
 			} else {
-				*target = append(*target, Id(methodName).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Params(Id(respName), Error()))
+				*target = append(*target, ID(methodName).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Params(ID(respName), Error()))
 			}
 		}
 	}
@@ -556,10 +554,9 @@ func isOpenStringEnum(def *load.Definition) bool {
 // emitValidateJen generates validators for selected types (logic unchanged).
 
 func emitValidateJen(f *File, name string, def *load.Definition) {
-	switch name {
-	case "ToolCallUpdate":
-		f.Func().Params(Id("t").Op("*").Id("ToolCallUpdate")).Id("Validate").Params().Params(Error()).Block(
-			If(Id("t").Dot("ToolCallId").Op("==").Lit("")).Block(Return(Qual("fmt", "Errorf").Call(Lit("toolCallId is required")))),
+	if name == "ToolCallUpdate" {
+		f.Func().Params(ID("t").Op("*").Id("ToolCallUpdate")).Id("Validate").Params().Params(Error()).Block(
+			If(ID("t").Dot("ToolCallId").Op("==").Lit("")).Block(Return(Qual("fmt", "Errorf").Call(Lit("toolCallId is required")))),
 			Return(Nil()),
 		)
 		return
@@ -572,10 +569,10 @@ func emitValidateJen(f *File, name string, def *load.Definition) {
 		// so the parent's required properties live on the variant structs, not on
 		// the wrapper. UnmarshalJSON already rejects input that matches no variant.
 		if len(def.AnyOf) > 0 && !isOpenStringEnum(def) {
-			f.Func().Params(Id("v").Op("*").Id(name)).Id("Validate").Params().Params(Error()).Block(Return(Nil()))
+			f.Func().Params(ID("v").Op("*").Id(name)).Id("Validate").Params().Params(Error()).Block(Return(Nil()))
 			return
 		}
-		f.Func().Params(Id("v").Op("*").Id(name)).Id("Validate").Params().Params(Error()).BlockFunc(func(g *Group) {
+		f.Func().Params(ID("v").Op("*").Id(name)).Id("Validate").Params().Params(Error()).BlockFunc(func(g *Group) {
 			pkeys := make([]string, 0, len(def.Properties))
 			for pk := range def.Properties {
 				pkeys = append(pkeys, pk)
@@ -593,10 +590,10 @@ func emitValidateJen(f *File, name string, def *load.Definition) {
 						// tell absent from empty, so only a schema minLength
 						// justifies rejecting "".
 						if pDef.MinLength != nil && *pDef.MinLength > 0 {
-							g.If(Id("v").Dot(field).Op("==").Lit("")).Block(Return(Qual("fmt", "Errorf").Call(Lit(propName + " is required"))))
+							g.If(ID("v").Dot(field).Op("==").Lit("")).Block(Return(Qual("fmt", "Errorf").Call(Lit(propName + " is required"))))
 						}
 					case "array":
-						g.If(Id("v").Dot(field).Op("==").Nil()).Block(Return(Qual("fmt", "Errorf").Call(Lit(propName + " is required"))))
+						g.If(ID("v").Dot(field).Op("==").Nil()).Block(Return(Qual("fmt", "Errorf").Call(Lit(propName + " is required"))))
 					}
 				}
 			}
@@ -787,7 +784,7 @@ func jenTypeFor(d *load.Definition) Code {
 
 	if d.Ref != "" {
 		if strings.HasPrefix(d.Ref, "#/$defs/") {
-			return Id(d.Ref[len("#/$defs/"):])
+			return ID(d.Ref[len("#/$defs/"):])
 		}
 		return Any()
 	}
@@ -993,9 +990,10 @@ func emitUnion(f *File, name string, schema *load.Schema, parentDef *load.Defini
 		}
 		// Determine type name: prefer $ref target name when present; do not treat Title as a rename for $ref.
 		tname := ""
-		if ref != "" && strings.HasPrefix(ref, "#/$defs/") {
+		switch {
+		case ref != "" && strings.HasPrefix(ref, "#/$defs/"):
 			tname = ref[len("#/$defs/"):]
-		} else if v.Title != "" {
+		case v.Title != "":
 			// Scope inline variant titles to parent union name with smart naming
 			tname = generateNestedTypeName(name, v.Title, usedTypeNames)
 			// DEFENSIVE PROGRAMMING: Assert no collision before registering
@@ -1004,7 +1002,7 @@ func emitUnion(f *File, name string, schema *load.Schema, parentDef *load.Defini
 					tname, name, v.Title))
 			}
 			usedTypeNames[tname] = true
-		} else {
+		default:
 			if discKey != "" {
 				if pd := v.Properties[discKey]; pd != nil && pd.Const != nil {
 					s := fmt.Sprint(pd.Const)
@@ -1125,7 +1123,7 @@ func emitUnion(f *File, name string, schema *load.Schema, parentDef *load.Defini
 					if _, ok := req[pk]; !ok {
 						tag = pk + omitOption(schema, ptype)
 					}
-					st = append(st, Id(field).Add(ptype).Tag(map[string]string{"json": tag}))
+					st = append(st, ID(field).Add(ptype).Tag(map[string]string{"json": tag}))
 				}
 			} else if !isNull && !isObj && v.Title != "" {
 				// Title-only variants: check if they're extension types
@@ -1137,15 +1135,16 @@ func emitUnion(f *File, name string, schema *load.Schema, parentDef *load.Defini
 					emitDocComment(f, v.Description)
 				}
 
-				if isExtension {
+				switch {
+				case isExtension:
 					// Emit as type alias (=) to json.RawMessage to preserve marshal/unmarshal methods.
 					// Using type alias ensures the RawMessage methods are inherited, unlike a defined type.
 					f.Type().Id(tname).Op("=").Qual(jsontextPkg, "Value")
-				} else if ir.PrimaryType(v) != "" {
+				case ir.PrimaryType(v) != "":
 					// Non-object title-only variants can still carry payloads (e.g. arrays).
 					// Emit a concrete type so sequential decode can succeed for valid payloads.
 					f.Type().Id(tname).Add(jenTypeFor(v))
-				} else {
+				default:
 					// Emit as empty struct only for truly empty variants.
 					f.Type().Id(tname).Struct(st...)
 				}
@@ -1186,7 +1185,7 @@ func emitUnion(f *File, name string, schema *load.Schema, parentDef *load.Defini
 		if vi.description != "" {
 			st = appendDocComments(st, vi.description)
 		}
-		st = append(st, Id(vi.fieldName).Op("*").Id(vi.typeName).Tag(map[string]string{"json": "-"}))
+		st = append(st, ID(vi.fieldName).Op("*").Id(vi.typeName).Tag(map[string]string{"json": "-"}))
 	}
 	f.Type().Id(name).Struct(st...)
 	f.Line()
@@ -1196,12 +1195,12 @@ func emitUnion(f *File, name string, schema *load.Schema, parentDef *load.Defini
 
 	// Generic validator for oneOf unions: exactly one variant must be set
 	if exactlyOne {
-		f.Func().Params(Id("u").Op("*").Id(name)).Id("Validate").Params().Params(Error()).BlockFunc(func(g *Group) {
+		f.Func().Params(ID("u").Op("*").Id(name)).Id("Validate").Params().Params(Error()).BlockFunc(func(g *Group) {
 			g.Var().Id("count").Int()
 			for _, vi := range variants {
-				g.If(Id("u").Dot(vi.fieldName).Op("!=").Nil()).Block(Id("count").Op("++"))
+				g.If(ID("u").Dot(vi.fieldName).Op("!=").Nil()).Block(ID("count").Op("++"))
 			}
-			g.If(Id("count").Op("!=").Lit(1)).Block(
+			g.If(ID("count").Op("!=").Lit(1)).Block(
 				Return(Qual("errors", "New").Call(Lit(name + " must have exactly one variant set"))),
 			)
 			g.Return(Nil())

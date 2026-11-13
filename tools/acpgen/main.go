@@ -1,6 +1,8 @@
 // This file is modified from cmd/generate in github.com/coder/acp-go-sdk
 // (commit 492745b, Apache-2.0). tools/acpgen/README.md lists the changes.
 
+// Command acpgen writes the Go types and method tables of pkg/acp from the
+// ACP schema files.
 package main
 
 import (

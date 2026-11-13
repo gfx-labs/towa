@@ -63,15 +63,15 @@ func WriteDispatchJen(outDir string, schema *load.Schema, meta *load.Meta) error
 			}
 		}
 		if len(caseBody) > 0 {
-			switchCases = append(switchCases, Case(Id("AgentMethod"+toExportedConst(k))).Block(caseBody...))
+			switchCases = append(switchCases, Case(ID("AgentMethod"+toExportedConst(k))).Block(caseBody...))
 		}
 	}
-	switchCases = append(switchCases, Default().Block(Return(Nil(), Id("NewMethodNotFound").Call(Id("method")))))
-	fAgent.Func().Params(Id("a").Op("*").Id("AgentSideConnection")).Id("handle").Params(
-		Id("ctx").Qual("context", "Context"), Id("method").String(), Id("params").Qual(jsontextPkg, "Value"),
+	switchCases = append(switchCases, Default().Block(Return(Nil(), ID("NewMethodNotFound").Call(ID("method")))))
+	fAgent.Func().Params(ID("a").Op("*").Id("AgentSideConnection")).Id("handle").Params(
+		ID("ctx").Qual("context", "Context"), ID("method").String(), ID("params").Qual(jsontextPkg, "Value"),
 	).
 		Params(Any(), Op("*").Id("RequestError")).
-		Block(Switch(Id("method")).Block(switchCases...))
+		Block(Switch(ID("method")).Block(switchCases...))
 
 	// Agent outbound wrappers (agent -> client)
 	agentConst := map[string]string{}
@@ -107,20 +107,20 @@ func WriteDispatchJen(outDir string, schema *load.Schema, meta *load.Meta) error
 			case "session/cancel":
 				name = "Cancel"
 			}
-			fAgent.Func().Params(Id("c").Op("*").Id("AgentSideConnection")).Id(name).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Notif)).Error().
-				Block(Return(Id("c").Dot("conn").Dot("SendNotification").Call(Id("ctx"), Id(constName), Op("&").Id("params"))))
+			fAgent.Func().Params(ID("c").Op("*").Id("AgentSideConnection")).Id(name).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Notif)).Error().
+				Block(Return(ID("c").Dot("conn").Dot("SendNotification").Call(ID("ctx"), ID(constName), Op("&").Id("params"))))
 		} else if mi.Req != "" {
 			respName := strings.TrimSuffix(mi.Req, "Request") + "Response"
 			if ir.IsNullResponse(schema.Defs[respName]) {
-				fAgent.Func().Params(Id("c").Op("*").Id("AgentSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
-					Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Error().
-					Block(Return(Id("c").Dot("conn").Dot("SendRequestNoResult").Call(Id("ctx"), Id(constName), Op("&").Id("params"))))
+				fAgent.Func().Params(ID("c").Op("*").Id("AgentSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
+					Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Error().
+					Block(Return(ID("c").Dot("conn").Dot("SendRequestNoResult").Call(ID("ctx"), ID(constName), Op("&").Id("params"))))
 			} else {
-				fAgent.Func().Params(Id("c").Op("*").Id("AgentSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
-					Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Params(Id(respName), Error()).
+				fAgent.Func().Params(ID("c").Op("*").Id("AgentSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
+					Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Params(ID(respName), Error()).
 					Block(
-						List(Id("resp"), Id("err")).Op(":=").Id("SendRequest").Types(Id(respName)).Call(Id("ctx"), Id("c").Dot("conn"), Id(constName), Op("&").Id("params")),
-						Return(Id("resp"), Id("err")),
+						List(ID("resp"), ID("err")).Op(":=").Id("SendRequest").Types(ID(respName)).Call(ID("ctx"), ID("c").Dot("conn"), ID(constName), Op("&").Id("params")),
+						Return(ID("resp"), ID("err")),
 					)
 			}
 		}
@@ -174,15 +174,15 @@ func WriteDispatchJen(outDir string, schema *load.Schema, meta *load.Meta) error
 			}
 		}
 		if len(body) > 0 {
-			cCases = append(cCases, Case(Id("ClientMethod"+toExportedConst(k))).Block(body...))
+			cCases = append(cCases, Case(ID("ClientMethod"+toExportedConst(k))).Block(body...))
 		}
 	}
-	cCases = append(cCases, Default().Block(Return(Nil(), Id("NewMethodNotFound").Call(Id("method")))))
-	fClient.Func().Params(Id("c").Op("*").Id("ClientSideConnection")).Id("handle").Params(
-		Id("ctx").Qual("context", "Context"), Id("method").String(), Id("params").Qual(jsontextPkg, "Value"),
+	cCases = append(cCases, Default().Block(Return(Nil(), ID("NewMethodNotFound").Call(ID("method")))))
+	fClient.Func().Params(ID("c").Op("*").Id("ClientSideConnection")).Id("handle").Params(
+		ID("ctx").Qual("context", "Context"), ID("method").String(), ID("params").Qual(jsontextPkg, "Value"),
 	).
 		Params(Any(), Op("*").Id("RequestError")).
-		Block(Switch(Id("method")).Block(cCases...))
+		Block(Switch(ID("method")).Block(cCases...))
 
 	// Client outbound wrappers (client -> agent)
 	amKeys2 := make([]string, 0, len(meta.AgentMethods))
@@ -209,34 +209,34 @@ func WriteDispatchJen(outDir string, schema *load.Schema, meta *load.Meta) error
 			case "session/cancel":
 				name = "Cancel"
 			}
-			fClient.Func().Params(Id("c").Op("*").Id("ClientSideConnection")).Id(name).Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Notif)).Error().
-				Block(Return(Id("c").Dot("conn").Dot("SendNotification").Call(Id("ctx"), Id(constName), Op("&").Id("params"))))
+			fClient.Func().Params(ID("c").Op("*").Id("ClientSideConnection")).Id(name).Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Notif)).Error().
+				Block(Return(ID("c").Dot("conn").Dot("SendNotification").Call(ID("ctx"), ID(constName), Op("&").Id("params"))))
 		} else if mi.Req != "" {
 			respName := strings.TrimSuffix(mi.Req, "Request") + "Response"
 			if ir.IsNullResponse(schema.Defs[respName]) {
-				fClient.Func().Params(Id("c").Op("*").Id("ClientSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
-					Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Error().
-					Block(Return(Id("c").Dot("conn").Dot("SendRequestNoResult").Call(Id("ctx"), Id(constName), Op("&").Id("params"))))
+				fClient.Func().Params(ID("c").Op("*").Id("ClientSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
+					Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Error().
+					Block(Return(ID("c").Dot("conn").Dot("SendRequestNoResult").Call(ID("ctx"), ID(constName), Op("&").Id("params"))))
 			} else {
 				// Special-case: session/prompt — if ctx was canceled, send session/cancel best-effort.
 				if mi.Method == "session/prompt" {
-					fClient.Func().Params(Id("c").Op("*").Id("ClientSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
-						Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Params(Id(respName), Error()).
+					fClient.Func().Params(ID("c").Op("*").Id("ClientSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
+						Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Params(ID(respName), Error()).
 						Block(
-							List(Id("resp"), Id("err")).Op(":=").Id("SendRequest").Types(Id(respName)).Call(Id("ctx"), Id("c").Dot("conn"), Id(constName), Op("&").Id("params")),
-							If(Id("err").Op("!=").Nil()).Block(
-								If(Id("ctx").Dot("Err").Call().Op("!=").Nil()).Block(
-									Id("_ ").Op("=").Id("c").Dot("Cancel").Call(Qual("context", "Background").Call(), Id("CancelNotification").Values(Dict{Id("SessionId"): Id("params").Dot("SessionId")})),
+							List(ID("resp"), ID("err")).Op(":=").Id("SendRequest").Types(ID(respName)).Call(ID("ctx"), ID("c").Dot("conn"), ID(constName), Op("&").Id("params")),
+							If(ID("err").Op("!=").Nil()).Block(
+								If(ID("ctx").Dot("Err").Call().Op("!=").Nil()).Block(
+									ID("_ ").Op("=").Id("c").Dot("Cancel").Call(Qual("context", "Background").Call(), ID("CancelNotification").Values(Dict{ID("SessionId"): ID("params").Dot("SessionId")})),
 								),
 							),
-							Return(Id("resp"), Id("err")),
+							Return(ID("resp"), ID("err")),
 						)
 				} else {
-					fClient.Func().Params(Id("c").Op("*").Id("ClientSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
-						Params(Id("ctx").Qual("context", "Context"), Id("params").Id(mi.Req)).Params(Id(respName), Error()).
+					fClient.Func().Params(ID("c").Op("*").Id("ClientSideConnection")).Id(strings.TrimSuffix(mi.Req, "Request")).
+						Params(ID("ctx").Qual("context", "Context"), ID("params").Id(mi.Req)).Params(ID(respName), Error()).
 						Block(
-							List(Id("resp"), Id("err")).Op(":=").Id("SendRequest").Types(Id(respName)).Call(Id("ctx"), Id("c").Dot("conn"), Id(constName), Op("&").Id("params")),
-							Return(Id("resp"), Id("err")),
+							List(ID("resp"), ID("err")).Op(":=").Id("SendRequest").Types(ID(respName)).Call(ID("ctx"), ID("c").Dot("conn"), ID(constName), Op("&").Id("params")),
+							Return(ID("resp"), ID("err")),
 						)
 				}
 			}

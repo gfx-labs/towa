@@ -63,19 +63,19 @@ func WriteHelpersJen(outDir string, schema *load.Schema, meta *load.Meta) error 
 				pname := rk
 				// field id for struct literal
 				field := util.ToExportedField(rk)
-				params = append(params, Id(pname).Add(jenTypeFor(pd)))
-				assigns[Id(field)] = Id(pname)
+				params = append(params, ID(pname).Add(jenTypeFor(pd)))
+				assigns[ID(field)] = ID(pname)
 			}
 			// include const discriminant if present and field exists on struct
 			if vi.discKey != "" && vi.discValue != "" {
-				assigns[Id(util.ToExportedField(vi.discKey))] = Lit(vi.discValue)
+				assigns[ID(util.ToExportedField(vi.discKey))] = Lit(vi.discValue)
 			}
 			// Construct variant literal and wrap
 			f.Comment(fmt.Sprintf("New%s%s constructs a %s using the '%s' variant.", name, vi.fieldName, name, vi.discValue))
 			f.Func().Id("New" + name + vi.fieldName).Params(params...).Id(name).Block(
 				Return(
-					Id(name).Values(Dict{
-						Id(vi.fieldName): Op("&").Id(vi.typeName).Values(assigns),
+					ID(name).Values(Dict{
+						ID(vi.fieldName): Op("&").Id(vi.typeName).Values(assigns),
 					}),
 				),
 			)

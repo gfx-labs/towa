@@ -45,10 +45,10 @@ type variantInfo struct {
 func jDecodeVariant(union string, vi variantInfo) []Code {
 	return []Code{
 		Var().Id("v").Id(vi.typeName),
-		If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Id("b"), Op("&").Id("v"), Id("opts")), Id("err").Op("!=").Nil()).Block(
-			Return(Qual("fmt", "Errorf").Call(Lit(union+": variant "+vi.fieldName+": %w"), Id("err"))),
+		If(List(ID("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(ID("b"), Op("&").Id("v"), ID("opts")), ID("err").Op("!=").Nil()).Block(
+			Return(Qual("fmt", "Errorf").Call(Lit(union+": variant "+vi.fieldName+": %w"), ID("err"))),
 		),
-		Id("u").Dot(vi.fieldName).Op("=").Op("&").Id("v"),
+		ID("u").Dot(vi.fieldName).Op("=").Op("&").Id("v"),
 		Return(Nil()),
 	}
 }
@@ -59,17 +59,17 @@ func jDecodeVariant(union string, vi variantInfo) []Code {
 // variant whose items all have their required members, and last the first
 // variant the value decodes into.
 func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
-	f.Func().Params(Id("u").Op("*").Id(name)).Id("UnmarshalJSONFrom").Params(Id("dec").Op("*").Qual(jsontextPkg, "Decoder")).Error().BlockFunc(func(g *Group) {
-		g.List(Id("b"), Id("err")).Op(":=").Id("dec").Dot("ReadValue").Call()
-		g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
+	f.Func().Params(ID("u").Op("*").Id(name)).Id("UnmarshalJSONFrom").Params(ID("dec").Op("*").Qual(jsontextPkg, "Decoder")).Error().BlockFunc(func(g *Group) {
+		g.List(ID("b"), ID("err")).Op(":=").Id("dec").Dot("ReadValue").Call()
+		g.If(ID("err").Op("!=").Nil()).Block(Return(ID("err")))
 		// The caller's options, such as RejectUnknownMembers, apply to the variant.
 		g.Id("opts").Op(":=").Id("dec").Dot("Options").Call()
 
 		for _, vi := range variants {
 			if vi.isNull {
-				g.If(Id("b").Dot("Kind").Call().Op("==").LitRune('n')).Block(
+				g.If(ID("b").Dot("Kind").Call().Op("==").LitRune('n')).Block(
 					Var().Id("v").Id(vi.typeName),
-					Id("u").Dot(vi.fieldName).Op("=").Op("&").Id("v"),
+					ID("u").Dot(vi.fieldName).Op("=").Op("&").Id("v"),
 					Return(Nil()),
 				)
 				break
@@ -85,9 +85,9 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 		if hasDisc {
 			// A discriminator that is absent or not a string selects no
 			// variant here.
-			g.Var().Id("disc").Struct(Id("Value").String().Tag(map[string]string{"json": discKey}))
-			g.Id("_").Op("=").Qual(jsonPkg, "Unmarshal").Call(Id("b"), Op("&").Id("disc"))
-			g.Switch(Id("disc").Dot("Value")).BlockFunc(func(sw *Group) {
+			g.Var().Id("disc").Struct(ID("Value").String().Tag(map[string]string{"json": discKey}))
+			g.Id("_").Op("=").Qual(jsonPkg, "Unmarshal").Call(ID("b"), Op("&").Id("disc"))
+			g.Switch(ID("disc").Dot("Value")).BlockFunc(func(sw *Group) {
 				for _, vi := range variants {
 					if vi.discValue != "" {
 						sw.Case(Lit(vi.discValue)).Block(jDecodeVariant(name, vi)...)
@@ -101,12 +101,12 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 			needNames = needNames || (vi.isObject && len(vi.required) > 0)
 		}
 		if needNames {
-			g.If(List(Id("names"), Id("ok")).Op(":=").Id("objectMembers").Call(Id("b")), Id("ok")).BlockFunc(func(obj *Group) {
+			g.If(List(ID("names"), ID("ok")).Op(":=").Id("objectMembers").Call(ID("b")), ID("ok")).BlockFunc(func(obj *Group) {
 				for _, vi := range variants {
 					if !vi.isObject || len(vi.required) == 0 {
 						continue
 					}
-					cond := Id("names").Dot("has").Call(Lit(vi.required[0]))
+					cond := ID("names").Dot("has").Call(Lit(vi.required[0]))
 					for _, rk := range vi.required[1:] {
 						cond = cond.Op("&&").Id("names").Dot("has").Call(Lit(rk))
 					}
@@ -120,7 +120,7 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 			needItems = needItems || (vi.isArray && len(vi.arrayItemRequired) > 0)
 		}
 		if needItems {
-			g.If(List(Id("items"), Id("ok")).Op(":=").Id("arrayItemMembers").Call(Id("b")), Id("ok")).BlockFunc(func(arr *Group) {
+			g.If(List(ID("items"), ID("ok")).Op(":=").Id("arrayItemMembers").Call(ID("b")), ID("ok")).BlockFunc(func(arr *Group) {
 				for _, vi := range variants {
 					if !vi.isArray || len(vi.arrayItemRequired) == 0 {
 						continue
@@ -129,7 +129,7 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 					for _, rk := range vi.arrayItemRequired {
 						args = append(args, Lit(rk))
 					}
-					arr.If(Id("items").Dot("allHave").Call(args...)).Block(jDecodeVariant(name, vi)...)
+					arr.If(ID("items").Dot("allHave").Call(args...)).Block(jDecodeVariant(name, vi)...)
 				}
 			})
 		}
@@ -137,8 +137,8 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 		for _, vi := range variants {
 			g.Block(
 				Var().Id("v").Id(vi.typeName),
-				If(Qual(jsonPkg, "Unmarshal").Call(Id("b"), Op("&").Id("v"), Id("opts")).Op("==").Nil()).Block(
-					Id("u").Dot(vi.fieldName).Op("=").Op("&").Id("v"),
+				If(Qual(jsonPkg, "Unmarshal").Call(ID("b"), Op("&").Id("v"), ID("opts")).Op("==").Nil()).Block(
+					ID("u").Dot(vi.fieldName).Op("=").Op("&").Id("v"),
 					Return(Nil()),
 				),
 			)
@@ -151,14 +151,14 @@ func emitUnionUnmarshal(f *File, name, discKey string, variants []variantInfo) {
 // emitUnionMarshal emits MarshalJSONTo and sets the variant's const members.
 // Object variants retain the old map roundtrip to preserve their wire bytes.
 func emitUnionMarshal(f *File, name string, variants []variantInfo) {
-	f.Func().Params(Id("u").Id(name)).Id("MarshalJSONTo").Params(Id("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().BlockFunc(func(g *Group) {
+	f.Func().Params(ID("u").Id(name)).Id("MarshalJSONTo").Params(ID("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().BlockFunc(func(g *Group) {
 		for _, vi := range variants {
-			g.If(Id("u").Dot(vi.fieldName).Op("!=").Nil()).BlockFunc(func(gg *Group) {
+			g.If(ID("u").Dot(vi.fieldName).Op("!=").Nil()).BlockFunc(func(gg *Group) {
 				switch {
 				case vi.isNull:
-					gg.Return(Id("enc").Dot("WriteToken").Call(Qual(jsontextPkg, "Null")))
+					gg.Return(ID("enc").Dot("WriteToken").Call(Qual(jsontextPkg, "Null")))
 				case !vi.isObject:
-					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Id("u").Dot(vi.fieldName), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
+					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(ID("enc"), ID("u").Dot(vi.fieldName), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
 				default:
 					gg.Id("v").Op(":=").Op("*").Id("u").Dot(vi.fieldName)
 					for _, kv := range vi.constPairs {
@@ -169,7 +169,7 @@ func emitUnionMarshal(f *File, name string, variants []variantInfo) {
 						gg.Id("v").Dot("Meta").Op("=").Nil()
 						gg.Id("v").Dot("Annotations").Op("=").Nil()
 					}
-					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("v"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
+					gg.Return(Qual(jsonPkg, "MarshalEncode").Call(ID("enc"), Op("&").Id("v"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
 				}
 			})
 		}
@@ -254,17 +254,17 @@ func emitDefaultsCodec(f *File, name string, defaults []defaultCodec) {
 	if len(defaults) > 0 {
 		// v1's generated default marshaler used json.Marshal, so strings
 		// inside these types were HTML-escaped even on a non-escaping wire.
-		f.Func().Params(Id("v").Id(name)).Id("MarshalJSONTo").Params(Id("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().BlockFunc(func(g *Group) {
+		f.Func().Params(ID("v").Id(name)).Id("MarshalJSONTo").Params(ID("enc").Op("*").Qual(jsontextPkg, "Encoder")).Error().BlockFunc(func(g *Group) {
 			g.Type().Id("Alias").Id(name)
-			g.Id("a").Op(":=").Id("Alias").Call(Id("v"))
+			g.Id("a").Op(":=").Id("Alias").Call(ID("v"))
 			for _, d := range defaults {
 				if d.nilable {
-					g.If(Id("a").Dot(d.fieldName).Op("==").Nil()).Block(
-						If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Index().Byte().Parens(Lit(d.defaultJSON)), Op("&").Id("a").Dot(d.fieldName)), Id("err").Op("!=").Nil()).Block(Return(Id("err"))),
+					g.If(ID("a").Dot(d.fieldName).Op("==").Nil()).Block(
+						If(List(ID("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Index().Byte().Parens(Lit(d.defaultJSON)), Op("&").Id("a").Dot(d.fieldName)), ID("err").Op("!=").Nil()).Block(Return(ID("err"))),
 					)
 				}
 			}
-			g.Return(Qual(jsonPkg, "MarshalEncode").Call(Id("enc"), Op("&").Id("a"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
+			g.Return(Qual(jsonPkg, "MarshalEncode").Call(ID("enc"), Op("&").Id("a"), Qual(jsontextPkg, "EscapeForHTML").Call(Lit(true))))
 		})
 		f.Line()
 	}
@@ -280,26 +280,26 @@ func emitDefaultsCodec(f *File, name string, defaults []defaultCodec) {
 	if len(applied) == 0 {
 		return
 	}
-	f.Func().Params(Id("v").Op("*").Id(name)).Id("UnmarshalJSONFrom").Params(Id("dec").Op("*").Qual(jsontextPkg, "Decoder")).Error().BlockFunc(func(g *Group) {
-		g.List(Id("b"), Id("err")).Op(":=").Id("dec").Dot("ReadValue").Call()
-		g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
+	f.Func().Params(ID("v").Op("*").Id(name)).Id("UnmarshalJSONFrom").Params(ID("dec").Op("*").Qual(jsontextPkg, "Decoder")).Error().BlockFunc(func(g *Group) {
+		g.List(ID("b"), ID("err")).Op(":=").Id("dec").Dot("ReadValue").Call()
+		g.If(ID("err").Op("!=").Nil()).Block(Return(ID("err")))
 		// Alias has no methods, so this decode does not come back here.
 		g.Type().Id("Alias").Id(name)
 		g.Var().Id("a").Id("Alias")
-		g.If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Id("b"), Op("&").Id("a"), Id("dec").Dot("Options").Call()), Id("err").Op("!=").Nil()).Block(Return(Id("err")))
-		g.List(Id("members"), Id("_")).Op(":=").Id("objectMembers").Call(Id("b"))
+		g.If(List(ID("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(ID("b"), Op("&").Id("a"), ID("dec").Dot("Options").Call()), ID("err").Op("!=").Nil()).Block(Return(ID("err")))
+		g.List(ID("members"), ID("_")).Op(":=").Id("objectMembers").Call(ID("b"))
 		for _, d := range applied {
 			cond := Op("!").Id("members").Dot("has").Call(Lit(d.propName))
 			if !d.allowNull {
-				cond = Id("members").Dot("missingOrNull").Call(Lit(d.propName))
+				cond = ID("members").Dot("missingOrNull").Call(Lit(d.propName))
 			}
 			g.If(cond).Block(
-				If(List(Id("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Index().Byte().Parens(Lit(d.defaultJSON)), Op("&").Id("a").Dot(d.fieldName)), Id("err").Op("!=").Nil()).Block(
-					Return(Qual("fmt", "Errorf").Call(Lit(name+"."+d.propName+": default: %w"), Id("err"))),
+				If(List(ID("err")).Op(":=").Qual(jsonPkg, "Unmarshal").Call(Index().Byte().Parens(Lit(d.defaultJSON)), Op("&").Id("a").Dot(d.fieldName)), ID("err").Op("!=").Nil()).Block(
+					Return(Qual("fmt", "Errorf").Call(Lit(name+"."+d.propName+": default: %w"), ID("err"))),
 				),
 			)
 		}
-		g.Op("*").Id("v").Op("=").Id(name).Call(Id("a"))
+		g.Op("*").Id("v").Op("=").Id(name).Call(ID("a"))
 		g.Return(Nil())
 	})
 	f.Line()

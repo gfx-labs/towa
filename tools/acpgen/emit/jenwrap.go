@@ -2,17 +2,22 @@ package emit
 
 import jen "github.com/dave/jennifer/jen"
 
-// Local aliases to avoid dot-importing jennifer while keeping concise calls.
+// Types of jennifer, aliased so that calls stay short without a dot import.
 type (
-	Code  = jen.Code
-	Dict  = jen.Dict
+	// Code is jen.Code.
+	Code = jen.Code
+	// Dict is jen.Dict.
+	Dict = jen.Dict
+	// Group is jen.Group.
 	Group = jen.Group
-	File  = jen.File
+	// File is jen.File.
+	File = jen.File
 )
 
+// NewFile and the names below are jennifer's constructors.
 var (
 	NewFile       = jen.NewFile
-	Id            = jen.Id
+	ID            = jen.Id
 	Lit           = jen.Lit
 	Line          = jen.Line
 	Func          = jen.Func

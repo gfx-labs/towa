@@ -8,6 +8,7 @@ import (
 )
 
 // SanitizeComment removes backticks and normalizes whitespace for Go comments.
+//
 // Deprecated: Use FormatDocComment for proper multi-line comment formatting.
 func SanitizeComment(s string) string {
 	s = strings.ReplaceAll(s, "`", "'")
