@@ -35,25 +35,6 @@ type errorObject struct {
 	ResetsInSeconds jsontext.Value `json:"resets_in_seconds"`
 }
 
-func scalarText(v jsontext.Value) string {
-	var s string
-	if len(v) == 0 || v.Kind() == 'n' {
-		return ""
-	}
-	if v.Kind() == '"' {
-		if json.Unmarshal(v, &s) != nil {
-			return ""
-		}
-		return s
-	}
-	return strings.TrimSpace(string(v))
-}
-
-func scalarInt(v jsontext.Value) (int64, bool) {
-	n, err := strconv.ParseInt(scalarText(v), 10, 64)
-	return n, err == nil
-}
-
 // parseErrorObject reads an error object. A value that is not one yields an
 // apiError with what could be read, which may be nothing.
 func parseErrorObject(raw jsontext.Value) apiError {
@@ -75,6 +56,28 @@ func parseErrorObject(raw jsontext.Value) apiError {
 		out.ResetsIn = time.Duration(in) * time.Second
 	}
 	return out
+}
+
+// scalarText reads a member as text: a string as its value, any other
+// value as its JSON text. It is empty for null and a missing member.
+func scalarText(v jsontext.Value) string {
+	var s string
+	if len(v) == 0 || v.Kind() == 'n' {
+		return ""
+	}
+	if v.Kind() == '"' {
+		if json.Unmarshal(v, &s) != nil {
+			return ""
+		}
+		return s
+	}
+	return strings.TrimSpace(string(v))
+}
+
+// scalarInt reads a member that is a number or a string of digits.
+func scalarInt(v jsontext.Value) (int64, bool) {
+	n, err := strconv.ParseInt(scalarText(v), 10, 64)
+	return n, err == nil
 }
 
 // parseErrorBody reads the body of an HTTP error response. A body that is
@@ -101,6 +104,8 @@ func parseErrorBody(data []byte) apiError {
 // failed stream event.
 var retryDelayPattern = regexp.MustCompile(`(?i)try again in\s*(\d+(?:\.\d+)?)\s*(ms|s|seconds?)`)
 
+// retryDelayFromMessage reads the wait a rate limit message names. It is
+// zero when the message names none.
 func retryDelayFromMessage(msg string) time.Duration {
 	m := retryDelayPattern.FindStringSubmatch(msg)
 	if m == nil {
@@ -125,10 +130,6 @@ func retryAfter(h http.Header) time.Duration {
 	}
 	return provider.RetryAfter(h)
 }
-
-// contextPhrases mark a context-length error from an endpoint that sends no
-// error code for it. They are matched in the provider's own message.
-var contextPhrases = []string{"context_length_exceeded", "context window", "maximum context length"}
 
 // classify turns a failure into an error the loop can act on. status is
 // zero for a failure reported inside a stream.
@@ -194,6 +195,8 @@ func classify(status int, header http.Header, e apiError) *provider.Error {
 	return out
 }
 
+// isQuota reports whether kind is an error code for an account out of paid
+// usage, which waiting does not cure.
 func isQuota(kind string) bool {
 	switch kind {
 	case "insufficient_quota", "usage_not_included", "credit_balance_exhausted",
@@ -203,6 +206,12 @@ func isQuota(kind string) bool {
 	return false
 }
 
+// contextPhrases mark a context-length error from an endpoint that sends no
+// error code for it. They are matched in the provider's own message.
+var contextPhrases = []string{"context_length_exceeded", "context window", "maximum context length"}
+
+// mentionsContext reports whether msg says the request did not fit the
+// context.
 func mentionsContext(msg string) bool {
 	lower := strings.ToLower(msg)
 	for _, phrase := range contextPhrases {
