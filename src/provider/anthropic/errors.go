@@ -1,7 +1,6 @@
 package anthropic
 
 import (
-	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"net/http"
@@ -93,19 +92,19 @@ func classify(status int, header http.Header, e apiError) *provider.Error {
 		out.Class, out.Reason = provider.Fallback, provider.ReasonAuth
 	case status == http.StatusTooManyRequests || e.Type == "rate_limit_error":
 		out.Class, out.Reason = provider.Retry, provider.ReasonRateLimit
-		out.RetryAfter = retryAfter(header)
+		out.RetryAfter = provider.RetryAfter(header)
 		out.ResetAt = resetAt(header)
 	case status == http.StatusPaymentRequired || e.Type == "billing_error" || containsAny(lower, quotaPhrases):
 		// Waiting does not refill an account. Another account can answer.
 		out.Class, out.Reason = provider.Fallback, provider.ReasonRateLimit
 	case status == statusOverloaded || e.Type == "overloaded_error":
 		out.Class, out.Reason = provider.Retry, provider.ReasonOverload
-		out.RetryAfter = retryAfter(header)
+		out.RetryAfter = provider.RetryAfter(header)
 	case (status == http.StatusBadRequest || e.Type == "invalid_request_error") && containsAny(lower, contextFullPhrases):
 		out.Class, out.Reason = provider.Fail, provider.ReasonContextFull
 	case status >= 500 || e.Type == "api_error" || e.Type == "timeout_error":
 		out.Class, out.Reason = provider.Retry, provider.ReasonOverload
-		out.RetryAfter = retryAfter(header)
+		out.RetryAfter = provider.RetryAfter(header)
 	case status == http.StatusRequestTimeout:
 		out.Class, out.Reason = provider.Retry, provider.ReasonNetwork
 	default:
@@ -119,21 +118,6 @@ func classify(status int, header http.Header, e apiError) *provider.Error {
 // statusOverloaded is the status Anthropic answers with when it is
 // overloaded. net/http has no name for it.
 const statusOverloaded = 529
-
-// retryAfter reads the wait from the response headers. It is zero when they
-// name none.
-func retryAfter(h http.Header) time.Duration {
-	value := h.Get("Retry-After")
-	if secs, err := strconv.ParseFloat(value, 64); err == nil && secs > 0 {
-		return time.Duration(secs * float64(time.Second))
-	}
-	if at, err := http.ParseTime(value); err == nil {
-		if wait := time.Until(at); wait > 0 {
-			return wait
-		}
-	}
-	return 0
-}
 
 // apiKeyLimits are the limits an API key response reports, each with an
 // anthropic-ratelimit-<name>-remaining count and an RFC 3339
@@ -160,13 +144,4 @@ func resetAt(h http.Header) time.Time {
 		}
 	}
 	return latest
-}
-
-// transportError is a request that did not reach the API or a response that
-// was cut off. A cancelled context is not retried.
-func transportError(ctx context.Context, what string, err error) *provider.Error {
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonNetwork, Message: what, Err: ctxErr}
-	}
-	return &provider.Error{Class: provider.Retry, Reason: provider.ReasonNetwork, Message: what, Err: err}
 }

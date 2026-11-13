@@ -77,7 +77,7 @@ func (c *Client) modelsPage(ctx context.Context, cred auth.Credential, after str
 	req.Header = header
 	resp, err := c.cfg.HTTPClient.Do(req)
 	if err != nil {
-		return nil, transportError(ctx, "send request", err)
+		return nil, provider.TransportError(ctx, "send request", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // nothing to do about a close error on a body that was read
 	if resp.StatusCode != http.StatusOK {
@@ -85,7 +85,7 @@ func (c *Client) modelsPage(ctx context.Context, cred auth.Credential, after str
 	}
 	var page modelsPage
 	if err := json.UnmarshalRead(resp.Body, &page); err != nil {
-		return nil, transportError(ctx, "read the model list", err)
+		return nil, provider.TransportError(ctx, "read the model list", err)
 	}
 	return &page, nil
 }

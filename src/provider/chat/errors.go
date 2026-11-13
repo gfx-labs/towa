@@ -230,16 +230,11 @@ func retryAfter(header http.Header, notes []string) (time.Duration, []string) {
 	if value == "" {
 		return 0, notes
 	}
-	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds >= 0 {
-		return time.Duration(seconds * float64(time.Second)), notes
+	wait, ok := provider.ParseRetryAfter(value)
+	if !ok {
+		notes = append(notes, fmt.Sprintf("unreadable Retry-After %q", value))
 	}
-	if at, err := http.ParseTime(value); err == nil {
-		if wait := time.Until(at); wait > 0 {
-			return wait, notes
-		}
-		return 0, notes
-	}
-	return 0, append(notes, fmt.Sprintf("unreadable Retry-After %q", value))
+	return wait, notes
 }
 
 // openRouterReset reads X-RateLimit-Reset, which OpenRouter documents as

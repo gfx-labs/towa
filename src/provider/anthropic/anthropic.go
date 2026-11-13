@@ -220,7 +220,7 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
-		return transportError(ctx, "send request", err)
+		return provider.TransportError(ctx, "send request", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // nothing to do about a close error on a body being abandoned
 	if resp.StatusCode != http.StatusOK {
@@ -237,7 +237,7 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	state := newStreamState(c.cfg.Provider, transcript.Origin{Model: req.Model, Account: req.Credential.Account})
 	for ev, err := range sse.Events(resp.Body) {
 		if err != nil {
-			return transportError(ctx, "read stream", err)
+			return provider.TransportError(ctx, "read stream", err)
 		}
 		done, perr := state.handle(ev.Data, yield)
 		if perr != nil {
@@ -248,7 +248,7 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return transportError(ctx, "read stream", err)
+		return provider.TransportError(ctx, "read stream", err)
 	}
 	return &provider.Error{
 		Class: provider.Retry, Reason: provider.ReasonNetwork,
@@ -313,20 +313,7 @@ func (c *Client) header(cred auth.Credential, thinking Thinking) (http.Header, *
 // statusError reads the body of a response that is not 200 and classifies
 // it.
 func (c *Client) statusError(ctx context.Context, resp *http.Response) *provider.Error {
-	limit := c.cfg.ErrorBodyBytes
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		perr := transportError(ctx, "read error response", err)
-		perr.Status = resp.StatusCode
-		return perr
-	}
-	over := int64(len(data)) > limit
-	if over {
-		data = data[:limit]
-	}
-	perr := classify(resp.StatusCode, resp.Header, parseErrorBody(data))
-	if over {
-		perr.Message += fmt.Sprintf(" (the error response is longer than %d bytes and was not read to its end)", limit)
-	}
-	return perr
+	return provider.StatusError(ctx, resp, c.cfg.ErrorBodyBytes, func(body []byte) *provider.Error {
+		return classify(resp.StatusCode, resp.Header, parseErrorBody(body))
+	})
 }

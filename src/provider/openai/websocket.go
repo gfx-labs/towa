@@ -156,7 +156,7 @@ func (c *Client) dial(ctx context.Context, ep endpoint, req provider.Request) (*
 		if resp != nil && resp.StatusCode != http.StatusSwitchingProtocols {
 			return nil, c.statusError(ctx, resp)
 		}
-		return nil, transportError(ctx, "open websocket", err)
+		return nil, provider.TransportError(ctx, "open websocket", err)
 	}
 	// The library's default limit of 32 KiB is below one finished response.
 	// The SSE transport has no limit on an event either.
@@ -222,13 +222,13 @@ func (c *Client) exchange(ctx context.Context, sock *socket, body *requestBody, 
 	}
 	bytebufferpool.Put(buf)
 	if err != nil {
-		return false, transportError(ctx, "send request on websocket", err)
+		return false, provider.TransportError(ctx, "send request on websocket", err)
 	}
 	read := false
 	for {
 		_, data, err := sock.conn.Read(ctx)
 		if err != nil {
-			return read, transportError(ctx, "read websocket", err)
+			return read, provider.TransportError(ctx, "read websocket", err)
 		}
 		read = true
 		done, perr := p.handle(data, emit)

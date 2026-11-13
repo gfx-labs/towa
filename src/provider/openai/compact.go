@@ -61,7 +61,7 @@ func (c *Client) Compact(ctx context.Context, req provider.Request) (*Compacted,
 	var out responseBody
 	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		if ctx.Err() != nil {
-			return nil, transportError(ctx, "read compact response", err)
+			return nil, provider.TransportError(ctx, "read compact response", err)
 		}
 		return nil, &provider.Error{
 			Class: provider.Retry, Reason: provider.ReasonNetwork, Status: resp.StatusCode,

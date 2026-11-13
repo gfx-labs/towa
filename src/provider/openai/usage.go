@@ -55,7 +55,7 @@ func (c *Client) Usage(ctx context.Context, cred auth.Credential) (provider.Usag
 	}
 	resp, err := c.cfg.HTTPClient.Do(req)
 	if err != nil {
-		return provider.Usage{}, transportError(ctx, "send request", err)
+		return provider.Usage{}, provider.TransportError(ctx, "send request", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // nothing to do about a close error on a body that was read
 	if resp.StatusCode != http.StatusOK {
@@ -69,7 +69,7 @@ func (c *Client) Usage(ctx context.Context, cred auth.Credential) (provider.Usag
 		} `json:"rate_limit"`
 	}
 	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
-		return provider.Usage{}, transportError(ctx, "read the usage", err)
+		return provider.Usage{}, provider.TransportError(ctx, "read the usage", err)
 	}
 	usage := provider.Usage{Plan: body.PlanType}
 	if body.RateLimit != nil {

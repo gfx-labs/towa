@@ -278,7 +278,7 @@ func (c *Client) streamSSE(ctx context.Context, ep endpoint, req provider.Reques
 
 	for ev, err := range sse.Events(resp.Body) {
 		if err != nil {
-			return transportError(ctx, "read stream", err)
+			return provider.TransportError(ctx, "read stream", err)
 		}
 		if ev.Data == nil || string(ev.Data) == "[DONE]" {
 			continue
@@ -350,7 +350,7 @@ func (c *Client) post(ctx context.Context, url string, header http.Header, body 
 
 	resp, err := c.cfg.HTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, transportError(ctx, "send request", err)
+		return nil, provider.TransportError(ctx, "send request", err)
 	}
 	if resp.StatusCode == http.StatusOK {
 		return resp, nil
@@ -362,20 +362,7 @@ func (c *Client) post(ctx context.Context, url string, header http.Header, body 
 // statusError reads the body of a response that is not 200 and classifies
 // it.
 func (c *Client) statusError(ctx context.Context, resp *http.Response) *provider.Error {
-	limit := c.cfg.ErrorBodyBytes
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		perr := transportError(ctx, "read error response", err)
-		perr.Status = resp.StatusCode
-		return perr
-	}
-	over := int64(len(data)) > limit
-	if over {
-		data = data[:limit]
-	}
-	perr := classify(resp.StatusCode, resp.Header, parseErrorBody(data))
-	if over {
-		perr.Message += fmt.Sprintf(" (the error response is longer than %d bytes and was not read to its end)", limit)
-	}
-	return perr
+	return provider.StatusError(ctx, resp, c.cfg.ErrorBodyBytes, func(body []byte) *provider.Error {
+		return classify(resp.StatusCode, resp.Header, parseErrorBody(body))
+	})
 }

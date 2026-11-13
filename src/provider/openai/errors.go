@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
@@ -117,25 +116,14 @@ func retryDelayFromMessage(msg string) time.Duration {
 	return time.Duration(value * float64(time.Second))
 }
 
-// retryAfter reads the wait from the response headers. It is zero when they
-// name none.
+// retryAfter reads the wait from the response headers. OpenAI sends
+// retry-after-ms, which is more exact than retry-after, so it comes first.
+// It is zero when they name none.
 func retryAfter(h http.Header) time.Duration {
-	if h == nil {
-		return 0
-	}
 	if ms, err := strconv.ParseFloat(h.Get("retry-after-ms"), 64); err == nil && ms > 0 {
 		return time.Duration(ms * float64(time.Millisecond))
 	}
-	value := h.Get("retry-after")
-	if secs, err := strconv.ParseFloat(value, 64); err == nil && secs > 0 {
-		return time.Duration(secs * float64(time.Second))
-	}
-	if at, err := http.ParseTime(value); err == nil {
-		if wait := time.Until(at); wait > 0 {
-			return wait
-		}
-	}
-	return 0
+	return provider.RetryAfter(h)
 }
 
 // contextPhrases mark a context-length error from an endpoint that sends no
@@ -223,13 +211,4 @@ func mentionsContext(msg string) bool {
 		}
 	}
 	return false
-}
-
-// transportError reports a request that did not reach the provider or a
-// response that was cut off. A cancelled request is not retried.
-func transportError(ctx context.Context, what string, err error) *provider.Error {
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonNetwork, Message: what, Err: ctxErr}
-	}
-	return &provider.Error{Class: provider.Retry, Reason: provider.ReasonNetwork, Message: what, Err: err}
 }

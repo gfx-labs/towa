@@ -46,7 +46,7 @@ func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.M
 	}
 	resp, err := c.cfg.HTTPClient.Do(req)
 	if err != nil {
-		return nil, transportError(ctx, "send request", err)
+		return nil, provider.TransportError(ctx, "send request", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // nothing to do about a close error on a body that was read
 	if resp.StatusCode != http.StatusOK {
@@ -59,7 +59,7 @@ func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.M
 		} `json:"models"`
 	}
 	if err := json.UnmarshalRead(resp.Body, &list); err != nil {
-		return nil, transportError(ctx, "read the model list", err)
+		return nil, provider.TransportError(ctx, "read the model list", err)
 	}
 	out := make([]provider.ModelInfo, len(list.Models))
 	for i, m := range list.Models {

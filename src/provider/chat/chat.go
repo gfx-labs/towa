@@ -128,7 +128,7 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return transportError(ctx, err)
+		return provider.TransportError(ctx, "", err)
 	}
 	// The body is closed on every path, which ends the request when the
 	// caller stops early. A close error after that has nothing to report to.
@@ -138,7 +138,7 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	if resp.StatusCode != http.StatusOK || mediaType != "text/event-stream" {
 		raw, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return transportError(ctx, err)
+			return provider.TransportError(ctx, "", err)
 		}
 		if resp.StatusCode != http.StatusOK {
 			return c.classifyResponse(resp.StatusCode, resp.Header, raw)
@@ -200,20 +200,10 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	return nil
 }
 
-// transportError is a request that got no response.
-func transportError(ctx context.Context, err error) *provider.Error {
-	if ctx.Err() != nil {
-		// The caller cancelled or its deadline passed. Sending again is its
-		// decision, not a retry.
-		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonNetwork, Err: ctx.Err()}
-	}
-	return &provider.Error{Class: provider.Retry, Reason: provider.ReasonNetwork, Err: err}
-}
-
 // cutOff is a response that stopped mid-stream. Nothing of it was yielded as
 // an item, so sending the request again loses nothing.
 func cutOff(ctx context.Context, err error) *provider.Error {
-	e := transportError(ctx, err)
+	e := provider.TransportError(ctx, "", err)
 	e.Status = http.StatusOK
 	e.Message = "the stream ended before the response was complete"
 	return e
