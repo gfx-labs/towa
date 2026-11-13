@@ -189,8 +189,7 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 				prepared, err := prepare(context.WithValue(ctx, prepareKey{}, struct{}{}), entry, req)
 				if err != nil {
 					failure := &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
-					var perr *provider.Error
-					if errors.As(err, &perr) {
+					if perr, ok := errors.AsType[*provider.Error](err); ok {
 						failureCopy := *perr
 						failureCopy.Err = err
 						failure = &failureCopy
@@ -252,8 +251,8 @@ func (r *Router) attempt(ctx context.Context, entry Entry, req provider.Request,
 	yielded := false
 	for event, err := range entry.Provider.Stream(ctx, req) {
 		if err != nil {
-			var perr *provider.Error
-			if !errors.As(err, &perr) {
+			perr, ok := errors.AsType[*provider.Error](err)
+			if !ok {
 				// The contract says every error is a *provider.Error. One
 				// that is not cannot be classified, so it ends the turn.
 				perr = &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}

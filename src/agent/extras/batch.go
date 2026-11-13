@@ -67,8 +67,8 @@ func Batch(cfg config.ToolsBatch, dispatcher func(context.Context) (batch.Dispat
 		}
 		items, err := batch.Run(ctx, cfg, d, calls)
 		if err != nil {
-			var e *batch.Error
-			if !errors.As(err, &e) {
+			e, ok := errors.AsType[*batch.Error](err)
+			if !ok {
 				return tools.Result{}, err
 			}
 			text := "No tool calls provided"

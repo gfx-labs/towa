@@ -146,8 +146,8 @@ func TestServeListenersRunsStdioUnixAndTCP(t *testing.T) {
 		var b [1]byte
 		_, err := conn.Read(b[:])
 		require.Error(t, err)
-		var timeout net.Error
-		require.False(t, errors.As(err, &timeout) && timeout.Timeout(), "connection was not closed")
+		timeout, ok := errors.AsType[net.Error](err)
+		require.False(t, ok && timeout.Timeout(), "connection was not closed")
 	}
 }
 

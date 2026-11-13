@@ -229,11 +229,9 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 			Kind: KindFailed, SessionID: child.SessionID, Err: err,
 			Usage: res.Usage, Charged: charged, StopReason: res.StopReason,
 		}
-		var stop *loop.StopError
-		switch {
-		case errors.As(err, &stop):
+		if stop, ok := errors.AsType[*loop.StopError](err); ok {
 			failed.Kind, failed.Stop = KindStopped, &stop.Stop
-		case ctx.Err() != nil:
+		} else if ctx.Err() != nil {
 			failed.Kind = KindCancelled
 		}
 		return Result{}, failed

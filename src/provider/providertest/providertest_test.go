@@ -151,8 +151,8 @@ func TestRecorderPreflightsParentBeforeEndpoint(t *testing.T) {
 			before := effects.Load()
 			response, err := client.Do(req)
 			if !valid {
-				var pathError *os.PathError
-				require.True(t, errors.As(err, &pathError), "parent failure must retain its filesystem cause: %v", err)
+				_, ok := errors.AsType[*os.PathError](err)
+				require.True(t, ok, "parent failure must retain its filesystem cause: %v", err)
 				require.Equal(t, before, effects.Load(), "invalid output must be refused before the endpoint runs")
 				return
 			}

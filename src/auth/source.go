@@ -66,8 +66,8 @@ var deadTokenCodes = []string{"invalid_grant", "refresh_token_invalidated", "una
 // dead, or "" when err is anything else: a network failure, a 5xx or a
 // refusal the endpoint may take back.
 func deadTokenCode(err error) string {
-	var refusal *TokenError
-	if !errors.As(err, &refusal) || len(refusal.Detail) == 0 {
+	refusal, ok := errors.AsType[*TokenError](err)
+	if !ok || len(refusal.Detail) == 0 {
 		return ""
 	}
 	// The "error" member is the code itself, or an object with the code.

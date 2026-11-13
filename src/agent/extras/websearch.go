@@ -52,8 +52,8 @@ func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
 		}
 		results, err := websearch.Search(ctx, client, cfg, websearch.Input{Query: in.Query, Results: in.NumResults})
 		if err != nil {
-			var e *websearch.Error
-			if !errors.As(err, &e) {
+			e, ok := errors.AsType[*websearch.Error](err)
+			if !ok {
 				return tools.Result{}, err
 			}
 			return textResult(transcript.OutcomeFailed, searchError(e)), nil

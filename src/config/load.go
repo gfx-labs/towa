@@ -408,8 +408,7 @@ func decodeTable(ctx *kong.DecodeContext, target reflect.Value) error {
 	}
 	table := reflect.New(target.Type())
 	err = json.Unmarshal(data, table.Interface(), tableOptions)
-	var semantic *json.SemanticError
-	if errors.As(err, &semantic) {
+	if semantic, ok := errors.AsType[*json.SemanticError](err); ok {
 		key := ctx.Value.Name
 		for name := range semantic.JSONPointer.Tokens() {
 			if _, err := strconv.ParseUint(name, 10, 64); err == nil {

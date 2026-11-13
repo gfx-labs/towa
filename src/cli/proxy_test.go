@@ -150,8 +150,7 @@ func runProxyTurnChild(t *testing.T) {
 	report := proxyTurnResult{Final: result.Final, Stop: result.StopReason}
 	if err != nil {
 		report.Error = err.Error()
-		var certificate *tls.CertificateVerificationError
-		report.CertificateFailure = errors.As(err, &certificate)
+		_, report.CertificateFailure = errors.AsType[*tls.CertificateVerificationError](err)
 	}
 	entries, err := f.Store.History(t.Context(), id, store.Range{})
 	require.NoError(t, err)

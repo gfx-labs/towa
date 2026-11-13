@@ -70,8 +70,7 @@ const (
 func endSpan(span trace.Span, err error) {
 	if err != nil {
 		kind := "error"
-		var login *LoginRequiredError
-		if errors.As(err, &login) {
+		if _, ok := errors.AsType[*LoginRequiredError](err); ok {
 			kind = "login_required"
 		}
 		span.SetAttributes(attribute.String("error.type", kind))

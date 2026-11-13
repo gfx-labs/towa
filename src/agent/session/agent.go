@@ -214,10 +214,9 @@ func (a *Agent) checkSystemPrompt(p *acp.SystemPrompt) error {
 		return invalid("systemPrompt is not supported")
 	}
 	_, err := agentctx.Build(agentctx.Prompt{Client: p})
-	var mode *agentctx.UnsupportedModeError
-	var content *agentctx.ContentError
-	switch {
-	case errors.As(err, &mode), errors.As(err, &content):
+	_, mode := errors.AsType[*agentctx.UnsupportedModeError](err)
+	_, content := errors.AsType[*agentctx.ContentError](err)
+	if mode || content {
 		return invalid("%v", err)
 	}
 	return err
@@ -248,8 +247,7 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 	}
 	if err := errors.Join(a.checkDirs(p.Cwd, p.AdditionalDirectories), a.checkSystemPrompt(p.SystemPrompt), a.checkMCP(p.McpServers)); err != nil {
 		// The first refusal, when there is one, is the answer.
-		var refused *acp.RequestError
-		if errors.As(err, &refused) {
+		if refused, ok := errors.AsType[*acp.RequestError](err); ok {
 			return acp.NewSessionResponse{}, refused
 		}
 		return acp.NewSessionResponse{}, err
@@ -620,12 +618,10 @@ func (a *Agent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResp
 func stopError(err error) error {
 	// The loop reports a prompt a hook refused as its own error type. It is
 	// carried to the client as a typed stop like the others.
-	var denied *loop.DeniedError
-	var stopped *loop.StopError
-	switch {
-	case errors.As(err, &denied):
+	stopped, ok := errors.AsType[*loop.StopError](err)
+	if denied, refused := errors.AsType[*loop.DeniedError](err); refused {
 		stopped = &loop.StopError{Stop: harness.Stop{Kind: harness.StopDenied, Message: denied.Reason}}
-	case !errors.As(err, &stopped):
+	} else if !ok {
 		return err
 	}
 	data := harness.Meta(map[string]any{"error": err.Error()}, harness.Addition{Stop: &stopped.Stop})

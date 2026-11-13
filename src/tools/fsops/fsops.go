@@ -204,10 +204,10 @@ func (l location) open() (*os.Root, error) {
 // classify turns an operating system error into an *Error when the model
 // can act on it.
 func classify(path string, err error) error {
-	var known *Error
-	switch {
-	case errors.As(err, &known):
+	if _, known := errors.AsType[*Error](err); known {
 		return err
+	}
+	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return &Error{Kind: KindNotFound, Path: path, Err: err}
 	case errors.Is(err, fs.ErrPermission):

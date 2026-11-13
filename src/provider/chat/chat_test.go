@@ -329,8 +329,8 @@ func streamError(ctx context.Context, t *testing.T, c *Client) *provider.Error {
 	}
 	for ev, err := range c.Stream(ctx, req) {
 		if err != nil {
-			var perr *provider.Error
-			require.True(t, errors.As(err, &perr), "every error is a *provider.Error")
+			perr, ok := errors.AsType[*provider.Error](err)
+			require.True(t, ok, "every error is a *provider.Error")
 			return perr
 		}
 		require.Fail(t, "unexpected event", "%+v", ev)

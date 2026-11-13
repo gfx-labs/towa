@@ -58,16 +58,13 @@ func JevDecision(client *jev.Client, credential func(context.Context) (auth.Cred
 		}
 		res, err := client.Decide(ctx, cred, req)
 		if err != nil {
-			var input *jev.InputError
-			var e *jev.Error
-			switch {
-			case errors.As(err, &input):
+			if input, ok := errors.AsType[*jev.InputError](err); ok {
 				return textResult(transcript.OutcomeFailed, input.Error()), nil
-			case errors.As(err, &e):
-				return textResult(transcript.OutcomeFailed, decisionError(e)), nil
-			default:
-				return tools.Result{}, err
 			}
+			if e, ok := errors.AsType[*jev.Error](err); ok {
+				return textResult(transcript.OutcomeFailed, decisionError(e)), nil
+			}
+			return tools.Result{}, err
 		}
 		body, err := json.Marshal(struct {
 			Choice     string   `json:"choice"`

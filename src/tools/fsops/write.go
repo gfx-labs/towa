@@ -285,6 +285,6 @@ func replaceFile(root *os.Root, rel, content string, mode fs.FileMode, existed b
 }
 
 func isKind(err error, kind Kind) bool {
-	var e *Error
-	return errors.As(err, &e) && e.Kind == kind
+	e, ok := errors.AsType[*Error](err)
+	return ok && e.Kind == kind
 }

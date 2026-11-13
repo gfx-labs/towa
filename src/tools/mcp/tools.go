@@ -151,23 +151,20 @@ const sdkTransportRejected = -32005
 func (m *Manager) run(ctx context.Context, server, tool string, arguments jsontext.Value) tools.Result {
 	res, err := m.CallTool(ctx, server, tool, arguments)
 	if err != nil {
-		var callErr *CallError
-		var refused *jsonrpc.Error
-		var login *LoginRequiredError
-		var notSent *notSentError
-		switch {
-		case errors.As(err, &login):
+		if _, ok := errors.AsType[*LoginRequiredError](err); ok {
 			return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q needs an OAuth login, which only the user can do. The call to %q did not run.", server, tool))
-		case errors.As(err, &notSent):
+		}
+		if notSent, ok := errors.AsType[*notSentError](err); ok {
 			return textResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, notSent.err))
-		case errors.As(err, &refused) && refused.Code != sdkTransportRejected:
+		}
+		if refused, ok := errors.AsType[*jsonrpc.Error](err); ok && refused.Code != sdkTransportRejected {
 			return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q refused the call to %q: %s (code %d)", server, tool, refused.Message, refused.Code))
-		case errors.As(err, &callErr):
+		}
+		if callErr, ok := errors.AsType[*CallError](err); ok {
 			// The call was sent. It is not sent again.
 			return textResult(transcript.OutcomeUnknown, fmt.Sprintf("The call to %q on MCP server %q got no result, and it may or may not have taken effect: %v", tool, server, callErr.Err))
-		default:
-			return textResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, err))
 		}
+		return textResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, err))
 	}
 	if res.NeedsInput() {
 		return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q asked for more input before running %q, which this harness does not support.", server, tool))

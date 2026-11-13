@@ -129,8 +129,8 @@ func ConversationSearch(cfg config.ConversationSearch, st store.Store) (tools.To
 }
 
 func conversationError(err error) (tools.Result, error) {
-	var e *convsearch.Error
-	if !errors.As(err, &e) {
+	e, ok := errors.AsType[*convsearch.Error](err)
+	if !ok {
 		return tools.Result{}, err
 	}
 	text := e.Error()

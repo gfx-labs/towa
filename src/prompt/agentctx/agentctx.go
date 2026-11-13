@@ -277,8 +277,7 @@ func (l *fileLoader) addText(name, text string) error {
 
 // pathError makes sure the error names the path the caller asked for.
 func pathError(path string, err error) error {
-	var pe *fs.PathError
-	if errors.As(err, &pe) && pe.Path == path {
+	if pe, ok := errors.AsType[*fs.PathError](err); ok && pe.Path == path {
 		return err
 	}
 	return &fs.PathError{Op: "read", Path: path, Err: err}

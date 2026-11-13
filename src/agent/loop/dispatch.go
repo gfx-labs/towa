@@ -349,8 +349,7 @@ func logHook(ctx context.Context, logger *slog.Logger, session acp.SessionId, er
 	if err == nil {
 		return
 	}
-	var herr *hooks.Error
-	if errors.As(err, &herr) {
+	if herr, ok := errors.AsType[*hooks.Error](err); ok {
 		logger.ErrorContext(ctx, "hook failed", "session", session, "kind", herr.Kind, "event", herr.Event, "err", err)
 		return
 	}

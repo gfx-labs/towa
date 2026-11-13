@@ -39,18 +39,15 @@ func StopKind(reason provider.Reason) (harness.StopKind, bool) {
 // and a provider error with a reason outside the list, is returned as it is.
 // A selection without a configured model is a request stop, not a provider failure.
 func StopFor(err error) error {
-	var stopped *StopError
-	if errors.As(err, &stopped) {
+	if stopped, ok := errors.AsType[*StopError](err); ok {
 		return stopped
 	}
-	var noModel *models.NoModelError
-	if errors.As(err, &noModel) {
+	if noModel, ok := errors.AsType[*models.NoModelError](err); ok {
 		return &StopError{Stop: harness.Stop{Kind: harness.StopRequest, Message: noModel.Error()}, Err: err}
 	}
-	var perr *provider.Error
-	if !errors.As(err, &perr) {
-		var login *auth.LoginRequiredError
-		if errors.As(err, &login) {
+	perr, ok := errors.AsType[*provider.Error](err)
+	if !ok {
+		if login, ok := errors.AsType[*auth.LoginRequiredError](err); ok {
 			return &StopError{Stop: harness.Stop{Kind: harness.StopAuth, Account: login.Account, Message: login.Error()}, Err: err}
 		}
 		return err
@@ -67,12 +64,10 @@ func StopFor(err error) error {
 	}
 	// A dead login never reached the provider, so the provider said
 	// nothing. The auth source's text tells the user which login to redo.
-	var login *auth.LoginRequiredError
-	if errors.As(err, &login) && stop.Message == "" {
+	if login, ok := errors.AsType[*auth.LoginRequiredError](err); ok && stop.Message == "" {
 		stop.Message = login.Error()
 	}
-	var failed *router.Failed
-	if errors.As(err, &failed) {
+	if failed, ok := errors.AsType[*router.Failed](err); ok {
 		stop.Account, stop.Model = failed.Entry.Account, failed.Entry.Model
 	}
 	return &StopError{Stop: stop, Err: err}

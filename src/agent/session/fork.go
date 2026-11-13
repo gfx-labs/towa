@@ -78,8 +78,7 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 		return acp.UnstableForkSessionResponse{}, err
 	}
 	if err := errors.Join(a.checkDirs(p.Cwd, p.AdditionalDirectories), a.checkSystemPrompt(p.SystemPrompt), a.checkMCP(p.McpServers)); err != nil {
-		var refused *acp.RequestError
-		if errors.As(err, &refused) {
+		if refused, ok := errors.AsType[*acp.RequestError](err); ok {
 			return acp.UnstableForkSessionResponse{}, refused
 		}
 		return acp.UnstableForkSessionResponse{}, err

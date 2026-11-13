@@ -50,8 +50,8 @@ func validateFields(at string, value any) error {
 	if err == nil {
 		return nil
 	}
-	var failures validator.ValidationErrors
-	if !errors.As(err, &failures) {
+	failures, ok := errors.AsType[validator.ValidationErrors](err)
+	if !ok {
 		return fmt.Errorf("%s: %w", at, err)
 	}
 	failure := failures[0]

@@ -131,8 +131,8 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 // editFailure says which edit of a call failed and why. Nothing was written:
 // the edits of one call are applied together or not at all.
 func editFailure(err error, edits []fsops.Edit) tools.Result {
-	var fileErr *fsops.Error
-	if !errors.As(err, &fileErr) {
+	fileErr, ok := errors.AsType[*fsops.Error](err)
+	if !ok {
 		return fileFailure(err)
 	}
 	const unchanged = " The file was not changed."
@@ -161,14 +161,11 @@ func editFailure(err error, edits []fsops.Edit) tools.Result {
 }
 
 func fileFailure(err error) tools.Result {
-	var unread *UnreadError
-	var changed *ChangedError
-	switch {
-	case errors.As(err, &unread):
+	if _, unread := errors.AsType[*UnreadError](err); unread {
 		return textResult("File has not been read yet. Read it first before writing to it.", true)
-	case errors.As(err, &changed):
-		return textResult("File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.", true)
-	default:
-		return textResult(err.Error(), true)
 	}
+	if _, changed := errors.AsType[*ChangedError](err); changed {
+		return textResult("File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.", true)
+	}
+	return textResult(err.Error(), true)
 }

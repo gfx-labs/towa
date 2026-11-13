@@ -249,8 +249,7 @@ func (v view) read(ctx context.Context, entries func(f *os.File) iter.Seq2[trans
 				err = ctx.Err()
 			}
 			if err != nil {
-				var corrupt *CorruptError
-				if errors.As(err, &corrupt) && corrupt.Path == "" {
+				if corrupt, ok := errors.AsType[*CorruptError](err); ok && corrupt.Path == "" {
 					corrupt.Path = v.path
 				}
 				yield(transcript.Entry{}, err)

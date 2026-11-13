@@ -36,8 +36,8 @@ func WebFetch(cfg config.WebFetch, client *http.Client) (tools.Tool, error) {
 		}
 		res, err := webfetch.Fetch(ctx, client, cfg, webfetch.Input{URL: in.URL})
 		if err != nil {
-			var e *webfetch.Error
-			if !errors.As(err, &e) {
+			e, ok := errors.AsType[*webfetch.Error](err)
+			if !ok {
 				return tools.Result{}, err
 			}
 			return textResult(transcript.OutcomeFailed, fetchError(e)), nil

@@ -66,8 +66,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
 	items, err := tn.contextItems(ctx, name, interruption, origin, hosted)
 	if err != nil {
-		var unreadable *compact.UnreadableError
-		if tn.compactor == nil || !errors.As(err, &unreadable) {
+		if _, unreadable := errors.AsType[*compact.UnreadableError](err); tn.compactor == nil || !unreadable {
 			return provider.Request{}, err
 		}
 	}

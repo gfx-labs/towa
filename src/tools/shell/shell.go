@@ -253,8 +253,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	res.Output, res.Tail, res.DroppedBytes = out.result()
 	res.ProgressErr = out.progressErr
 
-	var exit *exec.ExitError
-	if waitErr != nil && !errors.As(waitErr, &exit) {
+	if _, exited := errors.AsType[*exec.ExitError](waitErr); waitErr != nil && !exited {
 		return Result{}, fmt.Errorf("shell: wait: %w", waitErr)
 	}
 	if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {

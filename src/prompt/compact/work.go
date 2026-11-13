@@ -125,8 +125,7 @@ func EnsurePortable(ctx context.Context, history []transcript.Entry, providerNam
 	if err == nil {
 		return nil, nil
 	}
-	var unreadable *UnreadableError
-	if !errors.As(err, &unreadable) {
+	if _, ok := errors.AsType[*UnreadableError](err); !ok {
 		return nil, err
 	}
 	source, err := PortableSource(history)

@@ -46,8 +46,8 @@ func Skill(cfg config.Context, skills []agentctx.Skill) (tools.Tool, error) {
 		name := strings.TrimLeft(strings.TrimSpace(in.Name), "/")
 		res, err := skill.Load(ctx, skills, maxBytes, skill.Input{Name: name})
 		if err != nil {
-			var e *skill.Error
-			if !errors.As(err, &e) {
+			e, ok := errors.AsType[*skill.Error](err)
+			if !ok {
 				return tools.Result{}, err
 			}
 			text := e.Error()

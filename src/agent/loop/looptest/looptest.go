@@ -330,10 +330,10 @@ func ReadTool(cfg config.ToolsFiles) tools.Tool {
 				return tools.Result{}, err
 			}
 			res, err := fsops.Read(ctx, fsops.RootsOf(call.Env, cfg), cfg, fsops.ReadInput{Path: in.Path}, nil)
-			var refused *fsops.Error
-			switch {
-			case errors.As(err, &refused):
+			if refused, ok := errors.AsType[*fsops.Error](err); ok {
 				return tools.Result{Outcome: transcript.OutcomeFailed, Parts: []transcript.Part{{Text: refused.Error()}}}, nil
+			}
+			switch {
 			case err != nil:
 				return tools.Result{}, err
 			case res.Image != nil:

@@ -68,8 +68,8 @@ func Subagent(spawner *subagent.Spawner, runner subagent.Runner) (tools.Tool, er
 		out := subagentOutput{Final: res.Final, SessionID: res.SessionID, StopReason: res.StopReason, Usage: res.Usage, Charged: res.Charged}
 		outcome := transcript.OutcomeCompleted
 		if err != nil {
-			var failed *subagent.Error
-			if !errors.As(err, &failed) {
+			failed, ok := errors.AsType[*subagent.Error](err)
+			if !ok {
 				return tools.Result{}, err
 			}
 			outcome = transcript.OutcomeFailed

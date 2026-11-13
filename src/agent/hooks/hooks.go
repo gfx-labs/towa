@@ -397,8 +397,8 @@ func exitFailure(err error) *Error {
 	if err == nil {
 		return nil
 	}
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) {
+	exit, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
 		return &Error{Kind: KindExit, ExitCode: -1, Err: err}
 	}
 	failure := &Error{Kind: KindExit, ExitCode: exit.ExitCode()}

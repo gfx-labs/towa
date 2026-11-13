@@ -187,7 +187,9 @@ func run(t *testing.T, c *Client, req provider.Request, token string) outcome {
 	got := outcome{progress: map[string]*strings.Builder{}}
 	for ev, err := range c.Stream(t.Context(), req) {
 		if err != nil {
-			require.True(t, errors.As(err, &got.err), "every error is a *provider.Error")
+			var ok bool
+			got.err, ok = errors.AsType[*provider.Error](err)
+			require.True(t, ok, "every error is a *provider.Error")
 			break
 		}
 		require.Empty(t, got.stop, "nothing follows the stop event")

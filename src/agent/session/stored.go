@@ -92,8 +92,7 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 		return nil, nil, err
 	}
 	if err := errors.Join(a.checkDirs(r.cwd, r.dirs), a.checkSystemPrompt(r.systemPrompt), a.checkMCP(r.mcpServers)); err != nil {
-		var refused *acp.RequestError
-		if errors.As(err, &refused) {
+		if refused, ok := errors.AsType[*acp.RequestError](err); ok {
 			return nil, nil, refused
 		}
 		return nil, nil, err

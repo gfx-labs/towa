@@ -68,14 +68,13 @@ func Load(ctx context.Context, skills []agentctx.Skill, maxBytes int64, in Input
 		return Result{}, &Error{Kind: KindEmptyName, Available: names(skills)}
 	}
 	loaded, err := agentctx.LoadSkill(skills, in.Name, maxBytes)
-	var unknown *agentctx.UnknownSkillError
-	var limit *agentctx.LimitError
-	switch {
-	case errors.As(err, &unknown):
+	if _, unknown := errors.AsType[*agentctx.UnknownSkillError](err); unknown {
 		return Result{}, &Error{Kind: KindUnknown, Name: in.Name, Available: names(skills)}
-	case errors.As(err, &limit):
+	}
+	if limit, ok := errors.AsType[*agentctx.LimitError](err); ok {
 		return Result{}, &Error{Kind: KindTooLarge, Name: in.Name, Size: limit.Size, Limit: limit.Limit}
-	case err != nil:
+	}
+	if err != nil {
 		return Result{}, fmt.Errorf("skill: %w", err)
 	}
 	return Result{

@@ -524,8 +524,7 @@ func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error
 		}
 		return tn.result(acp.StopReasonCancelled), true, nil
 	case streamErr != nil:
-		var limit *turnLimitError
-		if errors.As(streamErr, &limit) {
+		if limit, ok := errors.AsType[*turnLimitError](streamErr); ok {
 			return LimitResult(limit.key, tn.snapshot()), true, nil
 		}
 		return Result{}, true, StopFor(streamErr)

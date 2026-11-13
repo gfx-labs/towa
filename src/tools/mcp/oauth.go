@@ -177,8 +177,8 @@ func (ts *tokenSource) token(ctx context.Context) (string, error) {
 	}
 	fresh, err := cfg.TokenSource(context.WithValue(ctx, oauth2.HTTPClient, ts.client), &oauth2.Token{RefreshToken: stored.RefreshToken}).Token()
 	if err != nil {
-		var refused *oauth2.RetrieveError
-		if !errors.As(err, &refused) || !slices.Contains(deadRefreshCodes, refused.ErrorCode) {
+		refused, ok := errors.AsType[*oauth2.RetrieveError](err)
+		if !ok || !slices.Contains(deadRefreshCodes, refused.ErrorCode) {
 			return "", fmt.Errorf("mcp: server %q: refresh token: %w", ts.server.Name, err)
 		}
 		// Recorded, so that neither this process nor another sends the
