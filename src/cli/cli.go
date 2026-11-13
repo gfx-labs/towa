@@ -241,6 +241,7 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 			SystemPrompt:          true,
 			ContextOverrides:      true,
 			MCP:                   &acp.McpCapabilities{Http: true, Sse: true},
+			Prompt:                acp.PromptCapabilities{Image: true},
 		},
 	})
 	if err != nil {

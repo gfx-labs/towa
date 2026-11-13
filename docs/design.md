@@ -465,6 +465,8 @@ At 10000 sessions, unfiltered `List` took 258 ms warm / 316 ms file-data-cold be
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 
+`promptCapabilities` advertises `image`, and a prompt may hold image blocks. Every provider carries an image in a user message (Messages `image`, Responses `input_image`, Chat Completions `image_url`), and a model that cannot take one answers with the provider's error. Audio and embedded resources in a prompt are refused, since not every provider takes them in a user message. Images a tool returns, such as `read` of a PNG, reach the client as image content of the `tool_call_update`.
+
 ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
 
 A chain with one entry does not wait out a rate limit: it reports it. In a pod, the workflow that owns account choice decides whether to wait or move.
