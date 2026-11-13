@@ -47,11 +47,11 @@ Packages:
 |---|---|
 | `cmd/towa` | a shim that calls `src/cli` |
 | `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
-| `pkg/acp/harness` | what towa adds to ACP messages under `_meta.towa`, as types a client imports |
+| `pkg/harness` | what towa adds to ACP messages under `_meta.towa`, as types a client imports |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
 | `src/support/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
 | `src/config` | the typed config, its flags, and the loader for files, environment and flags |
-| `pkg/acp` | our ACP layer: JSON-RPC connection, types generated from the pinned schema, transports, update mapping |
+| `github.com/gfx-labs/go-acp` | our ACP layer, in its own module: JSON-RPC connection, types generated from the pinned schema |
 | `src/agent/session` | session lifecycle, modes, model switching, cancel |
 | `src/agent/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
 | `src/provider` | provider interface, router, fallback, retry |
@@ -85,7 +85,7 @@ Packages:
 
 No test enforces this table (`docs/notes/2026-11-12-src-layout.md`).
 
-`src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. `pkg/acp` moved on 2026-11-11: protocol7's worker imports it as the client side, so both ends share schema 1.31.0.
+`src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. The ACP package moved to `pkg/acp` on 2026-11-11 so protocol7's worker could import it as the client side, and to its own module `github.com/gfx-labs/go-acp` on 2026-11-13 (`docs/notes/2026-11-13-go-acp.md`).
 
 ## Process and transports
 
@@ -467,7 +467,7 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 
 `promptCapabilities` advertises `image`, and a prompt may hold image blocks. Every provider carries an image in a user message (Messages `image`, Responses `input_image`, Chat Completions `image_url`), and a model that cannot take one answers with the provider's error. Audio and embedded resources in a prompt are refused, since not every provider takes them in a user message. Images a tool returns, such as `read` of a PNG, reach the client as image content of the `tool_call_update`.
 
-ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`pkg/acp/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
+ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`pkg/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
 
 A chain with one entry does not wait out a rate limit: it reports it. In a pod, the workflow that owns account choice decides whether to wait or move.
 
@@ -477,8 +477,8 @@ towa implements ACP itself and does not import `coder/acp-go-sdk`.
 
 - Why: SDK v0.13.5 (2026-06-02) is generated from schema 0.13.5 and its master still pins that. The spec is at v1.17.0, schema 1.31.0 (2026-11-10). The SDK has no types for stable `compaction_update`, `compaction_summary_chunk`, `notice` and `systemPrompt`, and none for unstable `subagent_update`, `session/status` and `session/options`.
 - Types: generated from the pinned schema files (`schema.json`, `schema.unstable.json`, `meta.json`) by a vendored copy of the SDK's generator (`cmd/generate`, Apache-2.0, about 3,700 lines, one dependency: `dave/jennifer`). We fix the generator where the new schema breaks it.
-- Generator check, 2026-11-11: run unchanged against schema 1.31.0, it emitted every new type and update variant. Three generator bugs are fixed in our copy: `CreateElicitationRequest.Validate` read a `Message` field that the new union type does not have, every empty required string was rejected (so an empty file could not be written), and union marshalling carried unreachable code that `go vet` reports. `tools/acpgen/README.md` lists every change from upstream.
-- Connection: our own JSON-RPC 2.0 code for newline-delimited messages (`pkg/acp/connection.go`). Each request runs on its own goroutine. Notifications and responses are handled in the order read. `$/cancel_request` cancels the named request's context. `Arrival(ctx)` gives a message's position in the read order, which is how the session owner orders a `session/cancel` or a new prompt against the running one. Details and reasons: `docs/notes/2026-11-11-acp-layer.md`.
+- Generator check, 2026-11-11: run unchanged against schema 1.31.0, it emitted every new type and update variant. Three generator bugs are fixed in our copy: `CreateElicitationRequest.Validate` read a `Message` field that the new union type does not have, every empty required string was rejected (so an empty file could not be written), and union marshalling carried unreachable code that `go vet` reports. go-acp's `internal/acpgen/README.md` lists every change from upstream.
+- Connection: our own JSON-RPC 2.0 code for newline-delimited messages (go-acp's `connection.go`). Each request runs on its own goroutine. Notifications and responses are handled in the order read. `$/cancel_request` cancels the named request's context. `Arrival(ctx)` gives a message's position in the read order, which is how the session owner orders a `session/cancel` or a new prompt against the running one. Details and reasons: `docs/notes/2026-11-11-acp-layer.md`.
 - Capability gating: an update type is sent only when the client advertises it. Measured against SDK v0.13.5 on 2026-11-11: it decodes `compaction_summary_chunk` as a user message chunk, and decodes `compaction_update`, `notice` and `subagent_update` as a session info update. All of them pass its validation, so an old client misreads them without an error.
 - The schema version is pinned in the repo. A bump is a reviewed regeneration.
 - ACP v2 is in alpha (schema 2.0.0-alpha.15) and drops `session/load`, `session/set_mode` and `fs/*`. Owning the layer lets one binary serve both versions later.

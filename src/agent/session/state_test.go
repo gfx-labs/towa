@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/agent/session"
 )

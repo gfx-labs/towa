@@ -7,7 +7,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 )
 
 // UnstableArchiveSession closes a session on any connection before hiding it

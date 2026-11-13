@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/sidecar/jev"
 	"github.com/gfx-labs/towa/src/tools"

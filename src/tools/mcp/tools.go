@@ -13,7 +13,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/valyala/bytebufferpool"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/transcript"

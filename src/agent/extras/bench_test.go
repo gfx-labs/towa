@@ -6,7 +6,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/store/dir"

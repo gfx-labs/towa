@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gfx-labs/towa/pkg/acp"
-	"github.com/gfx-labs/towa/pkg/acp/harness"
+	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/towa/pkg/harness"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/tools"
 )

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 )
 
 // Key is the name towa uses in _meta and in error data.

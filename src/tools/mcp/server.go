@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"slices"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/config"
 )
 

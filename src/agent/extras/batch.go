@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/tools"

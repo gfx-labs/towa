@@ -5,7 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/todo"

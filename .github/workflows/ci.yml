@@ -30,13 +30,6 @@ jobs:
       - name: macOS build
         run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./... && GOOS=darwin GOARCH=arm64 go vet ./...
       - run: go vet ./...
-      # pkg/acp/*_gen.go must be what tools/acpgen writes for the schema
-      # files in the repo.
-      - name: generated code is current
-        run: |
-          go generate ./...
-          git diff --exit-code
-          test -z "$(git status --porcelain)"
       # go test -json goes to a file and is printed from it unfiltered. rc
       # keeps the test exit code.
       - name: tests
@@ -44,12 +37,6 @@ jobs:
           go test -json -race ./... > test.json || rc=$?
           jq -j 'select(.Action == "output") | .Output' test.json
           exit "${rc:-0}"
-      # tools/acpgen is its own module, so ./... above does not reach it.
-      - name: generator tests
-        working-directory: tools/acpgen
-        run: |
-          go vet ./...
-          go test ./...
       # tools/conformance is its own module too. It builds the binary and
       # drives it over stdio with coder/acp-go-sdk as the client, so a second
       # implementation checks what we put on the wire.
@@ -61,10 +48,6 @@ jobs:
         with:
           version: v2.15.0
       # The modules under tools/ are not part of ./... and are linted apart.
-      - uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.15.0
-          working-directory: tools/acpgen
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0

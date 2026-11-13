@@ -6,7 +6,7 @@ import (
 	"encoding/json/v2"
 	"strings"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"

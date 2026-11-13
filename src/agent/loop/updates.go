@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/transcript"

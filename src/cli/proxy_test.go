@@ -25,7 +25,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/loop/looptest"
 	"github.com/gfx-labs/towa/src/provider/providertest"
 	"github.com/gfx-labs/towa/src/store"

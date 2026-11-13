@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gfx-labs/towa/pkg/acp/acptest"
-	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/go-acp/acptest"
+	"github.com/gfx-labs/towa/pkg/harness"
 	"github.com/gfx-labs/towa/src/cli"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/config/configtest"

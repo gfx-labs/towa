@@ -9,7 +9,7 @@ import (
 	"encoding/json/jsontext"
 	"io"
 
-	"github.com/gfx-labs/towa/pkg/acp"
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/transcript"
 )
