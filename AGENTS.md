@@ -13,8 +13,9 @@ A Go coding agent that speaks ACP. Go 1.27.3, module `github.com/gfx-labs/towa`.
 - Tests use testify. Provider tests replay recorded real responses, and tool tests run the tool against real files and a real shell. No mocked providers, and no hand-written stand-in for a recording. Live checks run by hand behind an env flag. A recording that needs a local model is made from `openai/gpt-oss-20b` on an OpenAI-compatible server that takes no key (LM Studio), through an account of kind `none`. Recordings made earlier from `llama3.2:3b` stay until their request changes.
 - A test checks behaviour a caller can see. Do not write one that fails when prompt, tool description or message wording changes, that compares a constant or default with a copy of it, that restates what Go or a library does, or that only proves an unexported helper to its author. Do not keep a recording that holds towa's own system prompt or tool list: every wording change would need it recorded again. Do not add an exported function or counter that only a test calls.
 - Design notes go in a new file `docs/notes/<date>-<slug>.md` (short, dated). `docs/design.md` holds the current design. Update it when a decision changes.
-- Commits go straight to master.
-- Nothing is released and nobody depends on it. Change a format outright: no migration, no compatibility path, and no note or test about the old format or data stored under it.
+- Commits go straight to master. The subject is a conventional commit (`feat: ...`, `fix(scope): ...`, `feat!: ...` for a breaking change), which release-please reads to pick the next version and write the changelog. Use `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `ci`, `build`, `chore` or `revert`, and start the summary with a lower-case letter. A PR is squash-merged and its title is the commit subject, so the title follows the same rule.
+- Releases: release-please keeps one release PR open with the next 0.x version and `CHANGELOG.md`. Merging it tags `vX.Y.Z`. Do not tag or edit the changelog by hand.
+- Nothing depends on towa yet. Change a format outright: no migration, no compatibility path, and no note or test about the old format or data stored under it.
 - Plain names, short comments explaining why, no marketing language.
 
 ## JSON

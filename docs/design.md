@@ -521,13 +521,14 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 ## Workflow
 
-- Commits go straight to master.
+- Commits go straight to master, with conventional commit subjects. A PR is squash-merged with its title as the subject, and `pr-title.yml` checks the title.
 - CI runs on the `talos-metal-gfx` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
+- `release.yml` runs release-please on each master push, as acpc and acphost do. It keeps a release PR open with the next 0.x version (`bump-minor-pre-major`: a `feat` or breaking change bumps the minor) and `CHANGELOG.md`. Merging it tags `vX.Y.Z` and creates the GitHub release. The job runs in the `release` environment, which only master may deploy to, and opens the PR with a token of the `gfx-releaser` App (`RELEASE_APP_ID`, `RELEASE_APP_KEY`), since a PR opened with `GITHUB_TOKEN` gets no CI runs. A note named `docs/notes/<date>-release-vX.Y.Z.md` is linked from the release.
 
 ## Release
 
 - Private repo `gfx-labs/towa`, Go module `github.com/gfx-labs/towa`. The binary is `towa`, built from `cmd/towa`. The same word names the config and state directories, the `TOWA_` environment prefix, the `_meta` key and what is sent to providers. The name is the Towa Organization of Boogiepop Phantom.
-- Static binaries (`CGO_ENABLED=0`, linux amd64 and arm64). A Nix flake has the package (`flake.nix`, `nix/package.nix`). Not built: release-please, and a NixOS or home-manager module.
+- Static binaries (`CGO_ENABLED=0`, linux amd64 and arm64). A Nix flake has the package (`flake.nix`, `nix/package.nix`). Versions are tagged by release-please, starting from `v0.1.0`. Not built: release binaries attached to a GitHub release, and a NixOS or home-manager module.
 - Dependencies: `alecthomas/kong`, `goccy/go-yaml`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`, `JohannesKaufmann/html-to-markdown/v2` for webfetch. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
 ## Validation

@@ -30,6 +30,8 @@ the package is one static binary for x86_64-linux, aarch64-linux and aarch64-dar
 
 with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`, with `GOPRIVATE=github.com/gfx-labs`.
 
+releases are tagged `vX.Y.Z` by release-please. pin one with `?ref=vX.Y.Z` on the flake url or `@vX.Y.Z` with go install.
+
 ## key features
 
 - like jcode, built to run many sessions per host. one process can serve many connections over stdio, a unix socket or tcp with mtls. an idle session wakes no goroutine.
