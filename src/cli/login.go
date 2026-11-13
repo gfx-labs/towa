@@ -61,7 +61,11 @@ func loginAccount(cfg *config.Config, id string) (account config.Account, ok boo
 	case config.AccountNone:
 		return config.Account{}, false, fmt.Errorf("account %q is of kind %s, which has no login: its endpoint takes no credential", id, a.Kind)
 	}
-	return config.Account{}, false, fmt.Errorf("account %q is of kind %s, which has no login: its key comes from %s", id, a.Kind, a.APIKeyEnv)
+	from := a.APIKeyEnv
+	if len(a.APIKeyCommand) > 0 {
+		from = "the command " + a.APIKeyCommand[0]
+	}
+	return config.Account{}, false, fmt.Errorf("account %q is of kind %s, which has no login: its key comes from %s", id, a.Kind, from)
 }
 
 // Run logs in to the provider and stores the login.
@@ -231,9 +235,14 @@ func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 		case config.AccountNone:
 			state = "no credential"
 		case config.AccountAPIKey:
-			state = a.APIKeyEnv + " is set"
-			if lookup(h.Environ, a.APIKeyEnv) == "" {
+			switch {
+			case len(a.APIKeyCommand) > 0:
+				// Listing the accounts does not run the command.
+				state = "key from the command " + a.APIKeyCommand[0]
+			case lookup(h.Environ, a.APIKeyEnv) == "":
 				state = a.APIKeyEnv + " is not set"
+			default:
+				state = a.APIKeyEnv + " is set"
 			}
 		case config.AccountOAuth:
 			tokens, err := store.Load(a.ID)

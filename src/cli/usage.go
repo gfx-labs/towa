@@ -44,7 +44,7 @@ type usageLimit struct {
 func (c *usageCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
 	client := httpclient.New()
 	defer client.CloseIdleConnections()
-	providers, err := NewProviders(loaded.Config, h, client)
+	providers, err := NewProviders(ctx, loaded.Config, h, client)
 	if err != nil {
 		return err
 	}

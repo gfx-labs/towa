@@ -154,6 +154,16 @@ accounts:
     provider: openrouter
     kind: api_key
     api_key_env: OPENROUTER_API_KEY
+  # A key a command prints, such as one from a password manager. The program
+  # and its arguments are run as they are, with no shell, once when towa
+  # starts (serve, and usage), and the key is kept in memory for the life of
+  # the process. A command that fails, prints nothing or takes longer than
+  # auth.key_command_timeout_seconds (60) stops the start. An account sets
+  # api_key_env or api_key_command, not both.
+  - id: vault
+    provider: openrouter
+    kind: api_key
+    api_key_command: [pass, show, openrouter/key]
   - id: pod
     provider: claude
     kind: proxied_oauth   # oauth | api_key | proxied_oauth | proxied_api_key | none

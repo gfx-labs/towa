@@ -21,6 +21,9 @@ type Auth struct {
 	// LoginTimeoutSeconds is how long login waits for the browser to come
 	// back before it asks for the code to be pasted.
 	LoginTimeoutSeconds int `name:"login_timeout_seconds" default:"300" validate:"gt=0" help:"Seconds login waits for the browser to come back before it asks for the code."`
+	// KeyCommandTimeoutSeconds bounds one api_key_command. The default
+	// leaves time for a password manager that waits for a touch.
+	KeyCommandTimeoutSeconds int `name:"key_command_timeout_seconds" default:"60" validate:"gt=0" help:"Seconds the api_key_command of an account may take."`
 }
 
 func (a Auth) validate() error {
@@ -36,8 +39,12 @@ type Account struct {
 	Provider string `json:"provider" validate:"required"`
 	Kind     string `json:"kind" validate:"oneof=oauth api_key proxied_oauth proxied_api_key none"`
 	// APIKeyEnv names the environment variable that holds the key of an
-	// api_key account.
-	APIKeyEnv string `json:"api_key_env" validate:"required_if=Kind api_key,excluded_unless=Kind api_key"`
+	// api_key account. Such an account sets it or APIKeyCommand, not both.
+	APIKeyEnv string `json:"api_key_env" validate:"excluded_unless=Kind api_key"`
+	// APIKeyCommand is a program and its arguments that print the key of an
+	// api_key account. It is run as it is, with no shell, once when the
+	// harness starts, and the key is kept in memory.
+	APIKeyCommand []string `json:"api_key_command" validate:"excluded_unless=Kind api_key"`
 	// ChatGPTAccountID is the account id the Codex backend wants in a
 	// header. Only a proxied_oauth account sets it: the proxy replaces the
 	// authorization and nothing else, and the harness has no id token to
@@ -52,7 +59,8 @@ type Account struct {
 const (
 	// AccountOAuth: the harness holds the token and refreshes it.
 	AccountOAuth = "oauth"
-	// AccountAPIKey: the key is read from the environment.
+	// AccountAPIKey: the key is read from the environment, or printed by a
+	// command.
 	AccountAPIKey = "api_key"
 	// AccountProxiedOAuth and AccountProxiedAPIKey: a proxy holds the
 	// credential. The harness sends a placeholder and builds the rest of the
@@ -112,6 +120,10 @@ func (c *Config) validateAccounts() error {
 		case a.Kind == AccountNone && (a.Provider == ProviderClaude || a.Provider == ProviderCodex):
 			// Both built-in providers refuse a request without a credential.
 			return fmt.Errorf("%s.kind: %q is for a configured provider, and %q always takes a credential", at, a.Kind, a.Provider)
+		case a.Kind == AccountAPIKey && (a.APIKeyEnv == "") == (len(a.APIKeyCommand) == 0):
+			return fmt.Errorf("%s: an %s account sets one of api_key_env and api_key_command", at, a.Kind)
+		case len(a.APIKeyCommand) > 0 && a.APIKeyCommand[0] == "":
+			return fmt.Errorf("%s.api_key_command: the command is empty", at)
 		}
 		seen[a.ID] = true
 	}

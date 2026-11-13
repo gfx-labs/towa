@@ -55,7 +55,7 @@ func TestCompactedTurn(t *testing.T) {
 	summaryReplay := providertest.Replay(t, filepath.Join(filepath.Dir(RecordingPath(scenario, 1)), "../../../../prompt/compact/testdata/ollama_summary.json"))
 	summary, err := anthropic.New(anthropic.Config{HTTPClient: summaryHTTP, BaseURL: summaryReplay.URL, Version: "recording", Provider: ProviderID})
 	require.NoError(t, err)
-	source, err := auth.NewSource(auth.Options{
+	source, err := auth.NewSource(t.Context(), auth.Options{
 		Accounts: []config.Account{{ID: Account, Provider: ProviderID, Kind: config.AccountAPIKey, APIKeyEnv: "SUMMARY_TEST_KEY"}},
 		Store:    auth.NewStore(t.TempDir()), HTTPClient: httpclient.New(),
 		Getenv: func(string) string { return "compaction-test-key" }, TokenTimeout: time.Minute,

@@ -30,6 +30,16 @@ func displayValue(key string, value any) ([]byte, error) {
 			providers[i].Referer = redactURL(providers[i].Referer)
 		}
 		value = providers
+	case []Account:
+		accounts := slices.Clone(v)
+		for i := range accounts {
+			command := slices.Clone(accounts[i].APIKeyCommand)
+			for j := 1; j < len(command); j++ {
+				command[j] = redacted
+			}
+			accounts[i].APIKeyCommand = command
+		}
+		value = accounts
 	case []Hook:
 		hooks := slices.Clone(v)
 		for i := range hooks {

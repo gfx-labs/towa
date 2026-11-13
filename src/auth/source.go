@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gfx-labs/towa/src/config"
@@ -20,10 +23,12 @@ var (
 	// ErrProxied: a proxy holds the account's credential, so the harness has
 	// nothing to refresh, log in to or log out of.
 	ErrProxied = errors.New("a proxy holds this account's credential")
-	// ErrStaticKey: an API key from the environment has no newer version.
+	// ErrStaticKey: an API key from the environment, or from a command that
+	// ran when the harness started, has no newer version.
 	ErrStaticKey = errors.New("an API key cannot be refreshed")
-	// ErrNoKey: the environment variable of an api_key account is not set.
-	ErrNoKey = errors.New("the account's API key variable is not set")
+	// ErrNoKey: the environment variable of an api_key account is not set,
+	// or its command printed nothing.
+	ErrNoKey = errors.New("the account's API key is not set")
 	// ErrNoCredential: an account of kind none sends no credential, so a
 	// refusal cannot be answered with a newer one.
 	ErrNoCredential = errors.New("the account sends no credential")
@@ -103,6 +108,11 @@ type Options struct {
 	HTTPClient *http.Client
 	// Getenv reads the environment variable of an api_key account.
 	Getenv func(name string) string
+	// Environ is the environment an api_key_command runs with, and
+	// KeyCommandTimeout how long one may take. Both are needed only when an
+	// account has such a command.
+	Environ           []string
+	KeyCommandTimeout time.Duration
 	// Flows holds the OAuth flow of each provider that has oauth accounts.
 	Flows map[string]Flow
 	// RefreshMargin is how long before its expiry a token is refreshed, so
@@ -117,12 +127,17 @@ type Options struct {
 type AccountSource struct {
 	opts     Options
 	accounts map[string]config.Account
+	// keys holds what each api_key_command printed, by account. It is
+	// filled once, before the source is returned.
+	keys map[string]string
 }
 
 var _ Source = (*AccountSource)(nil)
 
-// NewSource checks that every account can be served and returns the source.
-func NewSource(opts Options) (*AccountSource, error) {
+// NewSource checks that every account can be served, runs the
+// api_key_command of each account that has one, and returns the source. A
+// command that fails or prints nothing is an error.
+func NewSource(ctx context.Context, opts Options) (*AccountSource, error) {
 	switch {
 	case opts.Store == nil:
 		return nil, errors.New("auth: Options.Store is nil")
@@ -135,14 +150,55 @@ func NewSource(opts Options) (*AccountSource, error) {
 	case opts.TokenTimeout <= 0:
 		return nil, fmt.Errorf("auth: Options.TokenTimeout is %s", opts.TokenTimeout)
 	}
-	s := &AccountSource{opts: opts, accounts: map[string]config.Account{}}
+	s := &AccountSource{opts: opts, accounts: map[string]config.Account{}, keys: map[string]string{}}
 	for _, a := range opts.Accounts {
 		if _, ok := opts.Flows[a.Provider]; a.Kind == config.AccountOAuth && !ok {
 			return nil, fmt.Errorf("account %q: provider %q has no OAuth login", a.ID, a.Provider)
 		}
 		s.accounts[a.ID] = a
+		if len(a.APIKeyCommand) == 0 {
+			continue
+		}
+		key, err := runKeyCommand(ctx, a.APIKeyCommand, opts.Environ, opts.KeyCommandTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("account %q: api_key_command %s: %w", a.ID, a.APIKeyCommand[0], err)
+		}
+		s.keys[a.ID] = key
 	}
 	return s, nil
+}
+
+// runKeyCommand runs command and returns what it printed, without the space
+// around it. Its arguments and its output are in no error: either may hold
+// a secret. What it wrote to standard error is, since that is where a
+// program says why it failed.
+func runKeyCommand(ctx context.Context, command, environ []string, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		return "", fmt.Errorf("auth: Options.KeyCommandTimeout is %s", timeout)
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, command[0], command[1:]...) //nolint:gosec // the operator's configured command
+	cmd.Env = environ
+	// A child that keeps the pipes open is not waited for longer than the
+	// command itself was.
+	cmd.WaitDelay = timeout
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			err = fmt.Errorf("did not finish in %s: %w", timeout, context.Cause(ctx))
+		}
+		if said := strings.TrimSpace(stderr.String()); said != "" {
+			return "", fmt.Errorf("%w: %s", err, said)
+		}
+		return "", err
+	}
+	key := strings.TrimSpace(stdout.String())
+	if key == "" {
+		return "", ErrNoKey
+	}
+	return key, nil
 }
 
 // Credential implements Source.
@@ -153,6 +209,9 @@ func (s *AccountSource) Credential(ctx context.Context, account string) (Credent
 	}
 	switch a.Kind {
 	case config.AccountAPIKey:
+		if key, ok := s.keys[a.ID]; ok {
+			return Credential{Account: a.ID, Scheme: SchemeAPIKey, Token: key}, nil
+		}
 		key := s.opts.Getenv(a.APIKeyEnv)
 		if key == "" {
 			return Credential{}, fmt.Errorf("account %q: %s: %w", a.ID, a.APIKeyEnv, ErrNoKey)

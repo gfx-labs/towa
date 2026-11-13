@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -29,9 +30,10 @@ type Providers struct {
 }
 
 // NewProviders builds clients from resolved configuration. client is the
-// shared client from httpclient.New. It does not read keys or refresh a
-// login until the router asks Credentials for an account.
-func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers, err error) {
+// shared client from httpclient.New. It runs the api_key_command of each
+// account that has one. It reads no other key and refreshes no login until
+// the router asks Credentials for an account.
+func NewProviders(ctx context.Context, cfg config.Config, h Host, client *http.Client) (_ *Providers, err error) {
 	if client == nil {
 		return nil, errors.New("providers: shared HTTP client is required")
 	}
@@ -47,10 +49,15 @@ func NewProviders(cfg config.Config, h Host, client *http.Client) (_ *Providers,
 	if err != nil {
 		return nil, fmt.Errorf("providers: auth.token_timeout_seconds: %w", err)
 	}
-	credentials, err := auth.NewSource(auth.Options{
+	keyTimeout, err := time.ParseDuration(fmt.Sprintf("%ds", cfg.Auth.KeyCommandTimeoutSeconds))
+	if err != nil {
+		return nil, fmt.Errorf("providers: auth.key_command_timeout_seconds: %w", err)
+	}
+	credentials, err := auth.NewSource(ctx, auth.Options{
 		Accounts: cfg.Accounts, Store: store, HTTPClient: client,
 		Getenv: func(name string) string { return lookup(h.Environ, name) }, Flows: auth.Flows(),
 		RefreshMargin: margin, TokenTimeout: timeout,
+		Environ: h.Environ, KeyCommandTimeout: keyTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("providers: credentials: %w", err)

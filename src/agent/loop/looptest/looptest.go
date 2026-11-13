@@ -235,7 +235,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 	})
 	fail(err)
 
-	source, err := auth.NewSource(auth.Options{
+	source, err := auth.NewSource(t.Context(), auth.Options{
 		Accounts:   []config.Account{{ID: Account, Provider: ProviderID, Kind: config.AccountAPIKey, APIKeyEnv: "OLLAMA_API_KEY"}},
 		Store:      auth.NewStore(t.TempDir()),
 		HTTPClient: httpclient.New(),

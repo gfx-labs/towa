@@ -92,7 +92,7 @@ func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *tele
 			err = errors.Join(err, f.Close())
 		}
 	}()
-	f.providers, err = NewProviders(cfg, h, f.client)
+	f.providers, err = NewProviders(ctx, cfg, h, f.client)
 	if err != nil {
 		return nil, err
 	}

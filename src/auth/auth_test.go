@@ -36,7 +36,7 @@ const (
 
 func TestMain(m *testing.M) {
 	if dir := os.Getenv(envChildDir); dir != "" {
-		src, err := auth.NewSource(sourceOptions(dir, os.Getenv(envChildURL), true))
+		src, err := auth.NewSource(context.Background(), sourceOptions(dir, os.Getenv(envChildURL), true))
 		if err == nil {
 			var cred auth.Credential
 			if cred, err = src.Credential(context.Background(), "work"); err == nil {
@@ -225,7 +225,7 @@ func TestProcessesShareOneRefresh(t *testing.T) {
 			tokens <- string(out)
 		})
 	}
-	src, err := auth.NewSource(sourceOptions(dir, endpoint.URL+"/token", true))
+	src, err := auth.NewSource(t.Context(), sourceOptions(dir, endpoint.URL+"/token", true))
 	require.NoError(t, err)
 	for range goroutines {
 		wg.Go(func() {
@@ -277,7 +277,7 @@ func TestRefreshAfterRejection(t *testing.T) {
 	login.ExpiresAtUnixMs = time.Now().Add(time.Hour).UnixMilli()
 	require.NoError(t, auth.NewStore(dir).Save("work", login))
 	// A form endpoint this time, as Codex's is.
-	src, err := auth.NewSource(sourceOptions(dir, endpoint.URL+"/token", false))
+	src, err := auth.NewSource(t.Context(), sourceOptions(dir, endpoint.URL+"/token", false))
 	require.NoError(t, err)
 
 	rejected, err := src.Credential(t.Context(), "work")
@@ -311,7 +311,7 @@ func TestRefreshAfterRejection(t *testing.T) {
 
 	// The refresh token is recorded as dead: neither call sends anything
 	// now, in this process or a new one, and both say to log in again.
-	fresh, err := auth.NewSource(sourceOptions(dir, endpoint.URL+"/token", false))
+	fresh, err := auth.NewSource(t.Context(), sourceOptions(dir, endpoint.URL+"/token", false))
 	require.NoError(t, err)
 	_, err = fresh.Credential(t.Context(), "work")
 	require.ErrorAs(t, err, &relogin)
@@ -339,7 +339,7 @@ func TestRefreshIsTriedAgainAfterATransientFailure(t *testing.T) {
 	t.Cleanup(down.Close)
 	dir := t.TempDir()
 	require.NoError(t, auth.NewStore(dir).Save("work", expired("refresh-0")))
-	src, err := auth.NewSource(sourceOptions(dir, down.URL, true))
+	src, err := auth.NewSource(t.Context(), sourceOptions(dir, down.URL, true))
 	require.NoError(t, err)
 	for range 2 {
 		_, err = src.Credential(t.Context(), "work")
@@ -407,7 +407,7 @@ func TestMCPTokenStorage(t *testing.T) {
 
 func TestAccountsWithoutAStoredLogin(t *testing.T) {
 	dir := t.TempDir()
-	src, err := auth.NewSource(sourceOptions(dir, "http://127.0.0.1:1/unused", true))
+	src, err := auth.NewSource(t.Context(), sourceOptions(dir, "http://127.0.0.1:1/unused", true))
 	require.NoError(t, err)
 	ctx := t.Context()
 
@@ -450,6 +450,48 @@ func TestAccountsWithoutAStoredLogin(t *testing.T) {
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
+}
+
+func TestAnAPIKeyFromACommand(t *testing.T) {
+	opts := sourceOptions(t.TempDir(), "http://127.0.0.1:1/unused", true)
+	opts.KeyCommandTimeout = time.Minute
+	opts.Environ = []string{"PATH=" + os.Getenv("PATH"), "KEY_FOR_TEST=sk-from-command"}
+	account := func(command ...string) []config.Account {
+		return []config.Account{{ID: "cmd", Provider: "openrouter", Kind: config.AccountAPIKey, APIKeyCommand: command}}
+	}
+
+	// The command runs once, when the source is built, with the given
+	// environment. The line end it prints is not part of the key.
+	count := filepath.Join(t.TempDir(), "runs")
+	opts.Accounts = account("sh", "-c", `echo run >> "$0"; echo "$KEY_FOR_TEST"`, count)
+	src, err := auth.NewSource(t.Context(), opts)
+	require.NoError(t, err)
+	for range 2 {
+		key, err := src.Credential(t.Context(), "cmd")
+		require.NoError(t, err)
+		require.Equal(t, auth.Credential{Account: "cmd", Scheme: auth.SchemeAPIKey, Token: "sk-from-command"}, key)
+		_, err = src.Refresh(t.Context(), key)
+		require.ErrorIs(t, err, auth.ErrStaticKey)
+	}
+	runs, err := os.ReadFile(count)
+	require.NoError(t, err)
+	require.Equal(t, "run\n", string(runs))
+
+	// A command that fails stops the start. The error has what the command
+	// said and not its arguments or what it printed.
+	opts.Accounts = account("sh", "-c", "echo sk-printed; echo locked >&2; exit 3", "sk-argument")
+	_, err = auth.NewSource(t.Context(), opts)
+	require.ErrorContains(t, err, `account "cmd": api_key_command sh: exit status 3: locked`)
+	require.NotContains(t, err.Error(), "sk-")
+
+	opts.Accounts = account("true")
+	_, err = auth.NewSource(t.Context(), opts)
+	require.ErrorIs(t, err, auth.ErrNoKey)
+
+	opts.Accounts = account("sleep", "30")
+	opts.KeyCommandTimeout = 50 * time.Millisecond
+	_, err = auth.NewSource(t.Context(), opts)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestStoreRefusesAFileOthersCanRead(t *testing.T) {
