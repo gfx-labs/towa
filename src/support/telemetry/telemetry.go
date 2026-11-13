@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -111,6 +112,10 @@ func (t *Telemetry) startOTel(ctx context.Context, cfg config.Telemetry, version
 	tp := sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(traces))
 	t.shutdown = append(t.shutdown, tp.Shutdown)
 	t.Tracer = tp.Tracer(Scope)
+	// The global providers are where an instrumentation library looks, such
+	// as the HTTP client's in src/support/httpclient for a request made
+	// outside any span.
+	otel.SetTracerProvider(tp)
 
 	metrics, err := otlpmetrichttp.New(ctx)
 	if err != nil {
@@ -119,6 +124,7 @@ func (t *Telemetry) startOTel(ctx context.Context, cfg config.Telemetry, version
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithResource(res), sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metrics)))
 	t.shutdown = append(t.shutdown, mp.Shutdown)
 	t.Meter = mp.Meter(Scope)
+	otel.SetMeterProvider(mp)
 
 	if !cfg.Logs.OTel.Enabled {
 		return nil, nil

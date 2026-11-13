@@ -500,6 +500,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Telemetry
 
 - OpenTelemetry traces: span per prompt turn, provider request (model, account, tokens, retries, fallback), tool call, MCP call, compaction, subagent.
+- Every HTTP request is a client span, made in `src/support/httpclient` with `otelhttp`, with the phases of the request as events on it from `otelhttptrace`: the connection and whether it was reused, DNS and TLS for a new one, the request written, the first byte back. The span ends when the response body is closed. No trace header is sent to a server, and a span holds no request header and no URL query, since either may be a credential. `telemetry.Start` sets the global tracer and meter providers, which those libraries use for a request made outside any span (`docs/notes/2026-11-12-http-spans.md`).
 - Metrics: active sessions, turns, tokens by provider, account and model, cost, request latency, retries, fallbacks, tool latency and errors, compaction counts, RSS and goroutines.
 - slog for logs. Stderr handler and OTel log handler are configured separately (level, format, enabled). Trace and span IDs are attached to records.
 - OTLP endpoint and headers through the standard `OTEL_*` environment variables plus config.
