@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"text/tabwriter"
 	"time"
@@ -70,119 +71,152 @@ func loginAccount(cfg *config.Config, id string) (account config.Account, ok boo
 
 // Run logs in to the provider and stores the login.
 func (c *loginCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, env loginEnv) error {
-	provider, manual, device, pasted := c.Provider, c.Manual, c.Device, c.Code
-	flow, ok := env.flows[provider]
+	flow, ok := env.flows[c.Provider]
 	if !ok {
-		return fmt.Errorf("provider %q has no OAuth login", provider)
+		return fmt.Errorf("provider %q has no OAuth login", c.Provider)
 	}
 	store, err := authStore(h)
 	if err != nil {
 		return err
 	}
+	l := &loginRun{cmd: c, cfg: loaded.Config, host: h, env: env, flow: flow, store: store, client: httpclient.New()}
+	if err := l.resolveAccount(); err != nil {
+		return err
+	}
+	tokens, waiting, err := l.obtainTokens(ctx)
+	if err != nil || waiting {
+		return err
+	}
+	return l.finish(ctx, tokens)
+}
 
-	id := c.Account
-	var pending auth.PendingLogin
-	if pasted != "" {
+// loginRun is one login: what the command and its environment give, and
+// what the steps find along the way.
+type loginRun struct {
+	cmd    *loginCmd
+	cfg    config.Config
+	host   Host
+	env    loginEnv
+	flow   auth.Flow
+	store  *auth.Store
+	client *http.Client
+
+	id      string
+	pending auth.PendingLogin
+	// exists is true when the account is not new, so the login does not
+	// create it.
+	exists bool
+}
+
+// resolveAccount settles the account id and whether the account exists,
+// and refuses a login that cannot go ahead before the user is sent anywhere.
+func (l *loginRun) resolveAccount() error {
+	provider := l.cmd.Provider
+	l.id = l.cmd.Account
+	if l.cmd.Code != "" {
 		// The login that printed the page named its account.
-		pending, err = store.LoadPending(provider)
+		pending, err := l.store.LoadPending(provider)
 		if errors.Is(err, auth.ErrNoPendingLogin) {
 			return fmt.Errorf("%w: start one with \"towa login %s --account <id> --manual\"", err, provider)
 		}
 		if err != nil {
 			return err
 		}
-		if id != "" && id != pending.Account {
-			return fmt.Errorf("the %s login that is waiting for a code is for account %q, not %q", provider, pending.Account, id)
+		if l.id != "" && l.id != pending.Account {
+			return fmt.Errorf("the %s login that is waiting for a code is for account %q, not %q", provider, pending.Account, l.id)
 		}
-		id = pending.Account
+		l.pending, l.id = pending, pending.Account
 	}
-	if id == "" {
+	if l.id == "" {
 		return fmt.Errorf("login needs --account <id>: the id the account has or gets, which a model chain names as %s:<id>/<model>", provider)
 	}
 	// An id that cannot be stored is refused before the user is sent anywhere.
-	_, err = store.Load(id)
+	_, err := l.store.Load(l.id)
 	inStore := err == nil
 	if err != nil && !errors.Is(err, auth.ErrNotLoggedIn) {
 		return err
 	}
 	// No account of that id is not an error: the login makes it.
-	account, found, err := loginAccount(&loaded.Config, id)
+	account, found, err := loginAccount(&l.cfg, l.id)
 	if err != nil {
 		return err
 	}
 	if found && account.Provider != provider {
-		return fmt.Errorf("account %q belongs to provider %q, not %q", id, account.Provider, provider)
+		return fmt.Errorf("account %q belongs to provider %q, not %q", l.id, account.Provider, provider)
 	}
 	// An account that a config layer declares is not new, whatever the
 	// store holds.
-	exists := inStore || (found && !account.Stored)
+	l.exists = inStore || (found && !account.Stored)
+	return nil
+}
 
-	client := httpclient.New()
-	tokenTimeout := time.Duration(loaded.Config.Auth.TokenTimeoutSeconds) * time.Second
-	var tokens auth.Tokens
-	if pasted != "" {
+// obtainTokens exchanges a pasted code or runs the login. waiting is true
+// when nobody is at the terminal: the page is printed and the login is
+// recorded, so a later run finishes it.
+func (l *loginRun) obtainTokens(ctx context.Context) (tokens auth.Tokens, waiting bool, err error) {
+	tokenTimeout := time.Duration(l.cfg.Auth.TokenTimeoutSeconds) * time.Second
+	if pasted := l.cmd.Code; pasted != "" {
 		code, state, err := auth.ParsePasted(pasted)
 		if err != nil {
-			return err
+			return auth.Tokens{}, false, err
 		}
 		exchange, cancel := context.WithTimeout(ctx, tokenTimeout)
 		defer cancel()
-		if tokens, err = flow.Resume(pending).Exchange(exchange, client, code, state); err != nil {
-			return err
-		}
-	} else {
-		opts := auth.LoginOptions{
-			Flow:            flow,
-			HTTPClient:      client,
-			Manual:          manual,
-			Device:          device,
-			OpenBrowser:     env.openBrowser,
-			In:              h.Stdin,
-			Out:             h.Stderr,
-			CallbackTimeout: time.Duration(loaded.Config.Auth.LoginTimeoutSeconds) * time.Second,
-			TokenTimeout:    tokenTimeout,
-		}
-		// A device login is approved by its own code and waits for no other.
-		if !device {
-			opts.Later = func(l *auth.Login) error {
-				pending = l.Pending(id)
-				return store.SavePending(ctx, provider, pending)
-			}
-		}
-		tokens, err = auth.RunLogin(ctx, opts)
-		if errors.Is(err, auth.ErrNothingPasted) {
-			// Nobody is at this terminal. The page is printed and the
-			// login is recorded, so the later run is how it finishes.
-			_, err = fmt.Fprintf(h.Stdout, "account %s: the %s login is waiting for its code: towa login %s --code '...'\n", id, provider, provider)
-			return err
-		}
-		if err != nil {
-			return err
+		tokens, err = l.flow.Resume(l.pending).Exchange(exchange, l.client, code, state)
+		return tokens, false, err
+	}
+	device := l.cmd.Device
+	opts := auth.LoginOptions{
+		Flow:            l.flow,
+		HTTPClient:      l.client,
+		Manual:          l.cmd.Manual,
+		Device:          device,
+		OpenBrowser:     l.env.openBrowser,
+		In:              l.host.Stdin,
+		Out:             l.host.Stderr,
+		CallbackTimeout: time.Duration(l.cfg.Auth.LoginTimeoutSeconds) * time.Second,
+		TokenTimeout:    tokenTimeout,
+	}
+	// A device login is approved by its own code and waits for no other.
+	if !device {
+		opts.Later = func(login *auth.Login) error {
+			l.pending = login.Pending(l.id)
+			return l.store.SavePending(ctx, l.cmd.Provider, l.pending)
 		}
 	}
+	tokens, err = auth.RunLogin(ctx, opts)
+	if errors.Is(err, auth.ErrNothingPasted) {
+		_, err = fmt.Fprintf(l.host.Stdout, "account %s: the %s login is waiting for its code: towa login %s --code '...'\n", l.id, l.cmd.Provider, l.cmd.Provider)
+		return auth.Tokens{}, true, err
+	}
+	return tokens, false, err
+}
 
+// finish stores the tokens, clears the pending record and reports.
+func (l *loginRun) finish(ctx context.Context, tokens auth.Tokens) error {
+	provider := l.cmd.Provider
 	// Under the lock, so that a refresh of the old login that is running
 	// in another process does not write over the new one.
-	unlock, err := store.Lock(ctx, id)
+	unlock, err := l.store.Lock(ctx, l.id)
 	if err != nil {
 		return err
 	}
-	if err := errors.Join(store.Save(id, tokens), unlock()); err != nil {
+	if err := errors.Join(l.store.Save(l.id, tokens), unlock()); err != nil {
 		return err
 	}
-	if !device {
+	if !l.cmd.Device {
 		// The code is spent. Another login of the provider may have
 		// replaced the record since, and then it is that login's.
-		if err := store.DeletePending(ctx, provider, pending); err != nil && !errors.Is(err, auth.ErrNoPendingLogin) {
+		if err := l.store.DeletePending(ctx, provider, l.pending); err != nil && !errors.Is(err, auth.ErrNoPendingLogin) {
 			return err
 		}
 	}
 	made := "is logged in"
-	if !exists {
+	if !l.exists {
 		made = "is created and logged in"
 	}
-	_, err = fmt.Fprintf(h.Stdout, "account %s %s to %s until %s, and is refreshed after that: a model chain names it as %s:%s/<model>\n",
-		id, made, provider, tokens.ExpiresAt().Format(time.RFC3339), provider, id)
+	_, err = fmt.Fprintf(l.host.Stdout, "account %s %s to %s until %s, and is refreshed after that: a model chain names it as %s:%s/<model>\n",
+		l.id, made, provider, tokens.ExpiresAt().Format(time.RFC3339), provider, l.id)
 	return err
 }
 

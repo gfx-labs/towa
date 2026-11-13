@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -34,57 +33,73 @@ func modelListsPath(h Host) (string, error) {
 // A list that cannot be read is logged and not an error: the model's name
 // may still say its figures, and a model nothing is known about is refused
 // when it is selected.
-func unlistedModels(ctx context.Context, cfg config.Config, h Host, p *Providers, logger *slog.Logger, now time.Time) (models.Unlisted, error) {
+func (f *runtimeFactory) unlistedModels(ctx context.Context, now time.Time) (models.Unlisted, error) {
+	cfg := f.cfg
 	unlisted := models.Unlisted{
 		Providers:  cfg.Providers,
 		Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens},
 		Lists:      models.Lists{},
 	}
-	var wanted []config.ChainEntry
-	for _, raw := range cfg.Models {
-		entry, err := config.ParseChainEntry(raw)
-		if err != nil {
-			return models.Unlisted{}, fmt.Errorf("models: %w", err)
-		}
-		if _, lists := p.clients[entry.Provider].(provider.ModelLister); lists && !models.InTable(entry.Model) {
-			wanted = append(wanted, entry)
-		}
+	wanted, err := f.modelsWithLists()
+	if err != nil {
+		return models.Unlisted{}, err
 	}
 	if len(wanted) == 0 {
 		return unlisted, nil
 	}
-	path, err := modelListsPath(h)
+	path, err := modelListsPath(f.host)
 	if err != nil {
 		return models.Unlisted{}, err
 	}
 	if unlisted.Lists, err = models.LoadLists(path); err != nil {
 		return models.Unlisted{}, err
 	}
-	maxAge := time.Duration(cfg.ModelListMaxAgeSeconds) * time.Second
-	timeout := time.Duration(cfg.ModelListTimeoutSeconds) * time.Second
-	changed := false
-	for _, entry := range wanted {
-		key := models.ListKey(entry)
-		if kept, ok := unlisted.Lists[key]; ok && now.Sub(time.UnixMilli(kept.FetchedAtUnixMs)) < maxAge {
-			continue
-		}
-		list, err := fetchModelList(ctx, p, entry, timeout)
-		if errors.Is(err, provider.ErrNoModelList) {
-			continue
-		}
-		if err != nil {
-			logger.Warn("the provider's model list was not read", "provider", entry.Provider, "account", entry.Account, "model", entry.Model, "err", err)
-			continue
-		}
-		list.FetchedAtUnixMs = now.UnixMilli()
-		unlisted.Lists[key], changed = list, true
-	}
-	if changed {
+	if f.refreshLists(ctx, unlisted.Lists, wanted, now) {
 		if err := unlisted.Lists.Save(path); err != nil {
 			return models.Unlisted{}, err
 		}
 	}
 	return unlisted, nil
+}
+
+// modelsWithLists returns the configured models that are not in the table
+// and whose provider can list its models.
+func (f *runtimeFactory) modelsWithLists() ([]config.ChainEntry, error) {
+	var wanted []config.ChainEntry
+	for _, raw := range f.cfg.Models {
+		entry, err := config.ParseChainEntry(raw)
+		if err != nil {
+			return nil, fmt.Errorf("models: %w", err)
+		}
+		if _, lists := f.providers.clients[entry.Provider].(provider.ModelLister); lists && !models.InTable(entry.Model) {
+			wanted = append(wanted, entry)
+		}
+	}
+	return wanted, nil
+}
+
+// refreshLists reads into lists the model list of each wanted entry whose
+// kept list is too old, and reports whether it changed lists.
+func (f *runtimeFactory) refreshLists(ctx context.Context, lists models.Lists, wanted []config.ChainEntry, now time.Time) (changed bool) {
+	maxAge := time.Duration(f.cfg.ModelListMaxAgeSeconds) * time.Second
+	timeout := time.Duration(f.cfg.ModelListTimeoutSeconds) * time.Second
+	for _, entry := range wanted {
+		key := models.ListKey(entry)
+		if kept, ok := lists[key]; ok && now.Sub(time.UnixMilli(kept.FetchedAtUnixMs)) < maxAge {
+			continue
+		}
+		list, err := fetchModelList(ctx, f.providers, entry, timeout)
+		if errors.Is(err, provider.ErrNoModelList) {
+			continue
+		}
+		if err != nil {
+			f.tel.Logger.Warn("the provider's model list was not read", "provider", entry.Provider, "account", entry.Account, "model", entry.Model, "err", err)
+			continue
+		}
+		list.FetchedAtUnixMs = now.UnixMilli()
+		lists[key], changed = list, true
+	}
+	return changed
 }
 
 func fetchModelList(ctx context.Context, p *Providers, entry config.ChainEntry, timeout time.Duration) (models.List, error) {

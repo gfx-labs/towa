@@ -37,6 +37,40 @@ func NewProviders(ctx context.Context, cfg config.Config, h Host, client *http.C
 	if client == nil {
 		return nil, errors.New("providers: shared HTTP client is required")
 	}
+	credentials, err := newCredentials(ctx, cfg, h, client)
+	if err != nil {
+		return nil, err
+	}
+	p := &Providers{Credentials: credentials, clients: make(map[string]provider.Provider)}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, p.Close())
+		}
+	}()
+
+	if err := p.addClaude(cfg, client); err != nil {
+		return nil, err
+	}
+	responsesConfig, err := responsesClientConfig(cfg, client)
+	if err != nil {
+		return nil, err
+	}
+	codex, err := openai.New(responsesConfig)
+	if err != nil {
+		return nil, fmt.Errorf("providers: %s: %w", config.ProviderCodex, err)
+	}
+	p.clients[config.ProviderCodex] = codex
+	p.responses = append(p.responses, codex)
+	for i, endpoint := range cfg.Providers {
+		if err := p.addEndpoint(cfg, client, responsesConfig, fmt.Sprintf("providers[%d]", i), endpoint); err != nil {
+			return nil, err
+		}
+	}
+	return p, nil
+}
+
+// newCredentials builds the credential source from the auth settings.
+func newCredentials(ctx context.Context, cfg config.Config, h Host, client *http.Client) (auth.Source, error) {
 	store, err := authStore(h)
 	if err != nil {
 		return nil, fmt.Errorf("providers: auth store: %w", err)
@@ -62,13 +96,10 @@ func NewProviders(ctx context.Context, cfg config.Config, h Host, client *http.C
 	if err != nil {
 		return nil, fmt.Errorf("providers: credentials: %w", err)
 	}
-	p := &Providers{Credentials: credentials, clients: make(map[string]provider.Provider)}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, p.Close())
-		}
-	}()
+	return credentials, nil
+}
 
+func (p *Providers) addClaude(cfg config.Config, client *http.Client) error {
 	thinking, err := claudeThinking(cfg.Claude, func() models.Lists {
 		if lists := p.lists.Load(); lists != nil {
 			return *lists
@@ -76,7 +107,7 @@ func NewProviders(ctx context.Context, cfg config.Config, h Host, client *http.C
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	claude, err := anthropic.New(anthropic.Config{
 		HTTPClient: client, Version: version(), BaseURL: anthropic.DefaultBaseURL,
@@ -84,9 +115,14 @@ func NewProviders(ctx context.Context, cfg config.Config, h Host, client *http.C
 		Thinking: thinking,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("providers: %s: %w", config.ProviderClaude, err)
+		return fmt.Errorf("providers: %s: %w", config.ProviderClaude, err)
 	}
 	p.clients[config.ProviderClaude] = claude
+	return nil
+}
+
+// responsesClientConfig returns the settings every Responses client shares.
+func responsesClientConfig(cfg config.Config, client *http.Client) (openai.Config, error) {
 	responsesConfig := openai.Config{
 		HTTPClient: client, BaseURL: openai.DefaultBaseURL, CodexBaseURL: openai.DefaultCodexBaseURL,
 		Provider: openai.ProviderAPI, UserAgent: "towa/" + version(),
@@ -100,52 +136,49 @@ func NewProviders(ctx context.Context, cfg config.Config, h Host, client *http.C
 	// These fields have constructor fallbacks. Wiring must receive their
 	// resolved values, not silently choose different settings here.
 	if responsesConfig.Transport == "" {
-		return nil, errors.New("providers: openai.transport is empty")
+		return openai.Config{}, errors.New("providers: openai.transport is empty")
 	}
 	if responsesConfig.ErrorBodyBytes <= 0 {
-		return nil, errors.New("providers: openai.error_body_bytes must be positive")
+		return openai.Config{}, errors.New("providers: openai.error_body_bytes must be positive")
 	}
-	codex, err := openai.New(responsesConfig)
-	if err != nil {
-		return nil, fmt.Errorf("providers: %s: %w", config.ProviderCodex, err)
+	return responsesConfig, nil
+}
+
+// addEndpoint builds the client of one [[providers]] entry. at names the
+// entry in errors.
+func (p *Providers) addEndpoint(cfg config.Config, client *http.Client, responsesConfig openai.Config, at string, endpoint config.Provider) error {
+	if err := endpoint.Validate(at); err != nil {
+		return err
 	}
-	p.clients[config.ProviderCodex] = codex
-	p.responses = append(p.responses, codex)
-	for i, endpoint := range cfg.Providers {
-		at := fmt.Sprintf("providers[%d]", i)
-		if err := endpoint.Validate(at); err != nil {
-			return nil, err
-		}
-		if _, exists := p.clients[endpoint.ID]; exists {
-			return nil, fmt.Errorf("%s.id: %q already has a client", at, endpoint.ID)
-		}
-		switch endpoint.Kind {
-		case config.ProviderChat:
-			c, err := chat.New(chat.Config{HTTPClient: client, Provider: endpoint, UserAgent: "towa/" + version()})
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", at, err)
-			}
-			p.clients[endpoint.ID] = c
-		case config.ProviderResponses:
-			if endpoint.Referer != "" || endpoint.Title != "" || endpoint.CacheKeyField != "" {
-				return nil, fmt.Errorf("%s: responses client does not support referer, title or cache_key_field", at)
-			}
-			for _, account := range cfg.Accounts {
-				if account.Provider == endpoint.ID && (account.Kind == config.AccountOAuth || account.Kind == config.AccountProxiedOAuth) {
-					return nil, fmt.Errorf("%s: custom responses endpoint %q requires API-key accounts, account %q is %s", at, endpoint.ID, account.ID, account.Kind)
-				}
-			}
-			custom := responsesConfig
-			custom.BaseURL, custom.Provider = endpoint.BaseURL, endpoint.ID
-			c, err := openai.New(custom)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", at, err)
-			}
-			p.clients[endpoint.ID] = c
-			p.responses = append(p.responses, c)
-		}
+	if _, exists := p.clients[endpoint.ID]; exists {
+		return fmt.Errorf("%s.id: %q already has a client", at, endpoint.ID)
 	}
-	return p, nil
+	switch endpoint.Kind {
+	case config.ProviderChat:
+		c, err := chat.New(chat.Config{HTTPClient: client, Provider: endpoint, UserAgent: "towa/" + version()})
+		if err != nil {
+			return fmt.Errorf("%s: %w", at, err)
+		}
+		p.clients[endpoint.ID] = c
+	case config.ProviderResponses:
+		if endpoint.Referer != "" || endpoint.Title != "" || endpoint.CacheKeyField != "" {
+			return fmt.Errorf("%s: responses client does not support referer, title or cache_key_field", at)
+		}
+		for _, account := range cfg.Accounts {
+			if account.Provider == endpoint.ID && (account.Kind == config.AccountOAuth || account.Kind == config.AccountProxiedOAuth) {
+				return fmt.Errorf("%s: custom responses endpoint %q requires API-key accounts, account %q is %s", at, endpoint.ID, account.ID, account.Kind)
+			}
+		}
+		custom := responsesConfig
+		custom.BaseURL, custom.Provider = endpoint.BaseURL, endpoint.ID
+		c, err := openai.New(custom)
+		if err != nil {
+			return fmt.Errorf("%s: %w", at, err)
+		}
+		p.clients[endpoint.ID] = c
+		p.responses = append(p.responses, c)
+	}
+	return nil
 }
 
 // claudeThinking returns the thinking parameter of a request to each Claude

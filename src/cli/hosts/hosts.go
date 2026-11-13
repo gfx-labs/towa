@@ -103,25 +103,71 @@ type Report struct {
 	NotCovered []string
 }
 
+// collector gathers the hosts and the notes of one List call.
+type collector struct {
+	report Report
+}
+
+func (c *collector) add(key, rawURL string) error {
+	address, err := address(rawURL)
+	if err != nil {
+		return fmt.Errorf("hosts: %s: %w", key, err)
+	}
+	c.report.Hosts = append(c.report.Hosts, Host{Address: address, Key: key})
+	return nil
+}
+
+func (c *collector) note(text string) {
+	c.report.NotCovered = append(c.report.NotCovered, text)
+}
+
 // List returns the hosts cfg makes the process contact.
 func List(cfg config.Config, in Inputs) (Report, error) {
-	var r Report
-	add := func(key, rawURL string) error {
-		address, err := address(rawURL)
-		if err != nil {
-			return fmt.Errorf("hosts: %s: %w", key, err)
-		}
-		r.Hosts = append(r.Hosts, Host{Address: address, Key: key})
-		return nil
+	var c collector
+	configured, err := c.providers(cfg)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := c.accounts(cfg, in, configured); err != nil {
+		return Report{}, err
+	}
+	if err := c.mcpServers(cfg, in); err != nil {
+		return Report{}, err
+	}
+	if err := c.services(cfg, in); err != nil {
+		return Report{}, err
+	}
+	if err := c.otlp(cfg, in); err != nil {
+		return Report{}, err
 	}
 
+	if cfg.WebFetch.Enabled {
+		c.note("webfetch: the tool fetches any URL the model names, so it reaches any host. An allowlist built from this list alone makes those fetches fail")
+	}
+	c.note("session/new: MCP servers a client names for a session are not in the configuration")
+	c.note("hooks and the shell tool: what a command contacts cannot be known")
+
+	slices.SortFunc(c.report.Hosts, func(a, b Host) int {
+		return cmp.Or(cmp.Compare(a.Address, b.Address), cmp.Compare(a.Key, b.Key))
+	})
+	c.report.Hosts = slices.Compact(c.report.Hosts)
+	return c.report, nil
+}
+
+// providers adds the base URL of each [[providers]] entry and returns the
+// provider ids they configure.
+func (c *collector) providers(cfg config.Config) (map[string]bool, error) {
 	configured := map[string]bool{}
 	for i, p := range cfg.Providers {
 		configured[p.ID] = true
-		if err := add(fmt.Sprintf("providers[%d].base_url", i), p.BaseURL); err != nil {
-			return Report{}, err
+		if err := c.add(fmt.Sprintf("providers[%d].base_url", i), p.BaseURL); err != nil {
+			return nil, err
 		}
 	}
+	return configured, nil
+}
+
+func (c *collector) accounts(cfg config.Config, in Inputs, configured map[string]bool) error {
 	for i, a := range cfg.Accounts {
 		at := fmt.Sprintf("accounts[%d]", i)
 		if a.Stored {
@@ -133,10 +179,10 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 		if !configured[a.Provider] {
 			base, err := in.BuiltIn.url(a)
 			if err != nil {
-				return Report{}, fmt.Errorf("hosts: %s.provider: %w", at, err)
+				return fmt.Errorf("hosts: %s.provider: %w", at, err)
 			}
-			if err := add(at+".provider", base); err != nil {
-				return Report{}, err
+			if err := c.add(at+".provider", base); err != nil {
+				return err
 			}
 		}
 		// The harness logs in and refreshes only an oauth account. A
@@ -146,117 +192,120 @@ func List(cfg config.Config, in Inputs) (Report, error) {
 		}
 		flow, ok := in.Flows[a.Provider]
 		if !ok {
-			return Report{}, fmt.Errorf("hosts: %s.provider: %q has no OAuth flow", at, a.Provider)
+			return fmt.Errorf("hosts: %s.provider: %q has no OAuth flow", at, a.Provider)
 		}
-		// The authorize page is opened by the user's browser, which may
-		// be on this host.
-		if err := add(at+".provider", flow.AuthorizeURL); err != nil {
-			return Report{}, err
-		}
-		if err := add(at+".provider", flow.TokenURL); err != nil {
-			return Report{}, err
-		}
-		// A device code login asks these from this host. Its page is opened
-		// on whichever device the user has.
-		if flow.Device.UserCodeURL != "" {
-			for _, u := range []string{flow.Device.UserCodeURL, flow.Device.PollURL} {
-				if err := add(at+".provider", u); err != nil {
-					return Report{}, err
-				}
-			}
+		if err := c.loginFlow(at+".provider", flow); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+func (c *collector) loginFlow(key string, flow auth.Flow) error {
+	// The authorize page is opened by the user's browser, which may
+	// be on this host.
+	if err := c.add(key, flow.AuthorizeURL); err != nil {
+		return err
+	}
+	if err := c.add(key, flow.TokenURL); err != nil {
+		return err
+	}
+	// A device code login asks these from this host. Its page is opened
+	// on whichever device the user has.
+	if flow.Device.UserCodeURL == "" {
+		return nil
+	}
+	for _, u := range []string{flow.Device.UserCodeURL, flow.Device.PollURL} {
+		if err := c.add(key, u); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *collector) mcpServers(cfg config.Config, in Inputs) error {
 	remote := false
 	for i, s := range cfg.MCP.Servers {
 		at := fmt.Sprintf("mcp.servers[%d]", i)
 		if s.Transport == config.MCPTransportStdio {
-			r.NotCovered = append(r.NotCovered, fmt.Sprintf(
+			c.note(fmt.Sprintf(
 				"%s: %q is a stdio server, and what the command %q contacts cannot be known", at, s.Name, s.Command))
 			continue
 		}
 		remote = true
-		if err := add(at+".url", s.URL); err != nil {
-			return Report{}, err
+		if err := c.add(at+".url", s.URL); err != nil {
+			return err
 		}
 		token, ok := in.MCPTokenEndpoints[s.Name]
 		if !ok {
-			r.NotCovered = append(r.NotCovered, fmt.Sprintf(
+			c.note(fmt.Sprintf(
 				"%s: %q has no stored login that a refresh would use, so its authorization server, if it asks for OAuth, is not listed", at, s.Name))
 			continue
 		}
-		if err := add(at+".oauth", token); err != nil {
-			return Report{}, err
+		if err := c.add(at+".oauth", token); err != nil {
+			return err
 		}
 	}
 	if remote {
-		r.NotCovered = append(r.NotCovered,
-			"mcp.servers: a stored login holds only its token endpoint, which a refresh contacts. A new mcp login asks the server for its authorization server again, and the metadata and authorize page may be on other hosts")
+		c.note("mcp.servers: a stored login holds only its token endpoint, which a refresh contacts. A new mcp login asks the server for its authorization server again, and the metadata and authorize page may be on other hosts")
 	}
+	return nil
+}
+
+// services adds the embeddings, web search and jev endpoints.
+func (c *collector) services(cfg config.Config, in Inputs) error {
 	if cfg.Embeddings.BaseURL != "" {
-		if err := add("embeddings.base_url", cfg.Embeddings.BaseURL); err != nil {
-			return Report{}, err
+		if err := c.add("embeddings.base_url", cfg.Embeddings.BaseURL); err != nil {
+			return err
 		}
 	}
 	if cfg.WebSearch.Enabled {
-		if err := add("websearch.endpoint", cfg.WebSearch.Endpoint); err != nil {
-			return Report{}, err
+		if err := c.add("websearch.endpoint", cfg.WebSearch.Endpoint); err != nil {
+			return err
 		}
 	}
-	if cfg.Jev.Route != "" {
-		if in.JevEndpoint == "" {
-			return Report{}, fmt.Errorf("hosts: jev.route is %q and no endpoint was given for it", cfg.Jev.Route)
-		}
-		key := "jev.route"
-		if cfg.Jev.Route == config.JevCustom {
-			key = "jev.base_url"
-		}
-		if err := add(key, in.JevEndpoint); err != nil {
-			return Report{}, err
-		}
+	if cfg.Jev.Route == "" {
+		return nil
 	}
+	if in.JevEndpoint == "" {
+		return fmt.Errorf("hosts: jev.route is %q and no endpoint was given for it", cfg.Jev.Route)
+	}
+	key := "jev.route"
+	if cfg.Jev.Route == config.JevCustom {
+		key = "jev.base_url"
+	}
+	return c.add(key, in.JevEndpoint)
+}
 
-	if cfg.Telemetry.OTel {
-		signals := []struct{ name, value string }{
-			{EnvOTLPTracesEndpoint, in.OTLP.TracesEndpoint},
-			{EnvOTLPMetricsEndpoint, in.OTLP.MetricsEndpoint},
+func (c *collector) otlp(cfg config.Config, in Inputs) error {
+	if !cfg.Telemetry.OTel {
+		return nil
+	}
+	signals := []struct{ name, value string }{
+		{EnvOTLPTracesEndpoint, in.OTLP.TracesEndpoint},
+		{EnvOTLPMetricsEndpoint, in.OTLP.MetricsEndpoint},
+	}
+	if cfg.Telemetry.Logs.OTel.Enabled {
+		signals = append(signals, struct{ name, value string }{EnvOTLPLogsEndpoint, in.OTLP.LogsEndpoint})
+	}
+	for _, signal := range signals {
+		name, value := signal.name, signal.value
+		if value == "" {
+			name, value = EnvOTLPEndpoint, in.OTLP.Endpoint
 		}
-		if cfg.Telemetry.Logs.OTel.Enabled {
-			signals = append(signals, struct{ name, value string }{EnvOTLPLogsEndpoint, in.OTLP.LogsEndpoint})
+		if value == "" {
+			// The exporters then use their own default, which is
+			// theirs to state.
+			c.note(fmt.Sprintf(
+				"telemetry.otel: neither %s nor %s is set, so the exporter's own default endpoint is used and is not listed",
+				signal.name, EnvOTLPEndpoint))
+			continue
 		}
-		for _, signal := range signals {
-			name, value := signal.name, signal.value
-			if value == "" {
-				name, value = EnvOTLPEndpoint, in.OTLP.Endpoint
-			}
-			if value == "" {
-				// The exporters then use their own default, which is
-				// theirs to state.
-				r.NotCovered = append(r.NotCovered, fmt.Sprintf(
-					"telemetry.otel: neither %s nor %s is set, so the exporter's own default endpoint is used and is not listed",
-					signal.name, EnvOTLPEndpoint))
-				continue
-			}
-			if err := add("telemetry.otel:"+name, value); err != nil {
-				return Report{}, err
-			}
+		if err := c.add("telemetry.otel:"+name, value); err != nil {
+			return err
 		}
 	}
-
-	if cfg.WebFetch.Enabled {
-		r.NotCovered = append(r.NotCovered,
-			"webfetch: the tool fetches any URL the model names, so it reaches any host. An allowlist built from this list alone makes those fetches fail")
-	}
-	r.NotCovered = append(r.NotCovered,
-		"session/new: MCP servers a client names for a session are not in the configuration",
-		"hooks and the shell tool: what a command contacts cannot be known",
-	)
-
-	slices.SortFunc(r.Hosts, func(a, b Host) int {
-		return cmp.Or(cmp.Compare(a.Address, b.Address), cmp.Compare(a.Key, b.Key))
-	})
-	r.Hosts = slices.Compact(r.Hosts)
-	return r, nil
+	return nil
 }
 
 // address returns the host and port a URL is reached at. A URL without a

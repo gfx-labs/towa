@@ -160,7 +160,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		}
 		loaded, err := factory.loadContext(turn)
 		require.NoError(t, err)
-		prepared, err := factory.prepare(t.Context(), turn, nil, &core.ReadTracker{}, loaded, &promptCache{})
+		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, reads: &core.ReadTracker{}, loaded: loaded, prompts: &promptCache{}})
 		require.NoError(t, err)
 		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
@@ -219,7 +219,7 @@ func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
 	}
 	globalInstructions := func(r *sessionRuntime) string {
 		turn := loop.Turn{SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model}
-		prepared, err := factory.prepare(t.Context(), turn, r.frozen, r.reads, r.loaded, &r.prompts)
+		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, frozen: r.frozen, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
 		require.NoError(t, err)
 		for _, block := range prepared.system {
 			if block.Name == agentctx.SectionGlobalInstructions {

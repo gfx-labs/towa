@@ -96,7 +96,7 @@ func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *tele
 	if err != nil {
 		return nil, err
 	}
-	f.unlisted, err = unlistedModels(ctx, cfg, h, f.providers, tel.Logger, time.Now())
+	f.unlisted, err = f.unlistedModels(ctx, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 			return nil, err
 		}
 		r.loaded = loaded
-		prepared, err := f.prepare(ctx, base, nil, r.reads, r.loaded, &r.prompts)
+		prepared, err := f.prepare(ctx, turnSetup{turn: base, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +199,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 	}
 	r.manager, r.frozen = manager, frozen
 	if len(f.cfg.Models) != 0 {
-		prepared, err := f.prepare(ctx, base, frozen, r.reads, r.loaded, &r.prompts)
+		prepared, err := f.prepare(ctx, turnSetup{turn: base, frozen: frozen, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
 		if err != nil {
 			return nil, errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 		}
@@ -232,7 +232,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 			selected := turn
 			selected.Model = model
 			var err error
-			prepared, err = f.prepare(ctx, selected, r.frozen, r.reads, r.loaded, &r.prompts)
+			prepared, err = f.prepare(ctx, turnSetup{turn: selected, frozen: r.frozen, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
 			return prepared.resolved, err
 		},
 		Store: f.store, System: func(context.Context, loop.Turn) ([]provider.SystemBlock, error) { return prepared.system, nil },
@@ -317,11 +317,21 @@ func (c *promptCache) build(hosted bool, p agentctx.Prompt) ([]provider.SystemBl
 	return system, nil
 }
 
-func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []tools.Tool, reads *core.ReadTracker, loaded *agentctx.Loaded, prompts *promptCache) (preparedTurn, error) {
-	if reads == nil {
+// turnSetup is what prepare reads besides the factory: the turn, the MCP
+// tools frozen for the session, and the session's own state.
+type turnSetup struct {
+	turn    loop.Turn
+	frozen  []tools.Tool
+	reads   *core.ReadTracker
+	loaded  *agentctx.Loaded
+	prompts *promptCache
+}
+
+func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn, error) {
+	if s.reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
-	selected, err := models.Select(f.cfg.Models, f.unlisted, turn.Model)
+	selected, err := models.Select(f.cfg.Models, f.unlisted, s.turn.Model)
 	if err != nil {
 		return preparedTurn{}, err
 	}
@@ -329,109 +339,139 @@ func (f *runtimeFactory) prepare(ctx context.Context, turn loop.Turn, frozen []t
 	if err != nil {
 		return preparedTurn{}, err
 	}
-	if loaded == nil || prompts == nil {
+	if s.loaded == nil || s.prompts == nil {
 		return preparedTurn{}, errors.New("session context is required")
 	}
-	env := tools.Env{SessionID: turn.SessionID, Cwd: turn.Cwd, Dirs: slices.Clone(turn.Dirs)}
-	showPlan := func(ctx context.Context, env tools.Env, entries []acp.PlanEntry) error {
-		current, ok := loop.Current(ctx)
-		if !ok || current.Turn.SessionID != env.SessionID {
-			return errors.New("plan update has no matching current turn")
-		}
-		return current.Turn.Update(ctx, acp.SessionUpdate{Plan: &acp.SessionUpdatePlan{Entries: entries}})
-	}
-	coreTools, err := core.Tools(env, f.cfg.Tools, core.Deps{Reads: reads, ShowPlan: showPlan})
+	assembled, err := f.assembleTools(ctx, s)
 	if err != nil {
 		return preparedTurn{}, err
 	}
-	additional, err := f.extraTools(loaded)
-	if err != nil {
-		return preparedTurn{}, err
-	}
-	assembled, err := toolset.Assemble(ctx, toolset.Input{
-		Tools:  func() ([]tools.Tool, error) { return coreTools, nil },
-		Extras: additional, MCP: frozen, Gate: f.cfg.Tools.Gate, Schemas: &f.schemas,
-	})
-	if err != nil {
-		return preparedTurn{}, err
-	}
+	first := selected.Entries[0]
 	result := preparedTurn{
 		native: make(map[string]compact.Native), modelName: selected.Name,
-		summaryWindow: selected.Entries[0].Metadata.ContextWindow,
-		summaryOutput: selected.Entries[0].Metadata.MaxOutputTokens,
+		summaryWindow: first.Metadata.ContextWindow,
+		summaryOutput: first.Metadata.MaxOutputTokens,
 	}
 	for i, entry := range selected.Entries {
 		result.summaryWindow = min(result.summaryWindow, entry.Metadata.ContextWindow)
 		result.summaryOutput = min(result.summaryOutput, entry.Metadata.MaxOutputTokens)
-		skillTool := ""
-		if f.cfg.Context.SkillsEnabled {
-			skillTool = extras.NameSkill
-		}
-		hosted, hasHosted, err := hostedsearch.Tool(f.cfg.WebSearch, entry.Provider, entry.Model)
+		system, err := f.prepareEntry(&chain[i], entry, assembled.Set, s, &result)
 		if err != nil {
 			return preparedTurn{}, err
-		}
-		listed, rules := toolSections(assembled.Set, hasHosted)
-		system, err := prompts.build(hasHosted, agentctx.Prompt{
-			Instructions: loaded.Instructions, Tools: listed, Rules: rules, Loaded: loaded,
-			WorkDir: turn.Cwd, AdditionalDirs: turn.Dirs, SkillTool: skillTool, Client: turn.SystemPrompt,
-		})
-		if err != nil {
-			return preparedTurn{}, err
-		}
-		chain[i].Preparation = &router.Preparation{
-			ContextWindow: entry.Metadata.ContextWindow, MaxOutputTokens: entry.Metadata.MaxOutputTokens,
-			Interruption: agentctx.Interruption, System: system,
-		}
-		if hasHosted {
-			chain[i].Preparation.HostedSearch, chain[i].Preparation.LocalSearch = hosted, extras.NameWebSearch
 		}
 		if i == 0 {
 			result.system = system
-		}
-		if client, ok := chain[i].Provider.(*openai.Client); ok {
-			scheme, err := f.accountScheme(entry.Account)
-			if err != nil {
-				return preparedTurn{}, err
-			}
-			name, err := client.ContextName(auth.Credential{Account: entry.Account, Scheme: scheme})
-			if err != nil {
-				return preparedTurn{}, err
-			}
-			result.native[name] = compact.NativeFunc(func(ctx context.Context, request provider.Request) (compact.NativeResult, error) {
-				compacted, err := client.Compact(ctx, request)
-				if err != nil {
-					return compact.NativeResult{}, err
-				}
-				if compacted == nil {
-					return compact.NativeResult{}, errors.New("native compaction returned no result")
-				}
-				return compact.NativeResult{Items: compacted.Items, Usage: compacted.Usage}, nil
-			})
 		}
 	}
 	routed, err := router.New(router.Options{Chain: chain, Auth: f.providers.Credentials, Retry: f.cfg.Limits.Retry, Rand: rand.Float64})
 	if err != nil {
 		return preparedTurn{}, err
 	}
-	first := selected.Entries[0]
 	result.resolved = loop.Resolved{
 		Provider: routed, Tools: assembled.Set, Schemas: assembled.Schemas, Model: first.Model,
 		ProviderName: first.Provider, ContextSize: first.Metadata.ContextWindow, MaxOutputTokens: first.Metadata.MaxOutputTokens,
 		Effort: first.Effort, Interruption: agentctx.Interruption,
 	}
-	result.mapper = loop.Mapper{
-		Tools: assembled.Set,
-		ContextSize: func(model string) (int, bool) {
-			for _, entry := range selected.Entries {
-				if entry.Model == model {
-					return int(entry.Metadata.ContextWindow), true
-				}
-			}
-			return 0, false
-		},
-	}
+	result.mapper = loop.Mapper{Tools: assembled.Set, ContextSize: contextSizeOf(selected.Entries)}
 	return result, nil
+}
+
+// assembleTools builds the turn's tool set from the core tools, the
+// extras and the session's MCP tools.
+func (f *runtimeFactory) assembleTools(ctx context.Context, s turnSetup) (toolset.Result, error) {
+	env := tools.Env{SessionID: s.turn.SessionID, Cwd: s.turn.Cwd, Dirs: slices.Clone(s.turn.Dirs)}
+	coreTools, err := core.Tools(env, f.cfg.Tools, core.Deps{Reads: s.reads, ShowPlan: showPlan})
+	if err != nil {
+		return toolset.Result{}, err
+	}
+	additional, err := f.extraTools(s.loaded)
+	if err != nil {
+		return toolset.Result{}, err
+	}
+	return toolset.Assemble(ctx, toolset.Input{
+		Tools:  func() ([]tools.Tool, error) { return coreTools, nil },
+		Extras: additional, MCP: s.frozen, Gate: f.cfg.Tools.Gate, Schemas: &f.schemas,
+	})
+}
+
+// showPlan sends a plan update on the turn that is running.
+func showPlan(ctx context.Context, env tools.Env, entries []acp.PlanEntry) error {
+	current, ok := loop.Current(ctx)
+	if !ok || current.Turn.SessionID != env.SessionID {
+		return errors.New("plan update has no matching current turn")
+	}
+	return current.Turn.Update(ctx, acp.SessionUpdate{Plan: &acp.SessionUpdatePlan{Entries: entries}})
+}
+
+// prepareEntry fills in one chain entry's preparation and returns its
+// system prompt. An entry on an OpenAI client also adds its native
+// compaction to result.
+func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry, set tools.Set, s turnSetup, result *preparedTurn) ([]provider.SystemBlock, error) {
+	skillTool := ""
+	if f.cfg.Context.SkillsEnabled {
+		skillTool = extras.NameSkill
+	}
+	hosted, hasHosted, err := hostedsearch.Tool(f.cfg.WebSearch, entry.Provider, entry.Model)
+	if err != nil {
+		return nil, err
+	}
+	listed, rules := toolSections(set, hasHosted)
+	system, err := s.prompts.build(hasHosted, agentctx.Prompt{
+		Instructions: s.loaded.Instructions, Tools: listed, Rules: rules, Loaded: s.loaded,
+		WorkDir: s.turn.Cwd, AdditionalDirs: s.turn.Dirs, SkillTool: skillTool, Client: s.turn.SystemPrompt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	chained.Preparation = &router.Preparation{
+		ContextWindow: entry.Metadata.ContextWindow, MaxOutputTokens: entry.Metadata.MaxOutputTokens,
+		Interruption: agentctx.Interruption, System: system,
+	}
+	if hasHosted {
+		chained.Preparation.HostedSearch, chained.Preparation.LocalSearch = hosted, extras.NameWebSearch
+	}
+	if client, ok := chained.Provider.(*openai.Client); ok {
+		if err := f.addNative(result, client, entry); err != nil {
+			return nil, err
+		}
+	}
+	return system, nil
+}
+
+// addNative registers the client's compaction under the name its context
+// is known by.
+func (f *runtimeFactory) addNative(result *preparedTurn, client *openai.Client, entry models.Entry) error {
+	scheme, err := f.accountScheme(entry.Account)
+	if err != nil {
+		return err
+	}
+	name, err := client.ContextName(auth.Credential{Account: entry.Account, Scheme: scheme})
+	if err != nil {
+		return err
+	}
+	result.native[name] = compact.NativeFunc(func(ctx context.Context, request provider.Request) (compact.NativeResult, error) {
+		compacted, err := client.Compact(ctx, request)
+		if err != nil {
+			return compact.NativeResult{}, err
+		}
+		if compacted == nil {
+			return compact.NativeResult{}, errors.New("native compaction returned no result")
+		}
+		return compact.NativeResult{Items: compacted.Items, Usage: compacted.Usage}, nil
+	})
+	return nil
+}
+
+// contextSizeOf returns the context window of a model among the entries.
+func contextSizeOf(entries []models.Entry) func(model string) (int, bool) {
+	return func(model string) (int, bool) {
+		for _, entry := range entries {
+			if entry.Model == model {
+				return int(entry.Metadata.ContextWindow), true
+			}
+		}
+		return 0, false
+	}
 }
 
 func (f *runtimeFactory) accountScheme(id string) (auth.Scheme, error) {
