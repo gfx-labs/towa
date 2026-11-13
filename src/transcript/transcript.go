@@ -65,10 +65,28 @@ func (i Item) OpaqueCompatible(provider string, origin Origin) bool {
 		i.Origin != nil && origin.Model != "" && origin.Account != "" && *i.Origin == origin
 }
 
-// Validate checks the variant, message role and any declared origin.
+// Validate checks that exactly one variant is set, that a declared origin is
+// complete and that a user message has a role.
 func (i Item) Validate() error {
+	switch set := i.variants(); {
+	case set == 0:
+		return errors.New("transcript: item has no variant set")
+	case set > 1:
+		return fmt.Errorf("transcript: item has %d variants set", set)
+	}
+	if i.Origin != nil && (i.Origin.Model == "" || i.Origin.Account == "") {
+		return errors.New("transcript: origin requires a model and an account")
+	}
+	if i.User != nil {
+		return i.User.validate()
+	}
+	return nil
+}
+
+// variants counts the variants that are set.
+func (i Item) variants() int {
 	set := 0
-	for _, present := range []bool{
+	for _, present := range [...]bool{
 		i.User != nil, i.Text != nil, i.Thinking != nil, i.ToolCall != nil, i.ToolResult != nil,
 		i.Native != nil, i.Usage != nil, i.ModelSwitch != nil, i.Compaction != nil, i.Interrupted != nil,
 	} {
@@ -76,24 +94,7 @@ func (i Item) Validate() error {
 			set++
 		}
 	}
-	switch set {
-	case 1:
-		if i.Origin != nil && (i.Origin.Model == "" || i.Origin.Account == "") {
-			return errors.New("transcript: origin requires a model and an account")
-		}
-		if i.User != nil {
-			switch i.User.Role {
-			case "", "user", "developer":
-			default:
-				return fmt.Errorf("transcript: unsupported message role %q", i.User.Role)
-			}
-		}
-		return nil
-	case 0:
-		return errors.New("transcript: item has no variant set")
-	default:
-		return fmt.Errorf("transcript: item has %d variants set", set)
-	}
+	return set
 }
 
 // User is a user or developer message.
@@ -101,6 +102,14 @@ type User struct {
 	// Role is user when empty. Developer messages retain their instruction priority.
 	Role  string `json:"role,omitzero"`
 	Parts []Part `json:"parts"`
+}
+
+func (u User) validate() error {
+	switch u.Role {
+	case "", "user", "developer":
+		return nil
+	}
+	return fmt.Errorf("transcript: unsupported message role %q", u.Role)
 }
 
 // Text is text the model wrote to the user.
