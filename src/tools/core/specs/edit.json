@@ -1,23 +1,36 @@
 {
   "name": "edit",
-  "summary": "Make precise file edits with exact text replacement",
-  "description": "Replace exact text in a file. Read the file in this session first. old_string must occur once unless replace_all is true. An empty old_string creates a missing or empty file.",
+  "summary": "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+  "description": "Replace exact text in a file with one or more edits. Read the file in this session first. The edits are applied in order, each to the result of the ones before it, and nothing is written unless every edit applies. Each old_string must occur once unless replace_all is true. The file must exist: use write to create one.",
   "guidance": [
-    "Use edit for precise changes (old_string must match exactly).",
+    "Use edit for precise changes (edits[].old_string must match exactly).",
+    "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls.",
     "Read a file with read before the first edit to it. Output of cat or sed in bash does not count as a read.",
     "A file stays editable after your own edits. Read it again if a command, such as a formatter, changed it.",
-    "Keep old_string as small as possible while still being unique in the file. If it occurs more than once, add surrounding lines or set replace_all.",
+    "Keep edits[].old_string as small as possible while still being unique in the file. If it occurs more than once, add surrounding lines or set replace_all.",
     "Edit files with edit, apply_patch or write, not sed, perl or Python scripts in bash."
   ],
   "input_schema": {
     "type": "object",
     "properties": {
       "file_path": {"type": "string", "description": "Path of the file, absolute or from the working directory."},
-      "old_string": {"type": "string", "description": "Text to replace, exactly as it is in the file."},
-      "new_string": {"type": "string", "description": "Replacement text. It must differ from old_string."},
-      "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence."}
+      "edits": {
+        "type": "array",
+        "minItems": 1,
+        "description": "Replacements to make, in order. Each is applied to the result of the ones before it. If one fails, the file is left as it was.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "old_string": {"type": "string", "description": "Text to replace, exactly as it is in the file."},
+            "new_string": {"type": "string", "description": "Replacement text. It must differ from old_string."},
+            "replace_all": {"type": "boolean", "default": false, "description": "Replace every occurrence."}
+          },
+          "required": ["old_string", "new_string"],
+          "additionalProperties": false
+        }
+      }
     },
-    "required": ["file_path", "old_string", "new_string"],
+    "required": ["file_path", "edits"],
     "additionalProperties": false
   }
 }

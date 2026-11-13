@@ -62,8 +62,10 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	require.Equal(t, path, result.Content[0].Diff.Path)
 	// The session wrote the file, so it may edit it without a read.
-	edit := map[string]any{"file_path": path, "old_string": "second", "new_string": "SECOND"}
-	result = run(t, set, env, "edit", edit)
+	replace := func(old, replacement string) map[string]any {
+		return map[string]any{"file_path": path, "edits": []map[string]any{{"old_string": old, "new_string": replacement}}}
+	}
+	result = run(t, set, env, "edit", replace("second", "SECOND"))
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 	actual, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -77,23 +79,62 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 
 	// A change from outside is refused until the file is read again.
 	require.NoError(t, os.WriteFile(path, []byte("first line\nEXTERN line\n"), 0o600))
-	result = run(t, set, env, "edit", edit)
+	result = run(t, set, env, "edit", replace("second", "SECOND"))
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
 	result = run(t, set, env, "read", map[string]any{"file_path": path, "limit": 1})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 	require.Equal(t, "first line\n[More lines remain. Continue with offset 2.]", result.Parts[0].Text)
-	edit["old_string"], edit["new_string"] = "EXTERN", "reread"
-	result = run(t, set, env, "edit", edit)
+	result = run(t, set, env, "edit", replace("EXTERN", "reread"))
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 
 	// An edit whose text is not in the file changes nothing, so the read
 	// still stands for the corrected edit that follows.
-	edit["old_string"] = "absent"
-	result = run(t, set, env, "edit", edit)
+	result = run(t, set, env, "edit", replace("absent", "reread"))
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
-	edit["old_string"], edit["new_string"] = "reread", "corrected"
-	result = run(t, set, env, "edit", edit)
+	result = run(t, set, env, "edit", replace("reread", "corrected"))
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
+
+	// One call makes several replacements, each on the result of the ones
+	// before it: the second finds text the first wrote.
+	several := func(edits ...map[string]any) map[string]any {
+		return map[string]any{"file_path": path, "edits": edits}
+	}
+	result = run(t, set, env, "edit", several(
+		map[string]any{"old_string": "first", "new_string": "line line"},
+		map[string]any{"old_string": "corrected", "new_string": "last"},
+		map[string]any{"old_string": "line line", "new_string": "opening"},
+		map[string]any{"old_string": "line", "new_string": "row", "replace_all": true},
+	))
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
+	require.Len(t, result.Content, 1)
+	actual, err = os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "opening row\nlast row\n", string(actual))
+
+	// When one edit of a call fails the file is left as it was, the result
+	// names that edit, and the session may still edit the file.
+	for want, edits := range map[string][]map[string]any{
+		"edits[1].old_string was not found":   {{"old_string": "opening", "new_string": "x"}, {"old_string": "opening", "new_string": "y"}},
+		"edits[1].old_string occurs 2 times":  {{"old_string": "last", "new_string": "final"}, {"old_string": "row", "new_string": "line"}},
+		"edits[0]: old_string and new_string": {{"old_string": "row", "new_string": "row"}},
+		"edits[0].old_string is empty":        {{"old_string": "", "new_string": "x"}},
+	} {
+		result = run(t, set, env, "edit", several(edits...))
+		require.Equal(t, transcript.OutcomeFailed, result.Outcome, want)
+		require.Contains(t, result.Parts[0].Text, want)
+		actual, err = os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "opening row\nlast row\n", string(actual), want)
+	}
+	result = run(t, set, env, "edit", replace("opening", "first"))
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
+
+	// edit changes a file that exists. A new file is write's to make.
+	missing := filepath.Join(env.Cwd, "missing.txt")
+	result = run(t, set, env, "edit", map[string]any{"file_path": missing, "edits": []map[string]any{{"old_string": "a", "new_string": "b"}}})
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "Use write")
+	require.NoFileExists(t, missing)
 
 	result = run(t, set, env, "todo", map[string]any{
 		"todos": []map[string]any{{"content": "Check files", "status": "in_progress", "activeForm": "Checking files", "confidence": "plausible"}},
@@ -151,7 +192,7 @@ func TestApplyPatchChangesFilesAndKeepsWhatWasAppliedBeforeAFailure(t *testing.T
 	require.NoFileExists(t, doomed)
 
 	// The session wrote both files, so edit follows without a read.
-	result = run(t, set, env, "edit", map[string]any{"file_path": existing, "old_string": "new", "new_string": "newer"})
+	result = run(t, set, env, "edit", map[string]any{"file_path": existing, "edits": []map[string]any{{"old_string": "new", "new_string": "newer"}}})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
 
 	// The second file's hunk does not match. The first file stays written
@@ -171,7 +212,7 @@ func TestApplyPatchChangesFilesAndKeepsWhatWasAppliedBeforeAFailure(t *testing.T
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
 	require.NoFileExists(t, filepath.Join(env.Cwd, "moved.txt"))
 	final := filepath.Join(env.Cwd, "final.txt")
-	result = run(t, set, env, "edit", map[string]any{"file_path": final, "old_string": "final", "new_string": "edited"})
+	result = run(t, set, env, "edit", map[string]any{"file_path": final, "edits": []map[string]any{{"old_string": "final", "new_string": "edited"}}})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome, result.Parts[0].Text)
 
 	result = run(t, set, env, "apply_patch", map[string]any{"patch_text": "not a patch"})

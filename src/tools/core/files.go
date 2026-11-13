@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/src/config"
@@ -17,10 +16,12 @@ import (
 )
 
 type editArgs struct {
-	Path string `json:"file_path"`
-	Old  string `json:"old_string"`
-	New  string `json:"new_string"`
-	All  bool   `json:"replace_all"`
+	Path  string `json:"file_path"`
+	Edits []struct {
+		Old string `json:"old_string"`
+		New string `json:"new_string"`
+		All bool   `json:"replace_all"`
+	} `json:"edits"`
 }
 
 type writeArgs struct {
@@ -99,67 +100,74 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
 				return textResult("Invalid edit input: "+err.Error(), true), nil
 			}
-			if args.Old == args.New {
-				return textResult("No changes to make: old_string and new_string are exactly the same.", true), nil
-			}
 			roots := fsops.RootsOf(call.Env, cfg.Files)
 			path, err := roots.Resolve(args.Path)
 			if err != nil {
 				return fileFailure(err), nil
 			}
+			if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+				return textResult("File does not exist. Use write to create a file.", true), nil
+			}
+			edits := make([]fsops.Edit, len(args.Edits))
+			for i, e := range args.Edits {
+				edits[i] = fsops.Edit{Old: e.Old, New: e.New, All: e.All}
+			}
 			var change fsops.Change
-			if args.Old == "" {
-				// An empty old_string fills a missing or whitespace-only file.
-				_, text, readErr := fsops.ReadText(ctx, roots, cfg.Files, path)
-				var fileErr *fsops.Error
-				switch {
-				case readErr == nil && strings.TrimSpace(text) != "":
-					return textResult("Cannot create new file - file already exists.", true), nil
-				case readErr == nil, errors.As(readErr, &fileErr) && fileErr.Kind == fsops.KindNotFound:
-					err = tracker.Write(ctx, path, func() error {
-						var writeErr error
-						change, writeErr = fsops.Write(ctx, roots, cfg.Files, fsops.WriteInput{Path: path, Content: args.New})
-						return writeErr
-					})
-				default:
-					err = readErr
-				}
-			} else {
-				err = tracker.Edit(ctx, path, func() error {
-					edited, editErr := fsops.ApplyEdits(ctx, roots, cfg.Files, fsops.EditInput{Path: path, Edits: []fsops.Edit{{Old: args.Old, New: args.New, All: args.All}}})
-					change = edited.Change
-					return editErr
-				})
-			}
+			err = tracker.Edit(ctx, path, func() error {
+				edited, editErr := fsops.ApplyEdits(ctx, roots, cfg.Files, fsops.EditInput{Path: path, Edits: edits})
+				change = edited.Change
+				return editErr
+			})
 			if err != nil {
-				var fileErr *fsops.Error
-				if errors.As(err, &fileErr) && fileErr.Kind == fsops.KindNoMatch {
-					return textResult("String to replace not found in file.\nString: "+args.Old, true), nil
-				}
-				return fileFailure(err), nil
+				return editFailure(err, edits), nil
 			}
-			text := fmt.Sprintf("The file %s has been updated successfully.", path)
-			if args.All {
-				text = fmt.Sprintf("The file %s has been updated. All occurrences were successfully replaced.", path)
-			}
-			result := textResult(text, false)
+			result := textResult(fmt.Sprintf("The file %s has been updated successfully.", path), false)
 			result.Content = []acp.ToolCallContent{change.Diff()}
 			return result, nil
 		},
 	}
 }
 
+// editFailure says which edit of a call failed and why. Nothing was written:
+// the edits of one call are applied together or not at all.
+func editFailure(err error, edits []fsops.Edit) tools.Result {
+	var fileErr *fsops.Error
+	if !errors.As(err, &fileErr) {
+		return fileFailure(err)
+	}
+	const unchanged = " The file was not changed."
+	at := fmt.Sprintf("edits[%d]", fileErr.Edit)
+	switch fileErr.Kind {
+	case fsops.KindNoEdits:
+		return textResult("edits is empty. Give at least one replacement.", true)
+	case fsops.KindEmptyOld:
+		return textResult(at+".old_string is empty. Use write to create a file or to replace all of one."+unchanged, true)
+	case fsops.KindSameText:
+		return textResult(at+": old_string and new_string are exactly the same."+unchanged, true)
+	case fsops.KindNoMatch:
+		text := at + ".old_string was not found in the file."
+		if fileErr.Edit > 0 {
+			// Each edit sees the result of the ones before it.
+			text += " Edits are applied in order, so an earlier edit of this call may have changed that text."
+		}
+		return textResult(text+unchanged+"\nString: "+edits[fileErr.Edit].Old, true)
+	case fsops.KindNotUnique:
+		return textResult(fmt.Sprintf("%s.old_string occurs %d times in the file and replace_all is false. Set replace_all to replace every occurrence, or add surrounding lines so that it names one.%s", at, fileErr.Count, unchanged), true)
+	case fsops.KindNoChange:
+		return textResult("The edits leave the file exactly as it was.", true)
+	default:
+		return fileFailure(err)
+	}
+}
+
 func fileFailure(err error) tools.Result {
 	var unread *UnreadError
 	var changed *ChangedError
-	var fileErr *fsops.Error
 	switch {
 	case errors.As(err, &unread):
 		return textResult("File has not been read yet. Read it first before writing to it.", true)
 	case errors.As(err, &changed):
 		return textResult("File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.", true)
-	case errors.As(err, &fileErr) && fileErr.Kind == fsops.KindNotUnique:
-		return textResult(fmt.Sprintf("Found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.", fileErr.Count), true)
 	default:
 		return textResult(err.Error(), true)
 	}
