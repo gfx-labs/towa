@@ -220,7 +220,7 @@ func TestRejectedRequests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := serve(t, loop.Stub)
+				w := serve(t, endsTurn)
 				if tt.init {
 					w.Send(initialize)
 					w.Await(`"init"`)

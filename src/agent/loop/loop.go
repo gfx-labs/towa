@@ -4,7 +4,6 @@ package loop
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/pkg/acp/harness"
@@ -90,28 +89,4 @@ type Turn struct {
 	// and the call does not run. An error means the turn was cancelled or
 	// the client failed, and stops the turn. A nil Permit allows every call.
 	Permit func(ctx context.Context, tool string, effect tools.Effect, call acp.ToolCallUpdate) (bool, error)
-}
-
-// Stub answers a prompt without a model: it says so and repeats the prompt's
-// text. It stands in until the first provider exists, so that a client can
-// exercise the protocol end to end.
-func Stub(ctx context.Context, t Turn) (Result, error) {
-	var text strings.Builder
-	other := 0
-	for _, block := range t.Prompt {
-		if block.Text == nil {
-			other++
-			continue
-		}
-		text.WriteString(block.Text.Text)
-		text.WriteString("\n")
-	}
-	reply := fmt.Sprintf("towa has no model provider yet. Your prompt had %d content blocks that are not text, and this text:\n%s", other, text.String())
-	update := acp.SessionUpdate{AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-		Content: acp.ContentBlock{Text: &acp.ContentBlockText{Type: "text", Text: reply}},
-	}}
-	if err := t.Update(ctx, update); err != nil {
-		return Result{}, err
-	}
-	return Result{StopReason: acp.StopReasonEndTurn}, nil
 }

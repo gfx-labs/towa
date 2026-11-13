@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 	"uuid"
 
 	"github.com/gfx-labs/towa/src/provider"
@@ -161,21 +160,6 @@ func standIn(entry transcript.Entry, providerName string, target ...transcript.O
 	return []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}}, nil
 }
 
-// Entry returns the entry to append for a finished compaction. firstKept is
-// the id of the first entry that is still sent, from Cut. mode is the
-// configured mode that started it, or ModeManual or ModeEmergency.
-func Entry(parent uuid.UUID, now time.Time, summary string, firstKept uuid.UUID, mode string) (transcript.Entry, error) {
-	if strings.TrimSpace(summary) == "" {
-		return transcript.Entry{}, ErrEmptySummary
-	}
-	if mode == "" {
-		return transcript.Entry{}, errors.New("compact: the compaction has no mode")
-	}
-	return transcript.NewEntry(parent, now, transcript.Item{
-		Compaction: &transcript.Compaction{Summary: summary, FirstKept: firstKept, Mode: mode},
-	}), nil
-}
-
 // Native asks a provider to compact a conversation itself. The OpenAI
 // Responses client's Compact does this. Its result is that package's own
 // type, so the wiring wraps it in a NativeFunc.
@@ -200,20 +184,10 @@ type NativeResult struct {
 	Usage *transcript.Usage
 }
 
-// NativeEntry returns the entry to append for a native compaction. The
-// provider's items ride in the entry's Opaque, tagged with providerName, and
-// Items gives them back to that provider only. The entry has no summary
-// text: the provider's summary is encrypted.
-func NativeEntry(parent uuid.UUID, now time.Time, result NativeResult, providerName string, firstKept uuid.UUID) (transcript.Entry, error) {
-	item, err := NativeItem(result, providerName, firstKept)
-	if err != nil {
-		return transcript.Entry{}, err
-	}
-	return transcript.NewEntry(parent, now, item), nil
-}
-
-// NativeItem builds the item without choosing the caller's entry id,
-// parent or timestamp. The explicit endpoint's whole returned window is
+// NativeItem builds the item of a native compaction. The provider's items
+// ride in the item's Opaque, tagged with providerName, and Items gives them
+// back to that provider only. The item has no summary text: the provider's
+// summary is encrypted. The explicit endpoint's whole returned window is
 // retained, including any user or tool items beside the encrypted item.
 func NativeItem(result NativeResult, providerName string, firstKept uuid.UUID) (transcript.Item, error) {
 	if len(result.Items) == 0 {

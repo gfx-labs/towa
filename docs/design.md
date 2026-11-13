@@ -83,7 +83,7 @@ Packages:
 | `agent` | `loop`, `hooks`, `subagent`, `session`, `extras` | every group above |
 | `cli` | commands and wiring, `listen`, `hosts` | every group above |
 
-`src/layers_test.go` holds this table and fails when a package imports a group its own may not, in code or in a test, or sits outside a group (`docs/notes/2026-11-12-src-layout.md`).
+No test enforces this table (`docs/notes/2026-11-12-src-layout.md`).
 
 `src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. `pkg/acp` moved on 2026-11-11: protocol7's worker imports it as the client side, so both ends share schema 1.31.0.
 

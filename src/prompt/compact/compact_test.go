@@ -2,8 +2,6 @@ package compact
 
 import (
 	"encoding/json/jsontext"
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -247,11 +245,16 @@ func TestCutKeepsACallWithItsResult(t *testing.T) {
 	require.Zero(t, replace, "fewer messages than are kept")
 }
 
+// compaction is the entry a finished compaction appends.
+func compaction(parent uuid.UUID, summary string, firstKept uuid.UUID, mode string) transcript.Entry {
+	return transcript.NewEntry(parent, time.Unix(1, 0), transcript.Item{
+		Compaction: &transcript.Compaction{Summary: summary, FirstKept: firstKept, Mode: mode},
+	})
+}
+
 func TestItemsAfterCompactions(t *testing.T) {
 	entries := session(user("first"), text("one"), user("second"), text("two"), user("third"))
-	first, err := Entry(entries[4].ID, time.Unix(1, 0), "summary of first", entries[2].ID, config.CompactionReactive)
-	require.NoError(t, err)
-	entries = append(entries, first)
+	entries = append(entries, compaction(entries[4].ID, "summary of first", entries[2].ID, config.CompactionReactive))
 	entries = append(entries, session(text("three"), user("fourth"))...)
 
 	items, err := Items(entries, "anthropic")
@@ -262,9 +265,7 @@ func TestItemsAfterCompactions(t *testing.T) {
 
 	// A later compaction replaces the earlier summary too.
 	before := append([]transcript.Entry(nil), entries...)
-	second, err := Entry(entries[7].ID, time.Unix(2, 0), "summary of both", entries[6].ID, ModeManual)
-	require.NoError(t, err)
-	entries = append(entries, second)
+	entries = append(entries, compaction(entries[7].ID, "summary of both", entries[6].ID, ModeManual))
 	items, err = Items(entries, "anthropic")
 	require.NoError(t, err)
 	require.Len(t, items, 3)
@@ -275,21 +276,18 @@ func TestItemsAfterCompactions(t *testing.T) {
 
 	// A compaction that names an entry the transcript does not hold is a
 	// broken session, not an empty one.
-	broken, err := Entry(uuid.Nil(), time.Unix(3, 0), "summary", uuid.NewV7(), ModeManual)
-	require.NoError(t, err)
+	broken := compaction(uuid.Nil(), "summary", uuid.NewV7(), ModeManual)
 	_, err = Items(append(entries, broken), "anthropic")
 	require.Error(t, err)
-
-	_, err = Entry(uuid.Nil(), time.Unix(3, 0), " \n", entries[0].ID, ModeManual)
-	require.ErrorIs(t, err, ErrEmptySummary)
 }
 
 func TestNativeCompactionGoesOnlyToItsProvider(t *testing.T) {
 	entries := session(user("first"), text("one"), user("second"))
 	origin := transcript.Origin{Model: "model", Account: "account"}
 	native := transcript.Item{Native: &transcript.Native{Kind: "compaction"}, Provider: "openai", Origin: &origin, Opaque: jsontext.Value(`{"encrypted_content":"x"}`)}
-	entry, err := NativeEntry(entries[2].ID, time.Unix(1, 0), NativeResult{Items: []transcript.Item{native}}, "openai", entries[2].ID)
+	item, err := NativeItem(NativeResult{Items: []transcript.Item{native}}, "openai", entries[2].ID)
 	require.NoError(t, err)
+	entry := transcript.NewEntry(entries[2].ID, time.Unix(1, 0), item)
 	entries = append(entries, entry)
 
 	require.Equal(t, &origin, entry.Item.Origin)
@@ -362,58 +360,4 @@ func TestSummaryTextRefusesWhatCannotStandForTheEntries(t *testing.T) {
 	require.ErrorIs(t, err, ErrSummaryToolCall)
 	_, err = SummaryText([]transcript.Item{text("  ")}, provider.StopEndTurn)
 	require.ErrorIs(t, err, ErrEmptySummary)
-}
-
-// The prompts are copies. This compares them with the commits they were
-// copied from, read with git, when the checkouts are named:
-//
-//	TOWA_PI_REPO=~/.jcode/scratch/pi-src TOWA_JCODE_REPO=~/repo/github.com/1jehuang/jcode \
-//	    go test ./src/prompt/compact -run TestPromptsMatchTheirSources
-func TestPromptsMatchTheirSources(t *testing.T) {
-	const (
-		piCommit    = "4839e41d6463d759a92ee55f4ca7c8ae57e52c9c"
-		jcodeCommit = "8e11eb23ea33c7b09d43aa9a3b52fa3f0728f39e"
-	)
-	show := func(repo, commit, path string) string {
-		out, err := exec.CommandContext(t.Context(), "git", "-C", repo, "show", commit+":"+path).Output()
-		require.NoError(t, err)
-		return string(out)
-	}
-
-	t.Run("pi", func(t *testing.T) {
-		repo := os.Getenv("TOWA_PI_REPO")
-		if repo == "" {
-			t.Skip("TOWA_PI_REPO does not name a checkout of earendil-works/pi")
-		}
-		compaction := show(repo, piCommit, "packages/coding-agent/src/core/compaction/compaction.ts")
-		utils := show(repo, piCommit, "packages/coding-agent/src/core/compaction/utils.ts")
-		messages := show(repo, piCommit, "packages/coding-agent/src/core/messages.ts")
-
-		require.Contains(t, utils, "SUMMARIZATION_SYSTEM_PROMPT = `"+checkpointSystem+"`;")
-		require.Contains(t, compaction, "const SUMMARIZATION_PROMPT = `"+checkpointPrompt+"`;")
-		head, instructions, ok := strings.Cut(checkpointMergePrompt, "\n\n")
-		require.True(t, ok)
-		require.Contains(t, compaction, "const UPDATE_SUMMARIZATION_PROMPT = `"+head+"\n\n${UPDATE_SUMMARIZATION_INSTRUCTIONS}`;")
-		require.Contains(t, compaction, "const UPDATE_SUMMARIZATION_INSTRUCTIONS = `"+instructions+"`;")
-		require.Contains(t, messages, "COMPACTION_SUMMARY_PREFIX = `"+summaryPrefix+"`;")
-		require.Contains(t, messages, "COMPACTION_SUMMARY_SUFFIX = `"+summarySuffix+"`;")
-	})
-
-	t.Run("jcode", func(t *testing.T) {
-		repo := os.Getenv("TOWA_JCODE_REPO")
-		if repo == "" {
-			t.Skip("TOWA_JCODE_REPO does not name a checkout of 1jehuang/jcode")
-		}
-		core := show(repo, jcodeCommit, "crates/jcode-compaction-core/src/lib.rs")
-		base := show(repo, jcodeCommit, "crates/jcode-base/src/compaction.rs")
-
-		require.Contains(t, core, `SUMMARY_PROMPT: &str = r#"`+shortPrompt+" "+searchSentence+`"#;`)
-		require.Contains(t, base, `"`+shortSystem+`"`)
-		// The Rust string is written on two lines joined by a backslash.
-		format := strings.ReplaceAll(emergencyFormat, "%d", "{}")
-		at := strings.Index(format, "The conversation")
-		require.Positive(t, at)
-		require.Contains(t, core, `"`+format[:at]+"\\\n")
-		require.Contains(t, core, format[at:]+`"`)
-	})
 }

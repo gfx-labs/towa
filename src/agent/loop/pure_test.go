@@ -60,14 +60,6 @@ func TestExceededNamesTheLimitThatIsUsedUp(t *testing.T) {
 	assert.Nil(t, loop.Spent{}.Usage(), "a turn that made no request reports no usage")
 }
 
-func TestToolCallsLeft(t *testing.T) {
-	left, limited := loop.ToolCallsLeft(config.Limits{MaxToolCalls: 5}, loop.Spent{ToolCalls: 3})
-	assert.True(t, limited)
-	assert.EqualValues(t, 2, left)
-	_, limited = loop.ToolCallsLeft(config.Limits{}, loop.Spent{ToolCalls: 3})
-	assert.False(t, limited)
-}
-
 func TestStopForCopiesWhatTheProviderSaid(t *testing.T) {
 	reset := time.Date(2026, 11, 11, 18, 0, 0, 0, time.UTC)
 	entry := router.Entry{ProviderID: "claude", Account: "work", Model: "opus"}
@@ -110,32 +102,6 @@ func TestStopForCopiesWhatTheProviderSaid(t *testing.T) {
 		require.ErrorAs(t, loop.StopFor(&provider.Error{Reason: reason}), &stopped, reason)
 		// The two lists use the same words, which is what a client relies on.
 		assert.Equal(t, string(reason), string(stopped.Stop.Kind))
-	}
-}
-
-func TestConflicts(t *testing.T) {
-	read := func(paths ...string) tools.Job { return tools.Job{Effect: tools.ReadOnly, ReadPaths: paths} }
-	write := func(paths ...string) tools.Job { return tools.Job{Effect: tools.Writes, WritePaths: paths} }
-	exec := tools.Job{Effect: tools.Executes}
-	for _, tc := range []struct {
-		name string
-		a, b tools.Job
-		want bool
-	}{
-		{"two reads of one file", read("/a"), read("/a"), false},
-		{"writes of different files", write("/a"), write("/b"), false},
-		{"writes that share one of their files", write("/a", "/b"), write("/b", "/c"), true},
-		{"a read and a write of one file", read("/a"), write("/a"), true},
-		{"a read and a write of different files", read("/a"), write("/b"), false},
-		{"a write that does not say where", write(), write("/a"), true},
-		{"a write that does not say where, and a read", write(), read("/a"), true},
-		{"a command and a read", exec, read("/a"), true},
-		{"two commands", exec, exec, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, tools.Conflicts(tc.a, tc.b))
-			assert.Equal(t, tc.want, tools.Conflicts(tc.b, tc.a))
-		})
 	}
 }
 

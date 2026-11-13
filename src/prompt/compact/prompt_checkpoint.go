@@ -3,7 +3,7 @@ package compact
 // The checkpoint prompts are Pi's, copied byte for byte from
 // github.com/earendil-works/pi at commit
 // 4839e41d6463d759a92ee55f4ca7c8ae57e52c9c (MIT, Copyright (c) 2025 Mario
-// Zechner). TestPromptsMatchTheirSources compares them with that commit.
+// Zechner).
 
 // checkpointSystem is SUMMARIZATION_SYSTEM_PROMPT in
 // packages/coding-agent/src/core/compaction/utils.ts.

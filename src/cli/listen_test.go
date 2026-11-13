@@ -18,6 +18,7 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/config"
@@ -60,7 +61,10 @@ func transportHost(t *testing.T) *session.Host {
 	loaded, err := config.Load(config.Sources{})
 	require.NoError(t, err)
 	host, err := session.NewHost(session.Options{
-		Version: "test", Turn: loop.Stub, Session: loaded.Config.Session,
+		Version: "test", Session: loaded.Config.Session,
+		Turn: func(context.Context, loop.Turn) (loop.Result, error) {
+			return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
+		},
 		Logger: slog.New(slog.DiscardHandler),
 		Tracer: tracenoop.NewTracerProvider().Tracer("test"),
 		Meter:  metricnoop.NewMeterProvider().Meter("test"),

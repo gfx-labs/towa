@@ -3,7 +3,6 @@ package compact
 // The short prompt is jcode's, copied byte for byte from
 // github.com/1jehuang/jcode at origin/master
 // 8e11eb23ea33c7b09d43aa9a3b52fa3f0728f39e.
-// TestPromptsMatchTheirSources compares it with that commit.
 
 // shortSystem is the system prompt of the summary call in
 // generate_compaction_artifact, crates/jcode-base/src/compaction.rs:1799.

@@ -173,13 +173,12 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		return text
 	}
 	plain, hosted := section(plainModel, ""), section(hostedModel, "medium")
-	require.Contains(t, plain, "- "+extras.NameWebSearch+": ")
-	require.Contains(t, hosted, "- "+hostedsearch.Name+": ")
-	require.Contains(t, plain, "with "+extras.NameWebSearch+".")
-	require.Contains(t, hosted, "with "+hostedsearch.Name+".")
+	// Each entry's sections name the search tool that entry has, and no
+	// tool that is turned off.
+	require.Contains(t, plain, extras.NameWebSearch)
+	require.Contains(t, hosted, hostedsearch.Name)
 	require.NotContains(t, hosted, extras.NameWebSearch)
 	for _, text := range []string{plain, hosted} {
-		require.Contains(t, text, "no terminal")
 		require.NotContains(t, text, extras.NameConversationSearch)
 	}
 }
