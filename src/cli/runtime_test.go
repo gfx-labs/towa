@@ -215,25 +215,25 @@ func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, runtime.Close(context.Background())) })
 		return runtime
 	}
-	projectContext := func(r *sessionRuntime) string {
+	globalInstructions := func(r *sessionRuntime) string {
 		turn := loop.Turn{SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model}
 		prepared, err := factory.prepare(t.Context(), turn, r.frozen, r.reads, r.loaded, &r.prompts)
 		require.NoError(t, err)
 		for _, block := range prepared.system {
-			if block.Name == agentctx.SectionProjectContext {
+			if block.Name == agentctx.SectionGlobalInstructions {
 				return block.Text
 			}
 		}
-		t.Fatal("the prompt has no project context section")
+		t.Fatal("the prompt has no global instructions section")
 		return ""
 	}
 
 	first := open()
-	require.Contains(t, projectContext(first), "first rule")
+	require.Contains(t, globalInstructions(first), "first rule")
 	require.NoError(t, os.WriteFile(rules, []byte("second rule\n"), 0o600))
-	require.Contains(t, projectContext(first), "first rule")
-	require.NotContains(t, projectContext(first), "second rule")
-	require.Contains(t, projectContext(open()), "second rule")
+	require.Contains(t, globalInstructions(first), "first rule")
+	require.NotContains(t, globalInstructions(first), "second rule")
+	require.Contains(t, globalInstructions(open()), "second rule")
 }
 
 // runtimeMCP observes real SDK sessions, not replacement cleanup callbacks.

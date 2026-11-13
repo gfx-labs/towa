@@ -53,12 +53,26 @@ type Loaded struct {
 	Instructions string
 }
 
+// Scope says whether a context file holds the user's global instructions
+// or a repository's.
+type Scope string
+
+const (
+	// ScopeGlobal is ~/AGENTS.md, ~/.agents/rules and every configured
+	// entry.
+	ScopeGlobal Scope = "global"
+	// ScopeProject is the AGENTS.md of a directory from the repository root
+	// down to the working directory.
+	ScopeProject Scope = "project"
+)
+
 // File is one context file.
 type File struct {
 	// Path is the absolute path the file was read from, or the config key
 	// of text given inline.
-	Path string
-	Text string
+	Path  string
+	Text  string
+	Scope Scope
 }
 
 // LimitError reports a file, or the context files together, larger than a
@@ -113,15 +127,16 @@ func Load(req Request) (*Loaded, error) {
 //
 //  1. ~/AGENTS.md;
 //  2. the .md files under ~/.agents/rules, in path order;
-//  3. the AGENTS.md of each directory from the repository root down to the
-//     working directory, so that the file nearest the working directory
-//     comes last;
-//  4. each entry of context.agents, in config order. A file is read as it
+//  3. each entry of context.agents, in config order. A file is read as it
 //     is, and a directory contributes the .md files under it in path order;
-//  5. each entry of context.agents_text, in config order, under the name
-//     context.agents_text[i].
+//  4. each entry of context.agents_text, in config order, under the name
+//     context.agents_text[i];
+//  5. the AGENTS.md of each directory from the repository root down to the
+//     working directory, so that the file nearest the working directory
+//     comes last.
 //
-// Steps 1 to 3 are the defaults, skipped when context.default_agents is
+// Steps 1 to 4 are global instructions and step 5 is the repository's.
+// Steps 1, 2 and 5 are the defaults, skipped when context.default_agents is
 // off. A default file or directory that does not exist is left out. A
 // configured entry that does not exist is an error, as is any other
 // failure. The repository root is the nearest directory, from the working
@@ -135,31 +150,19 @@ func LoadFiles(req Request) ([]File, error) {
 	}
 	l := &fileLoader{cfg: req.Config, seen: map[string]bool{}}
 
-	if req.Config.DefaultAgents {
-		var defaults []string
-		if req.HomeDir != "" {
-			defaults = append(defaults, filepath.Join(req.HomeDir, agentsFile), filepath.Join(req.HomeDir, rulesDir))
-		}
-		chain, err := dirsFromRepoRoot(workDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, dir := range chain {
-			defaults = append(defaults, filepath.Join(dir, agentsFile))
-		}
-		for _, path := range defaults {
-			if err := l.addPath(path, true); err != nil {
+	if req.Config.DefaultAgents && req.HomeDir != "" {
+		for _, path := range []string{filepath.Join(req.HomeDir, agentsFile), filepath.Join(req.HomeDir, rulesDir)} {
+			if err := l.addPath(path, true, ScopeGlobal); err != nil {
 				return nil, err
 			}
 		}
 	}
-
 	for _, entry := range req.Config.Agents {
 		path, err := resolvePath(entry, workDir, req.HomeDir)
 		if err != nil {
 			return nil, fmt.Errorf("agentctx: context.agents: %w", err)
 		}
-		if err := l.addPath(path, false); err != nil {
+		if err := l.addPath(path, false, ScopeGlobal); err != nil {
 			return nil, err
 		}
 	}
@@ -168,19 +171,30 @@ func LoadFiles(req Request) ([]File, error) {
 			return nil, err
 		}
 	}
+	if req.Config.DefaultAgents {
+		chain, err := dirsFromRepoRoot(workDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, dir := range chain {
+			if err := l.addPath(filepath.Join(dir, agentsFile), true, ScopeProject); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return l.files, nil
 }
 
 // addPath reads a file, or the .md files under a directory in path order.
 // With optional set, a path that does not exist is left out.
-func (l *fileLoader) addPath(path string, optional bool) error {
+func (l *fileLoader) addPath(path string, optional bool, scope Scope) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		// add reports the error, or leaves out a missing optional file.
-		return l.add(path, optional)
+		return l.add(path, optional, scope)
 	}
 	if !info.IsDir() {
-		return l.add(path, optional)
+		return l.add(path, optional, scope)
 	}
 	// DirFS follows a linked root. WalkDir does not follow links below it.
 	var paths []string
@@ -197,7 +211,7 @@ func (l *fileLoader) addPath(path string, optional bool) error {
 		return fmt.Errorf("agentctx: %w", pathError(path, err))
 	}
 	for _, p := range paths {
-		if err := l.add(p, false); err != nil {
+		if err := l.add(p, false, scope); err != nil {
 			return err
 		}
 	}
@@ -215,7 +229,7 @@ type fileLoader struct {
 
 // add reads one context file. With optional set, a file that does not exist
 // is left out.
-func (l *fileLoader) add(path string, optional bool) error {
+func (l *fileLoader) add(path string, optional bool, scope Scope) error {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if optional && errors.Is(err, fs.ErrNotExist) {
@@ -239,7 +253,7 @@ func (l *fileLoader) add(path string, optional bool) error {
 	if limit := l.cfg.MaxTotalBytes; limit > 0 && l.total > limit {
 		return &LimitError{Path: path, Key: "context.max_total_bytes", Size: l.total, Limit: limit}
 	}
-	l.files = append(l.files, File{Path: path, Text: text})
+	l.files = append(l.files, File{Path: path, Text: text, Scope: scope})
 	return nil
 }
 
@@ -257,7 +271,7 @@ func (l *fileLoader) addText(name, text string) error {
 	if limit := l.cfg.MaxTotalBytes; limit > 0 && l.total > limit {
 		return &LimitError{Path: name, Key: "context.max_total_bytes", Size: l.total, Limit: limit}
 	}
-	l.files = append(l.files, File{Path: name, Text: text})
+	l.files = append(l.files, File{Path: name, Text: text, Scope: ScopeGlobal})
 	return nil
 }
 

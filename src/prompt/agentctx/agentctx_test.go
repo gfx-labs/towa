@@ -93,9 +93,17 @@ func TestContextFilesAreReadFromDefaultsThenConfiguredEntriesInOrder(t *testing.
 
 	files, err := agentctx.LoadFiles(tr.request(cfg))
 	require.NoError(t, err)
-	require.Equal(t, []string{global, ruleA, ruleB, root, mid, leaf, dirA, dirB, extra, "context.agents_text[0]"}, paths(files))
-	require.Equal(t, "root", files[3].Text)
-	require.Equal(t, "from a command, with, commas\nand lines", files[9].Text)
+	// The global files come first, then the repository's, nearest last.
+	require.Equal(t, []string{global, ruleA, ruleB, dirA, dirB, extra, "context.agents_text[0]", root, mid, leaf}, paths(files))
+	for i, f := range files {
+		want := agentctx.ScopeGlobal
+		if i >= 7 {
+			want = agentctx.ScopeProject
+		}
+		require.Equal(t, want, f.Scope, f.Path)
+	}
+	require.Equal(t, "root", files[7].Text)
+	require.Equal(t, "from a command, with, commas\nand lines", files[6].Text)
 
 	cfg.DefaultAgents = false
 	files, err = agentctx.LoadFiles(tr.request(cfg))
@@ -120,7 +128,8 @@ func TestOutsideARepositoryOnlyTheWorkDirIsSearched(t *testing.T) {
 }
 
 // An extra file that is also a repository's AGENTS.md, directly or through a
-// symlink, must reach the prompt once.
+// symlink, must reach the prompt once, as the global entry it was first
+// reached as.
 func TestAFileReachedTwiceIsReadOnce(t *testing.T) {
 	tr := newTree(t)
 	root := write(t, filepath.Join(tr.repo, "AGENTS.md"), "root")
@@ -132,6 +141,7 @@ func TestAFileReachedTwiceIsReadOnce(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	require.Equal(t, []string{root}, paths(files))
+	require.Equal(t, agentctx.ScopeGlobal, files[0].Scope)
 }
 
 func TestInstructionDirectoryRootMayBeASymlink(t *testing.T) {
@@ -311,6 +321,7 @@ func textPrompt(mode acp.SystemPromptMode, texts ...string) *acp.SystemPrompt {
 func loadedPrompt(t *testing.T) (tree, agentctx.Prompt) {
 	t.Helper()
 	tr := newTree(t)
+	write(t, filepath.Join(tr.home, "AGENTS.md"), "Be brief.\n")
 	write(t, filepath.Join(tr.repo, "AGENTS.md"), "Use tabs.\n")
 	write(t, filepath.Join(tr.home, "skills", "deploy", "SKILL.md"), skillFile("deploy", "Ship a release", "body"))
 	write(t, filepath.Join(tr.home, "house.md"), "House rules.")
@@ -340,8 +351,8 @@ func TestSectionsComeInTheFixedOrder(t *testing.T) {
 	blocks, err := agentctx.Build(prompt)
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		agentctx.SectionPrompt, agentctx.SectionTools, agentctx.SectionRules, agentctx.SectionProjectContext,
-		agentctx.SectionSkills, agentctx.SectionWorkDir, "team", "house",
+		agentctx.SectionPrompt, agentctx.SectionTools, agentctx.SectionRules, agentctx.SectionGlobalInstructions,
+		agentctx.SectionProjectInstructions, agentctx.SectionSkills, agentctx.SectionWorkDir, "team", "house",
 	}, names(blocks))
 	// The instructions open the prompt as they are. Every section after
 	// them is inside a tag of its name.
@@ -352,12 +363,16 @@ func TestSectionsComeInTheFixedOrder(t *testing.T) {
 		require.True(t, strings.HasPrefix(block.Text, "<"+block.Name+">\n"), block.Name)
 		require.True(t, strings.HasSuffix(block.Text, "\n</"+block.Name+">"), block.Name)
 	}
-	// A context file is in a tag that names its path.
-	require.Contains(t, blocks[3].Text, "<project_instructions path=\""+filepath.Join(tr.repo, "AGENTS.md")+"\">\nUse tabs.\n</project_instructions>")
-	require.Contains(t, blocks[4].Text, "deploy: Ship a release")
-	require.Contains(t, blocks[5].Text, tr.workDir)
-	require.Contains(t, blocks[5].Text, tr.home)
-	require.Equal(t, "<house>\nHouse rules.\n</house>", blocks[7].Text)
+	// A context file is in a tag that names its path, in the section of
+	// its scope.
+	require.Contains(t, blocks[3].Text, "<file path=\""+filepath.Join(tr.home, "AGENTS.md")+"\">\nBe brief.\n</file>")
+	require.NotContains(t, blocks[3].Text, "Use tabs.")
+	require.Contains(t, blocks[4].Text, "<file path=\""+filepath.Join(tr.repo, "AGENTS.md")+"\">\nUse tabs.\n</file>")
+	require.NotContains(t, blocks[4].Text, "Be brief.")
+	require.Contains(t, blocks[5].Text, "deploy: Ship a release")
+	require.Contains(t, blocks[6].Text, tr.workDir)
+	require.Contains(t, blocks[6].Text, tr.home)
+	require.Equal(t, "<house>\nHouse rules.\n</house>", blocks[8].Text)
 
 	// A section with nothing in it is left out, not sent empty.
 	blocks, err = agentctx.Build(agentctx.Prompt{Instructions: "UPSTREAM", WorkDir: tr.workDir})

@@ -20,8 +20,11 @@ const (
 	SectionTools = "tools"
 	// SectionRules is the guidance about the tools.
 	SectionRules = "rules"
-	// SectionProjectContext holds the context files.
-	SectionProjectContext = "project_context"
+	// SectionGlobalInstructions holds the user's context files, which hold
+	// for every project.
+	SectionGlobalInstructions = "global_instructions"
+	// SectionProjectInstructions holds the repository's AGENTS.md files.
+	SectionProjectInstructions = "project_instructions"
 	// SectionSkills lists the skills.
 	SectionSkills = "skills"
 	// SectionWorkDir names the working directory.
@@ -31,7 +34,7 @@ const (
 )
 
 var builtinSections = []string{
-	SectionPrompt, SectionTools, SectionRules, SectionProjectContext, SectionSkills, SectionWorkDir, SectionClient,
+	SectionPrompt, SectionTools, SectionRules, SectionGlobalInstructions, SectionProjectInstructions, SectionSkills, SectionWorkDir, SectionClient,
 }
 
 // ToolLine is one tool in the prompt's list of tools.
@@ -102,8 +105,9 @@ func Capabilities() *acp.SessionSystemPromptCapabilities {
 }
 
 // Build returns the system prompt's sections in order: the instructions,
-// tools, rules, project context, skills, working directory, the sections
-// added by configuration, and the client's appended prompt.
+// tools, rules, global instructions, project instructions, skills, working
+// directory, the sections added by configuration, and the client's appended
+// prompt.
 //
 // The instructions are plain text. Every section after them is wrapped in
 // a tag of its name, as pi's prompt is, so that the model can tell where a
@@ -144,7 +148,8 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 	if p.Loaded != nil {
 		loaded = *p.Loaded
 	}
-	add(SectionProjectContext, projectContext(loaded.Files))
+	add(SectionGlobalInstructions, contextFiles(loaded.Files, ScopeGlobal, "The user's instructions for every project:"))
+	add(SectionProjectInstructions, contextFiles(loaded.Files, ScopeProject, "Instructions from this repository's AGENTS.md files. Where they conflict with the global instructions, these take precedence:"))
 	add(SectionSkills, skillsText(loaded.Skills, p.SkillTool))
 	add(SectionWorkDir, workDirText(p.WorkDir, p.AdditionalDirs))
 	for _, section := range loaded.Sections {
@@ -227,18 +232,18 @@ func list(lines []string) string {
 // escapeAttribute keeps a path from ending the attribute it is in.
 var escapeAttribute = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
 
-// projectContext joins the context files, each in a tag that names its
-// path.
-func projectContext(files []File) string {
+// contextFiles joins the context files of one scope after an opening line,
+// each in a file tag that names its path.
+func contextFiles(files []File, scope Scope, opening string) string {
 	var b strings.Builder
 	for _, f := range files {
-		if strings.TrimSpace(f.Text) == "" {
+		if f.Scope != scope || strings.TrimSpace(f.Text) == "" {
 			continue
 		}
 		if b.Len() == 0 {
-			b.WriteString("Instructions from the context files:")
+			b.WriteString(opening)
 		}
-		fmt.Fprintf(&b, "\n\n<project_instructions path=\"%s\">\n%s\n</project_instructions>", escapeAttribute.Replace(f.Path), strings.Trim(f.Text, "\n"))
+		fmt.Fprintf(&b, "\n\n<file path=\"%s\">\n%s\n</file>", escapeAttribute.Replace(f.Path), strings.Trim(f.Text, "\n"))
 	}
 	return b.String()
 }

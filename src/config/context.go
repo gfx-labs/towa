@@ -9,19 +9,20 @@ package config
 // The two size limits default to none: no size has been measured to be the
 // right one, and a file over a limit fails the session.
 type Context struct {
-	// DefaultAgents turns on the default instruction files: ~/AGENTS.md,
-	// the .md files under ~/.agents/rules, and AGENTS.md in each directory
-	// from the repository root down to the working directory. A default
-	// file that does not exist is left out.
+	// DefaultAgents turns on the default instruction files: ~/AGENTS.md and
+	// the .md files under ~/.agents/rules, which are global instructions,
+	// and AGENTS.md in each directory from the repository root down to the
+	// working directory, which are the project's. A default file that does
+	// not exist is left out.
 	DefaultAgents bool `name:"default_agents" default:"true" help:"Read ~/AGENTS.md, ~/.agents/rules/*.md and AGENTS.md from the repository root down to the working directory. On by default."`
-	// Agents are instruction files and directories read after the default
-	// ones, in this order. A directory contributes every .md file under it,
-	// in path order. Each must exist.
-	Agents []string `name:"agents" placeholder:"PATH" validate:"dive,required" help:"Instruction files or directories of .md files, read after the defaults in this order. Each must exist."`
-	// AgentsText are instructions given inline, read after Agents in this
-	// order. A flag value is one whole entry, so text from a command such
-	// as --context.agents_text="$(cmd)" keeps its commas and newlines.
-	AgentsText []string `name:"agents_text" sep:"none" placeholder:"TEXT" validate:"dive,required" help:"Instruction text read after agents, in this order (repeatable). Each flag value is one entry."`
+	// Agents are global instruction files and directories, read after
+	// ~/.agents/rules in this order. A directory contributes every .md file
+	// under it, in path order. Each must exist.
+	Agents []string `name:"agents" placeholder:"PATH" validate:"dive,required" help:"Global instruction files or directories of .md files, read after ~/.agents/rules in this order. Each must exist."`
+	// AgentsText are global instructions given inline, read after Agents in
+	// this order. A flag value is one whole entry, so text from a command
+	// such as --context.agents_text="$(cmd)" keeps its commas and newlines.
+	AgentsText []string `name:"agents_text" sep:"none" placeholder:"TEXT" validate:"dive,required" help:"Global instruction text read after agents, in this order (repeatable). Each flag value is one entry."`
 	// SkillsEnabled exposes the skill-loading extra to the model.
 	SkillsEnabled bool `name:"skills_enabled" default:"true" help:"Give the model the tool that loads a skill. On by default."`
 	// DefaultSkills turns on ~/.agents/skills, searched before SkillsDirs.
