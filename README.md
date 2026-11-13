@@ -6,7 +6,7 @@ it is designed to be run in autonomous harness swarms and workflows in a single-
 
 there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
-try it with out with https://github.com/gfx-labs/acphost, a lightweight wrapper over acp that proxies and normalizes acp, along with providing journals, persistent sessions, and sandboxing.
+try it with out with https://github.com/gfx-labs/acpc or acpx
 
 there are a large amount of configuration keys, everything configurable through ENV, cli, or file.
 
