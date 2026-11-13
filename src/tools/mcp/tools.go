@@ -14,6 +14,7 @@ import (
 	"github.com/valyala/bytebufferpool"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -152,36 +153,32 @@ func (m *Manager) run(ctx context.Context, server, tool string, arguments jsonte
 	res, err := m.CallTool(ctx, server, tool, arguments)
 	if err != nil {
 		if _, ok := errors.AsType[*LoginRequiredError](err); ok {
-			return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q needs an OAuth login, which only the user can do. The call to %q did not run.", server, tool))
+			return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q needs an OAuth login, which only the user can do. The call to %q did not run.", server, tool))
 		}
 		if notSent, ok := errors.AsType[*notSentError](err); ok {
-			return textResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, notSent.err))
+			return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, notSent.err))
 		}
 		if refused, ok := errors.AsType[*jsonrpc.Error](err); ok && refused.Code != sdkTransportRejected {
-			return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q refused the call to %q: %s (code %d)", server, tool, refused.Message, refused.Code))
+			return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q refused the call to %q: %s (code %d)", server, tool, refused.Message, refused.Code))
 		}
 		if callErr, ok := errors.AsType[*CallError](err); ok {
 			// The call was sent. It is not sent again.
-			return textResult(transcript.OutcomeUnknown, fmt.Sprintf("The call to %q on MCP server %q got no result, and it may or may not have taken effect: %v", tool, server, callErr.Err))
+			return tools.TextResult(transcript.OutcomeUnknown, fmt.Sprintf("The call to %q on MCP server %q got no result, and it may or may not have taken effect: %v", tool, server, callErr.Err))
 		}
-		return textResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, err))
+		return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("The call to %q was not sent: %v", tool, err))
 	}
 	if res.NeedsInput() {
-		return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q asked for more input before running %q, which this harness does not support.", server, tool))
+		return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q asked for more input before running %q, which this harness does not support.", server, tool))
 	}
 	parts, err := resultParts(res)
 	if err != nil {
-		return textResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q answered the call to %q with content that could not be read: %v", server, tool, err))
+		return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("MCP server %q answered the call to %q with content that could not be read: %v", server, tool, err))
 	}
 	outcome := transcript.OutcomeCompleted
 	if res.IsError {
 		outcome = transcript.OutcomeFailed
 	}
 	return tools.Result{Outcome: outcome, Parts: parts}
-}
-
-func textResult(outcome transcript.Outcome, text string) tools.Result {
-	return tools.Result{Outcome: outcome, Parts: []transcript.Part{{Text: text}}}
 }
 
 // resultParts converts a result's content. A result that has only
@@ -269,10 +266,10 @@ func (m *Manager) metaTool(servers []Server) tools.Tool {
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var in metaInput
 			if err := json.Unmarshal(call.Input, &in); err != nil {
-				return textResult(transcript.OutcomeFailed, fmt.Sprintf("The input is not valid: %v", err)), nil
+				return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("The input is not valid: %v", err)), nil
 			}
 			if in.Server != "" && !has(in.Server) {
-				return textResult(transcript.OutcomeFailed, fmt.Sprintf("There is no MCP server named %q. Use action \"list\".", in.Server)), nil
+				return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("There is no MCP server named %q. Use action \"list\".", in.Server)), nil
 			}
 			switch in.Action {
 			case actionList:
@@ -288,14 +285,14 @@ func (m *Manager) metaTool(servers []Server) tools.Tool {
 				return m.metaSearch(ctx, names, in.Query)
 			case actionCall:
 				if in.Server == "" || in.Tool == "" {
-					return textResult(transcript.OutcomeFailed, `Action "call" needs "server" and "tool".`), nil
+					return tools.TextResult(transcript.OutcomeFailed, `Action "call" needs "server" and "tool".`), nil
 				}
 				if len(in.Arguments) > 0 && in.Arguments.Kind() != '{' {
-					return textResult(transcript.OutcomeFailed, `"arguments" must be an object.`), nil
+					return tools.TextResult(transcript.OutcomeFailed, `"arguments" must be an object.`), nil
 				}
 				return m.run(ctx, in.Server, in.Tool, in.Arguments), nil
 			default:
-				return textResult(transcript.OutcomeFailed, fmt.Sprintf("Unknown action %q. Use \"list\", \"search\" or \"call\".", in.Action)), nil
+				return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("Unknown action %q. Use \"list\", \"search\" or \"call\".", in.Action)), nil
 			}
 		},
 	}
@@ -409,5 +406,5 @@ func jsonResult(v any) (tools.Result, error) {
 	if err := json.MarshalWrite(buf, v, json.Deterministic(true)); err != nil {
 		return tools.Result{}, fmt.Errorf("mcp: encode result: %w", err)
 	}
-	return textResult(transcript.OutcomeCompleted, buf.String()), nil
+	return tools.TextResult(transcript.OutcomeCompleted, buf.String()), nil
 }

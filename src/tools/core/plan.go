@@ -6,9 +6,11 @@ import (
 	"encoding/json/v2"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/todo"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 func planTool(spec provider.Tool, deps Deps) tools.Tool {
@@ -33,7 +35,7 @@ func planTool(spec provider.Tool, deps Deps) tools.Tool {
 				Goals jsontext.Value `json:"goals"`
 			}
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
-				return textResult("Invalid todo input: "+err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Invalid todo input: "+err.Error()), nil
 			}
 			list := todo.List{}
 			for _, item := range args.Todos {
@@ -41,12 +43,12 @@ func planTool(spec provider.Tool, deps Deps) tools.Tool {
 			}
 			checked, err := todo.Check(list)
 			if err != nil {
-				return textResult(err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, err.Error()), nil
 			}
 			if err := deps.ShowPlan(ctx, call.Env, checked.Entries); err != nil {
 				return tools.Result{}, err
 			}
-			return textResult("The task list was updated.", false), nil
+			return tools.TextResult(transcript.OutcomeCompleted, "The task list was updated."), nil
 		},
 	}
 }

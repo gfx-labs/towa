@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/tools"
@@ -52,7 +53,7 @@ func Batch(cfg config.ToolsBatch, dispatcher func(context.Context) (batch.Dispat
 				return tools.Result{}, err
 			}
 			if name == NameBatch {
-				return textResult(transcript.OutcomeFailed, "Cannot batch the 'batch' tool"), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Cannot batch the 'batch' tool"), nil
 			}
 			delete(raw, "tool")
 			input, err := json.Marshal(raw)
@@ -75,7 +76,7 @@ func Batch(cfg config.ToolsBatch, dispatcher func(context.Context) (batch.Dispat
 			if e.Kind == batch.KindTooMany {
 				text = fmt.Sprintf("Maximum %d tool calls allowed", e.Limit)
 			}
-			return textResult(transcript.OutcomeFailed, text), nil
+			return tools.TextResult(transcript.OutcomeFailed, text), nil
 		}
 		result := tools.Result{Outcome: batch.Outcome(items)}
 		succeeded, failed := 0, 0

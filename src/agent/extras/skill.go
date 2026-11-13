@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/tools"
@@ -41,7 +42,7 @@ func Skill(cfg config.Context, skills []agentctx.Skill) (tools.Tool, error) {
 			return tools.Result{}, err
 		}
 		if in.Action != "" && in.Action != "load" {
-			return textResult(transcript.OutcomeFailed, "Only the load action is supported."), nil
+			return tools.TextResult(transcript.OutcomeFailed, "Only the load action is supported."), nil
 		}
 		name := strings.TrimLeft(strings.TrimSpace(in.Name), "/")
 		res, err := skill.Load(ctx, skills, maxBytes, skill.Input{Name: name})
@@ -59,9 +60,9 @@ func Skill(cfg config.Context, skills []agentctx.Skill) (tools.Tool, error) {
 			case skill.KindTooLarge:
 				text = fmt.Sprintf("Skill '%s' is %d bytes, over context.max_file_bytes (%d).", e.Name, e.Size, e.Limit)
 			}
-			return textResult(transcript.OutcomeFailed, text), nil
+			return tools.TextResult(transcript.OutcomeFailed, text), nil
 		}
-		return textResult(transcript.OutcomeCompleted, fmt.Sprintf("## Skill: %s\n\n**Base directory**: %s\n\n%s", res.Name, res.Dir, res.Text)), nil
+		return tools.TextResult(transcript.OutcomeCompleted, fmt.Sprintf("## Skill: %s\n\n**Base directory**: %s\n\n%s", res.Name, res.Dir, res.Text)), nil
 	}
 	return t, nil
 }

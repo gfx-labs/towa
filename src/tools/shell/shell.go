@@ -15,7 +15,9 @@ import (
 	"unicode/utf8"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/support/procgroup"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/fsops"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -197,7 +199,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	cmd := exec.Command(program, args...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = write, write
-	cmd.SysProcAttr = groupAttr()
+	procgroup.Set(cmd)
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
 		return Result{}, errors.Join(fmt.Errorf("shell: start %s: %w", program, err), read.Close(), write.Close())
@@ -206,7 +208,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	// The command holds its own copy. Ours has to go, or the read never
 	// ends.
 	if err := write.Close(); err != nil {
-		return Result{}, errors.Join(fmt.Errorf("shell: %w", err), killGroup(cmd.Process.Pid), cmd.Wait(), read.Close())
+		return Result{}, errors.Join(fmt.Errorf("shell: %w", err), procgroup.Kill(cmd.Process.Pid), cmd.Wait(), read.Close())
 	}
 
 	out := &collector{limit: maxOutput, progress: env.Progress}
@@ -274,12 +276,12 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 // returns the name of the signal that stopped the command.
 func stop(pid int, exited <-chan error, grace time.Duration) (signal string, waitErr, killErr error) {
 	if grace == 0 {
-		killErr = killGroup(pid)
+		killErr = procgroup.Kill(pid)
 		return syscall.SIGKILL.String(), <-exited, killErr
 	}
-	if err := terminateGroup(pid); err != nil {
+	if err := procgroup.Terminate(pid); err != nil {
 		// The polite signal could not be sent. The group is still killed.
-		killErr = errors.Join(err, killGroup(pid))
+		killErr = errors.Join(err, procgroup.Kill(pid))
 		return syscall.SIGKILL.String(), <-exited, killErr
 	}
 	timer := time.NewTimer(grace)
@@ -291,9 +293,9 @@ func stop(pid int, exited <-chan error, grace time.Duration) (signal string, wai
 		// for, so its process id is free: the kill reaches another group
 		// only if the kernel gave the id out again and that process made
 		// itself a group leader in the time between.
-		return syscall.SIGTERM.String(), waitErr, killGroup(pid)
+		return syscall.SIGTERM.String(), waitErr, procgroup.Kill(pid)
 	case <-timer.C:
-		killErr = killGroup(pid)
+		killErr = procgroup.Kill(pid)
 		return syscall.SIGKILL.String(), <-exited, killErr
 	}
 }

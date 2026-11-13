@@ -9,6 +9,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/webfetch"
@@ -40,13 +41,13 @@ func WebFetch(cfg config.WebFetch, client *http.Client) (tools.Tool, error) {
 			if !ok {
 				return tools.Result{}, err
 			}
-			return textResult(transcript.OutcomeFailed, fetchError(e)), nil
+			return tools.TextResult(transcript.OutcomeFailed, fetchError(e)), nil
 		}
 		text := fmt.Sprintf("Fetched %s (%d bytes)\n\n%s", res.URL, len(res.Text)+int(res.OmittedBytes), res.Text)
 		if res.OmittedBytes > 0 {
 			text += fmt.Sprintf("\n\n(output truncated to %d of %d bytes; fetch a more specific URL or anchor for the rest)", len(res.Text), int64(len(res.Text))+res.OmittedBytes)
 		}
-		return textResult(transcript.OutcomeCompleted, text), nil
+		return tools.TextResult(transcript.OutcomeCompleted, text), nil
 	}
 	return t, nil
 }

@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
-	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Names identify extras to the toolset's collision and disable checks.
@@ -25,10 +25,6 @@ const (
 
 // ErrDisabled means configuration has turned the extra off.
 var ErrDisabled = errors.New("extra is disabled")
-
-func textResult(outcome transcript.Outcome, text string) tools.Result {
-	return tools.Result{Outcome: outcome, Parts: []transcript.Part{{Text: text}}, Content: []acp.ToolCallContent{tools.TextContent(text)}}
-}
 
 func newTool(name, description string, kind acp.ToolKind, schema jsontext.Value) tools.Tool {
 	return tools.Tool{

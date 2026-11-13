@@ -10,6 +10,7 @@ import (
 	"github.com/valyala/bytebufferpool"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/tools"
@@ -50,7 +51,7 @@ func ConversationSearch(cfg config.ConversationSearch, st store.Store) (tools.To
 		if in.Session != "" {
 			target.Session, err = uuid.Parse(in.Session)
 			if err != nil {
-				return textResult(transcript.OutcomeFailed, "The session must be a UUID."), nil
+				return tools.TextResult(transcript.OutcomeFailed, "The session must be a UUID."), nil
 			}
 		}
 		access := convsearch.Access{Session: session, Widest: convsearch.Scope(cfg.Scope)}
@@ -123,7 +124,7 @@ func ConversationSearch(cfg config.ConversationSearch, st store.Store) (tools.To
 		if out.Len() == 0 {
 			_, _ = out.WriteString("Please provide a 'query' to search, 'turns' range to retrieve, or 'stats': true to see conversation statistics.")
 		}
-		return textResult(transcript.OutcomeCompleted, out.String()), nil
+		return tools.TextResult(transcript.OutcomeCompleted, out.String()), nil
 	}
 	return t, nil
 }
@@ -148,5 +149,5 @@ func conversationError(err error) (tools.Result, error) {
 	case convsearch.KindInvalidRange:
 		text = "The range start must be nonnegative and end must be greater than start."
 	}
-	return textResult(transcript.OutcomeFailed, text), nil
+	return tools.TextResult(transcript.OutcomeFailed, text), nil
 }

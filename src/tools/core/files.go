@@ -9,10 +9,12 @@ import (
 	"os"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 type editArgs struct {
@@ -55,7 +57,7 @@ func writeTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args writeArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
-				return textResult("Invalid write input: "+err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Invalid write input: "+err.Error()), nil
 			}
 			roots := fsops.RootsOf(call.Env, cfg.Files)
 			path, err := roots.Resolve(args.Path)
@@ -84,7 +86,7 @@ func writeTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 			if change.Existed {
 				text = fmt.Sprintf("The file %s has been updated successfully.", path)
 			}
-			result := textResult(text, false)
+			result := tools.TextResult(transcript.OutcomeCompleted, text)
 			result.Content = []acp.ToolCallContent{change.Diff()}
 			return result, nil
 		},
@@ -98,7 +100,7 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args editArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
-				return textResult("Invalid edit input: "+err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Invalid edit input: "+err.Error()), nil
 			}
 			roots := fsops.RootsOf(call.Env, cfg.Files)
 			path, err := roots.Resolve(args.Path)
@@ -106,7 +108,7 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 				return fileFailure(err), nil
 			}
 			if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
-				return textResult("File does not exist. Use write to create a file.", true), nil
+				return tools.TextResult(transcript.OutcomeFailed, "File does not exist. Use write to create a file."), nil
 			}
 			edits := make([]fsops.Edit, len(args.Edits))
 			for i, e := range args.Edits {
@@ -121,7 +123,7 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 			if err != nil {
 				return editFailure(err, edits), nil
 			}
-			result := textResult(fmt.Sprintf("The file %s has been updated successfully.", path), false)
+			result := tools.TextResult(transcript.OutcomeCompleted, fmt.Sprintf("The file %s has been updated successfully.", path))
 			result.Content = []acp.ToolCallContent{change.Diff()}
 			return result, nil
 		},
@@ -139,22 +141,22 @@ func editFailure(err error, edits []fsops.Edit) tools.Result {
 	at := fmt.Sprintf("edits[%d]", fileErr.Edit)
 	switch fileErr.Kind {
 	case fsops.KindNoEdits:
-		return textResult("edits is empty. Give at least one replacement.", true)
+		return tools.TextResult(transcript.OutcomeFailed, "edits is empty. Give at least one replacement.")
 	case fsops.KindEmptyOld:
-		return textResult(at+".old_string is empty. Use write to create a file or to replace all of one."+unchanged, true)
+		return tools.TextResult(transcript.OutcomeFailed, at+".old_string is empty. Use write to create a file or to replace all of one."+unchanged)
 	case fsops.KindSameText:
-		return textResult(at+": old_string and new_string are exactly the same."+unchanged, true)
+		return tools.TextResult(transcript.OutcomeFailed, at+": old_string and new_string are exactly the same."+unchanged)
 	case fsops.KindNoMatch:
 		text := at + ".old_string was not found in the file."
 		if fileErr.Edit > 0 {
 			// Each edit sees the result of the ones before it.
 			text += " Edits are applied in order, so an earlier edit of this call may have changed that text."
 		}
-		return textResult(text+unchanged+"\nString: "+edits[fileErr.Edit].Old, true)
+		return tools.TextResult(transcript.OutcomeFailed, text+unchanged+"\nString: "+edits[fileErr.Edit].Old)
 	case fsops.KindNotUnique:
-		return textResult(fmt.Sprintf("%s.old_string occurs %d times in the file and replace_all is false. Set replace_all to replace every occurrence, or add surrounding lines so that it names one.%s", at, fileErr.Count, unchanged), true)
+		return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf("%s.old_string occurs %d times in the file and replace_all is false. Set replace_all to replace every occurrence, or add surrounding lines so that it names one.%s", at, fileErr.Count, unchanged))
 	case fsops.KindNoChange:
-		return textResult("The edits leave the file exactly as it was.", true)
+		return tools.TextResult(transcript.OutcomeFailed, "The edits leave the file exactly as it was.")
 	default:
 		return fileFailure(err)
 	}
@@ -162,10 +164,10 @@ func editFailure(err error, edits []fsops.Edit) tools.Result {
 
 func fileFailure(err error) tools.Result {
 	if _, unread := errors.AsType[*UnreadError](err); unread {
-		return textResult("File has not been read yet. Read it first before writing to it.", true)
+		return tools.TextResult(transcript.OutcomeFailed, "File has not been read yet. Read it first before writing to it.")
 	}
 	if _, changed := errors.AsType[*ChangedError](err); changed {
-		return textResult("File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.", true)
+		return tools.TextResult(transcript.OutcomeFailed, "File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.")
 	}
-	return textResult(err.Error(), true)
+	return tools.TextResult(transcript.OutcomeFailed, err.Error())
 }

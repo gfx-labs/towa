@@ -9,10 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/gfx-labs/towa/src/support/procgroup"
 )
 
 // stdioTransport starts a server as the leader of its own process group and
@@ -34,7 +35,7 @@ func (t *stdioTransport) Connect(context.Context) (sdk.Connection, error) {
 	cmd := exec.Command(t.server.Command, t.server.Args...)
 	cmd.Dir = t.dir
 	cmd.Env = append(os.Environ(), t.server.Env...)
-	setProcessGroup(cmd)
+	procgroup.Set(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -137,7 +138,7 @@ func (p *process) shutdown() error {
 		if p.waitFor(p.exited) {
 			return
 		}
-		_ = signalGroup(p.cmd.Process.Pid, syscall.SIGTERM)
+		_ = procgroup.Terminate(p.cmd.Process.Pid)
 		if p.waitFor(p.exited) {
 			return
 		}
@@ -162,7 +163,7 @@ func (p *process) waitFor(done <-chan struct{}) bool {
 // killGroup kills the server and every process still in its group. A group
 // that is already gone is not an error.
 func (p *process) killGroup() {
-	_ = signalGroup(p.cmd.Process.Pid, syscall.SIGKILL)
+	_ = procgroup.Kill(p.cmd.Process.Pid)
 }
 
 // closePipes closes our ends of stdout and stderr, which ends the reads of

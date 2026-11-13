@@ -10,6 +10,7 @@ import (
 	"io"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/transcript"
 )
@@ -101,6 +102,11 @@ type Result struct {
 	// Content is what the client is shown, such as a diff. When it is empty
 	// the client is shown Parts.
 	Content []acp.ToolCallContent
+}
+
+// TextResult is a result that holds one text, for the model and the client.
+func TextResult(outcome transcript.Outcome, text string) Result {
+	return Result{Outcome: outcome, Parts: []transcript.Part{{Text: text}}}
 }
 
 // Set is a session's tools, in the order the model is told about them.

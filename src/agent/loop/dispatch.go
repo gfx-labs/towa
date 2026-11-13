@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/hooks"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/tools"
@@ -35,21 +36,17 @@ func Settle(effect tools.Effect, res tools.Result, runErr error, cancelled bool)
 	switch {
 	case runErr == nil:
 		if _, err := Status(res.Outcome); err != nil {
-			return textResult(transcript.OutcomeFailed, textNoOutcome)
+			return tools.TextResult(transcript.OutcomeFailed, textNoOutcome)
 		}
 		res.Parts = told(res.Parts)
 		return res
 	case cancelled && effect == tools.ReadOnly:
-		return textResult(transcript.OutcomeCancelled, textReadStopped)
+		return tools.TextResult(transcript.OutcomeCancelled, textReadStopped)
 	case cancelled:
-		return textResult(transcript.OutcomeUnknown, textUnknown)
+		return tools.TextResult(transcript.OutcomeUnknown, textUnknown)
 	default:
-		return textResult(transcript.OutcomeFailed, fmt.Sprintf(textHarnessError, runErr))
+		return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf(textHarnessError, runErr))
 	}
-}
-
-func textResult(outcome transcript.Outcome, text string) tools.Result {
-	return tools.Result{Outcome: outcome, Parts: []transcript.Part{{Text: text}}}
 }
 
 // JobFor is what the scheduler needs to know about a call. A call is taken
@@ -238,14 +235,14 @@ func (d Dispatcher) Run(ctx context.Context, calls []transcript.ToolCall) Dispat
 	tools.RunAll(tools.Waits(jobs), func(i int) {
 		var res tools.Result
 		if refused[i] != nil {
-			res = textResult(refused[i].Outcome, refused[i].Text)
+			res = tools.TextResult(refused[i].Outcome, refused[i].Text)
 		} else {
 			res = d.runOne(ctx, b, calls[i], plan[i])
 		}
 		out.Results[i] = transcript.ToolResult{CallID: calls[i].ID, Name: calls[i].Name, Parts: res.Parts, Outcome: res.Outcome}
 		update, err := ToolResult(out.Results[i], res.Content)
 		if err != nil {
-			// Settle and textResult only give the four outcomes.
+			// Settle and tools.TextResult only give the four outcomes.
 			panic(err)
 		}
 		d.Update(update)
@@ -360,7 +357,7 @@ func logHook(ctx context.Context, logger *slog.Logger, session acp.SessionId, er
 // call waited for its turn.
 func (d Dispatcher) runOne(ctx context.Context, b *budget, call transcript.ToolCall, p planned) tools.Result {
 	if ctx.Err() != nil {
-		return textResult(transcript.OutcomeCancelled, textInterrupted)
+		return tools.TextResult(transcript.OutcomeCancelled, textInterrupted)
 	}
 	id := acp.ToolCallId(call.ID)
 	running := acp.ToolCallStatusInProgress
@@ -412,7 +409,7 @@ func (d Dispatcher) execute(
 	}
 	logHook(ctx, d.Logger, d.Env.SessionID, err)
 	if decision.Action != hooks.Allow {
-		return textResult(transcript.OutcomeFailed, decision.Reason)
+		return tools.TextResult(transcript.OutcomeFailed, decision.Reason)
 	}
 	return res
 }

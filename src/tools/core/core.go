@@ -15,10 +15,10 @@ import (
 	"sync"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
-	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // Deps holds session-owned state and client operations. Reads must be kept
@@ -110,12 +110,4 @@ func decodeSpec(name string) parsedSpec {
 		spec:    provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema},
 		summary: spec.Summary, guidance: spec.Guidance,
 	}
-}
-
-func textResult(text string, failed bool) tools.Result {
-	outcome := transcript.OutcomeCompleted
-	if failed {
-		outcome = transcript.OutcomeFailed
-	}
-	return tools.Result{Outcome: outcome, Parts: []transcript.Part{{Text: text}}}
 }

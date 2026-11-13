@@ -87,7 +87,6 @@ func TestConversationSearchRunsOnFullStoredHistory(t *testing.T) {
 	require.Contains(t, text(res), child.String())
 	require.NotContains(t, text(res), other.String())
 	require.Contains(t, text(res), "the old quokka marker")
-	require.Equal(t, text(res), res.Content[0].Content.Content.Text.Text)
 	for _, input := range []string{`{"scope":"store","query":"quokka"}`, `{"session":"` + other.String() + `","query":"quokka"}`, `{"query":""}`, `{"turns":{"start":2,"end":1}}`} {
 		require.Equal(t, transcript.OutcomeFailed, run(t, tool, input, env).Outcome)
 	}

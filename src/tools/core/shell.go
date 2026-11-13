@@ -8,11 +8,13 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/fsops"
 	"github.com/gfx-labs/towa/src/tools/shell"
+	"github.com/gfx-labs/towa/src/transcript"
 )
 
 type readArgs struct {
@@ -39,7 +41,7 @@ func readTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args readArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
-				return textResult("Invalid read input: "+err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Invalid read input: "+err.Error()), nil
 			}
 			result, err := ReadFile(ctx, fsops.RootsOf(call.Env, cfg.Files), cfg.Files, tracker, fsops.ReadInput{Path: args.Path, Offset: args.Offset, Limit: args.Limit})
 			if err != nil {
@@ -74,23 +76,23 @@ func bashTool(spec provider.Tool, cfg config.Tools) tools.Tool {
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args bashArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
-				return textResult("Invalid bash input: "+err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Invalid bash input: "+err.Error()), nil
 			}
 			in := shell.Input{Command: args.Command, CancelGrace: stopGrace, TimeoutGrace: stopGrace}
 			if args.Timeout != nil {
 				ms := *args.Timeout
 				if math.IsNaN(ms) || math.IsInf(ms, 0) || ms <= 0 || ms > float64(cfg.Shell.MaxTimeout)/float64(time.Millisecond) {
-					return textResult("timeout must be positive and within the configured maximum.", true), nil
+					return tools.TextResult(transcript.OutcomeFailed, "timeout must be positive and within the configured maximum."), nil
 				}
 				ns := ms * float64(time.Millisecond)
 				if ns < 1 || ns >= float64(math.MaxInt64) {
-					return textResult("timeout is outside the supported duration range.", true), nil
+					return tools.TextResult(transcript.OutcomeFailed, "timeout is outside the supported duration range."), nil
 				}
 				in.Timeout = time.Duration(ns)
 			}
 			result, err := shell.Run(ctx, call.Env, cfg, in)
 			if err != nil {
-				return textResult(err.Error(), true), nil
+				return tools.TextResult(transcript.OutcomeFailed, err.Error()), nil
 			}
 			return bashResult(result), nil
 		},

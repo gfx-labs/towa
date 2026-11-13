@@ -20,7 +20,7 @@ func readResult(read fsops.ReadResult) tools.Result {
 		return tools.Result{Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Image: read.Image}}}
 	}
 	if read.Text == "" {
-		return textResult("<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>", false)
+		return tools.TextResult(transcript.OutcomeCompleted, "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>")
 	}
 	// The lines go as they are in the file, without their numbers: a number
 	// and a tab on every line were about a tenth of a source file's tokens
@@ -34,7 +34,7 @@ func readResult(read fsops.ReadResult) tools.Result {
 	if read.More {
 		text += fmt.Sprintf("\n[More lines remain. Continue with offset %d.]", read.FirstLine+read.Lines)
 	}
-	return textResult(text, false)
+	return tools.TextResult(transcript.OutcomeCompleted, text)
 }
 
 func bashResult(run shell.Result) tools.Result {
@@ -77,7 +77,7 @@ func bashResult(run shell.Result) tools.Result {
 	if run.PipeHeld {
 		output += "\n[Output pipe remained open after the configured drain deadline.]"
 	}
-	result := textResult(output, false)
+	result := tools.TextResult(transcript.OutcomeCompleted, output)
 	result.Outcome = run.Outcome()
 	return result
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/websearch"
@@ -56,10 +57,10 @@ func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
 			if !ok {
 				return tools.Result{}, err
 			}
-			return textResult(transcript.OutcomeFailed, searchError(e)), nil
+			return tools.TextResult(transcript.OutcomeFailed, searchError(e)), nil
 		}
 		if len(results) == 0 {
-			return textResult(transcript.OutcomeCompleted, "No results found for: "+in.Query), nil
+			return tools.TextResult(transcript.OutcomeCompleted, "No results found for: "+in.Query), nil
 		}
 		var out strings.Builder
 		fmt.Fprintf(&out, "Search results for: %s\n", in.Query)
@@ -69,7 +70,7 @@ func WebSearch(cfg config.WebSearch, client *http.Client) (tools.Tool, error) {
 				fmt.Fprintf(&out, "   %s\n", r.Snippet)
 			}
 		}
-		return textResult(transcript.OutcomeCompleted, out.String()), nil
+		return tools.TextResult(transcript.OutcomeCompleted, out.String()), nil
 	}
 	return t, nil
 }

@@ -52,9 +52,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/support/procgroup"
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
@@ -334,16 +334,14 @@ func execute(ctx context.Context, h config.Hook, cwd string, payload []byte) (st
 	cmd := exec.Command(h.Command[0], h.Command[1:]...) //nolint:gosec // the operator's configured command
 	cmd.Dir = cwd
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = child[0], child[1], child[2]
-	// The command leads a new process group, so that it and everything it
-	// starts can be killed together.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	procgroup.Set(cmd)
 	startErr := cmd.Start()
 	// The child has its own copies of these ends.
 	closeErr := closeAll(child[:])
 	if startErr != nil || closeErr != nil {
 		err := errors.Join(startErr, closeErr, closeAll(ours[:]))
 		if startErr == nil {
-			err = errors.Join(err, killGroup(cmd.Process.Pid), cmd.Wait())
+			err = errors.Join(err, procgroup.Kill(cmd.Process.Pid), cmd.Wait())
 		}
 		return nil, nil, &Error{Kind: KindStart, Err: err}
 	}
@@ -382,7 +380,7 @@ func execute(ctx context.Context, h config.Hook, cwd string, payload []byte) (st
 		failure = &Error{Kind: KindTimeout, Detail: "after " + h.Timeout.String()}
 	}
 	// Kill first, so nothing in the group writes after the close.
-	if err := killGroup(cmd.Process.Pid); err != nil {
+	if err := procgroup.Kill(cmd.Process.Pid); err != nil {
 		failure.Err = errors.Join(failure.Err, err)
 	}
 	closeOurs()

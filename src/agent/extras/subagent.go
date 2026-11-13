@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/agent/subagent"
@@ -82,7 +83,7 @@ func Subagent(spawner *subagent.Spawner, runner subagent.Runner) (tools.Tool, er
 		if err != nil {
 			return tools.Result{}, err
 		}
-		return textResult(outcome, string(body)), nil
+		return tools.TextResult(outcome, string(body)), nil
 	}
 	return t, nil
 }

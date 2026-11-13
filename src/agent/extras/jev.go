@@ -10,6 +10,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/sidecar/jev"
 	"github.com/gfx-labs/towa/src/tools"
@@ -40,7 +41,7 @@ func JevDecision(client *jev.Client, credential func(context.Context) (auth.Cred
 		req := jev.Request{Instructions: in.Instructions, State: in.State}
 		if in.TimeoutMS != nil {
 			if *in.TimeoutMS <= 0 || *in.TimeoutMS > int64((1<<63-1)/time.Millisecond) {
-				return textResult(transcript.OutcomeFailed, "Decision timeout_ms must be positive and fit a duration."), nil
+				return tools.TextResult(transcript.OutcomeFailed, "Decision timeout_ms must be positive and fit a duration."), nil
 			}
 			req.Timeout = time.Duration(*in.TimeoutMS) * time.Millisecond
 		}
@@ -59,10 +60,10 @@ func JevDecision(client *jev.Client, credential func(context.Context) (auth.Cred
 		res, err := client.Decide(ctx, cred, req)
 		if err != nil {
 			if input, ok := errors.AsType[*jev.InputError](err); ok {
-				return textResult(transcript.OutcomeFailed, input.Error()), nil
+				return tools.TextResult(transcript.OutcomeFailed, input.Error()), nil
 			}
 			if e, ok := errors.AsType[*jev.Error](err); ok {
-				return textResult(transcript.OutcomeFailed, decisionError(e)), nil
+				return tools.TextResult(transcript.OutcomeFailed, decisionError(e)), nil
 			}
 			return tools.Result{}, err
 		}
@@ -74,7 +75,7 @@ func JevDecision(client *jev.Client, credential func(context.Context) (auth.Cred
 		if err != nil {
 			return tools.Result{}, err
 		}
-		return textResult(transcript.OutcomeCompleted, string(body)), nil
+		return tools.TextResult(transcript.OutcomeCompleted, string(body)), nil
 	}
 	return t, nil
 }
