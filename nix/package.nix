@@ -16,14 +16,13 @@ buildGo127Module {
       ../go.mod
       ../go.sum
       ../cmd
-      ../pkg
       ../src
     ];
   };
 
   # The hash of the modules go.sum names. After a dependency changes, set it
   # to lib.fakeHash, build, and copy the hash the error prints.
-  vendorHash = "sha256-gA7CHUhMbAzrpFsRmXa/OO4hT9WryEh5tUh/pim1VzE=";
+  vendorHash = "sha256-I3FpjjkaAAI9mmAn9dhw1xrgQgjjo2DctHLHKpA5SSg=";
 
   subPackages = [ "cmd/towa" ];
 

@@ -32,7 +32,7 @@ import (
 const timeout = 30 * time.Second
 
 // echo answers a request with its own params. The params type is left to
-// the compiler, so this file does not name the JSON package pkg/acp uses.
+// the compiler, so this file does not name the JSON package go-acp uses.
 func echo[P any](_ context.Context, _ string, params P) (any, *acp.RequestError) {
 	return params, nil
 }

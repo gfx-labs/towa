@@ -3,7 +3,7 @@ package loop
 import (
 	"errors"
 
-	"github.com/gfx-labs/towa/pkg/harness"
+	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/models"

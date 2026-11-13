@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	acp "github.com/gfx-labs/go-acp"
-	"github.com/gfx-labs/towa/pkg/harness"
+	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/config"
 )

@@ -47,7 +47,7 @@ Packages:
 |---|---|
 | `cmd/towa` | a shim that calls `src/cli` |
 | `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
-| `pkg/harness` | what towa adds to ACP messages under `_meta.towa`, as types a client imports |
+| `src/agent/harness` | what towa adds to ACP messages under `_meta.towa`: stops and moves |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
 | `src/support/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
 | `src/config` | the typed config, its flags, and the loader for files, environment and flags |
@@ -85,7 +85,7 @@ Packages:
 
 No test enforces this table (`docs/notes/2026-11-12-src-layout.md`).
 
-`src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. The ACP package moved to `pkg/acp` on 2026-11-11 so protocol7's worker could import it as the client side, and to its own module `github.com/gfx-labs/go-acp` on 2026-11-13 (`docs/notes/2026-11-13-go-acp.md`).
+`src/` holds every package. There is no `pkg/`: one is made when a real external caller needs a package. The ACP package was in `pkg/acp` from 2026-11-11, so that protocol7's worker could import it as the client side, and became its own module `github.com/gfx-labs/go-acp` on 2026-11-13 (`docs/notes/2026-11-13-go-acp.md`). `pkg/harness`, which no outside caller imported, then moved to `src/agent/harness`.
 
 ## Process and transports
 
@@ -467,7 +467,7 @@ Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`
 
 `promptCapabilities` advertises `image`, and a prompt may hold image blocks. Every provider carries an image in a user message (Messages `image`, Responses `input_image`, Chat Completions `image_url`), and a model that cannot take one answers with the provider's error. Audio and embedded resources in a prompt are refused, since not every provider takes them in a user message. Images a tool returns, such as `read` of a PNG, reach the client as image content of the `tool_call_update`.
 
-ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`pkg/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
+ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`src/agent/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
 
 A chain with one entry does not wait out a rate limit: it reports it. In a pod, the workflow that owns account choice decides whether to wait or move.
 
@@ -510,7 +510,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 ## Code conventions
 
-- Go 1.27.3 with `CGO_ENABLED=0`. Packages start in `src/`, with deliberate promotion to `pkg/` for external callers.
+- Go 1.27.3 with `CGO_ENABLED=0`. Packages live in `src/`, and one moves to a `pkg/` only for an external caller.
 - JSON is `encoding/json/v2` with `jsontext`, enforced by lint. Per-message buffers come from `valyala/bytebufferpool` where a benchmark shows it saves memory. The measured behaviour is in `docs/notes/2026-11-11-contracts-and-conventions.md`.
 - kong is the CLI and fills the config struct. Config files are YAML or JSON, read with `goccy/go-yaml`. The reasons and measurements are in `docs/notes/2026-11-11-kong-config.md`.
 - golangci-lint v2.15 with acphost's configuration and gofumpt.

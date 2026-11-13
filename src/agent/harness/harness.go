@@ -1,6 +1,6 @@
 // Package harness defines what towa adds to ACP messages under the
 // "towa" key of _meta, and under the same key in the data of an error
-// response. A client imports it to read those additions as types.
+// response. A client reads the additions in that shape.
 package harness
 
 import (
