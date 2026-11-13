@@ -32,6 +32,11 @@ func result(call transcript.ToolCall, outcome transcript.Outcome, text string) t
 	}
 }
 
+// userText is a user message of one text part.
+func userText(text string) transcript.Item {
+	return transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}
+}
+
 // filled returns parts without the ones that have nothing set, which a
 // provider refuses.
 func filled(parts []transcript.Part) []transcript.Part {
@@ -52,6 +57,25 @@ func told(parts []transcript.Part) []transcript.Part {
 	return kept
 }
 
+// answeredCalls is the ids of the calls in history that have a result.
+func answeredCalls(history []transcript.Item) map[string]bool {
+	answered := map[string]bool{}
+	for _, item := range history {
+		if item.ToolResult != nil {
+			answered[item.ToolResult.CallID] = true
+		}
+	}
+	return answered
+}
+
+// dangling reports a call without a result that something follows.
+func dangling(open []transcript.Item) error {
+	if len(open) == 0 {
+		return nil
+	}
+	return fmt.Errorf("loop: tool call %s has no result and is not at the end of the session", open[0].ToolResult.CallID)
+}
+
 // Conversation prepares the items returned by compact.Items for a model
 // request. It returns the items a provider accepts, and the results to store
 // first for calls that have none.
@@ -64,26 +88,15 @@ func told(parts []transcript.Part) []transcript.Part {
 // and a user message stored with one as UserItem would have: without the
 // part, and not at all when no part is left.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
-	interrupted := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: interruption}}}}
+	interrupted := userText(interruption)
 	if err := interrupted.Validate(); err != nil {
 		return nil, nil, err
 	}
-	answered := map[string]bool{}
-	for _, item := range history {
-		if item.ToolResult != nil {
-			answered[item.ToolResult.CallID] = true
-		}
-	}
+	answered := answeredCalls(history)
 	// A call is stored before it is dispatched and its result before
 	// anything else, and every turn starts here. So a call without a result
 	// can only be at the end, where its result is appended.
 	var open []transcript.Item
-	dangling := func() error {
-		if len(open) == 0 {
-			return nil
-		}
-		return fmt.Errorf("loop: tool call %s has no result and is not at the end of the session", open[0].ToolResult.CallID)
-	}
 	for _, item := range history {
 		if err := item.Validate(); err != nil {
 			return nil, nil, err
@@ -103,7 +116,7 @@ func Conversation(history []transcript.Item, interruption string) (items []trans
 			item.ToolResult = &result
 			items = append(items, item)
 		case item.User != nil:
-			if err := dangling(); err != nil {
+			if err := dangling(open); err != nil {
 				return nil, nil, err
 			}
 			user := *item.User
@@ -114,7 +127,7 @@ func Conversation(history []transcript.Item, interruption string) (items []trans
 			item.User = &user
 			items = append(items, item)
 		case item.Interrupted != nil:
-			if err := dangling(); err != nil {
+			if err := dangling(open); err != nil {
 				return nil, nil, err
 			}
 			items = append(items, interrupted)

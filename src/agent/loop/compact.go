@@ -36,6 +36,17 @@ func (tn *turn) contextItems(ctx context.Context, name, interruption string, ori
 	return items, nil
 }
 
+// contextName is the provider name the request's context is built for.
+func (tn *turn) contextName(entry router.Entry, req provider.Request) (string, error) {
+	if entry.Provider == nil {
+		return tn.model.ProviderName, nil
+	}
+	if namer, ok := entry.Provider.(provider.ContextNamer); ok {
+		return namer.ContextName(req.Credential)
+	}
+	return "", nil
+}
+
 func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req provider.Request) (provider.Request, error) {
 	window, interruption := tn.model.ContextSize, tn.model.Interruption
 	hosted := false
@@ -52,16 +63,9 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 	if window > 0 {
 		tn.mapper.ContextSize = func(string) (int, bool) { return int(window), true }
 	}
-	name := tn.model.ProviderName
-	if entry.Provider != nil {
-		name = ""
-		if namer, ok := entry.Provider.(provider.ContextNamer); ok {
-			var err error
-			name, err = namer.ContextName(req.Credential)
-			if err != nil {
-				return provider.Request{}, err
-			}
-		}
+	name, err := tn.contextName(entry, req)
+	if err != nil {
+		return provider.Request{}, err
 	}
 	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
 	items, err := tn.contextItems(ctx, name, interruption, origin, hosted)

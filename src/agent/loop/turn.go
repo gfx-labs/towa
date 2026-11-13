@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"slices"
-	"strings"
 	"sync"
 	"time"
 	"uuid"
@@ -18,93 +15,11 @@ import (
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider"
-	"github.com/gfx-labs/towa/src/provider/router"
-	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/repair"
 	"github.com/gfx-labs/towa/src/tools/todo"
 	"github.com/gfx-labs/towa/src/transcript"
 )
-
-// Options is what a turn is built from. Every field is required unless it
-// says otherwise.
-type Options struct {
-	// Resolve returns what a turn needs from the model the session chose.
-	// It is called once per turn, before the first request, with
-	// Turn.Model as it is: an empty name means the session chose none, and
-	// the resolver owns the default.
-	Resolve func(ctx context.Context, model string) (Resolved, error)
-	// NewCompactor returns the controller for this turn's session. Nil
-	// disables automatic compaction. Close cancels pending work at turn end.
-	NewCompactor func(context.Context, Turn, Resolved) (*compact.Controller, error)
-	Store        store.Store
-	// System returns the system prompt's sections for a turn.
-	System func(ctx context.Context, t Turn) ([]provider.SystemBlock, error)
-	Limits config.Limits
-	// Now is the clock: entry times and the turn's wall time come from it.
-	Now func() time.Time
-	// Repair is tools.repair.enabled: fix the known ways a model gets a
-	// tool's argument wrong before validating it.
-	Repair bool
-	// Gate is tools.gate: when a tool's result is withheld from the model.
-	Gate config.ToolsGate
-	// Hooks runs the configured hooks. It may have none.
-	Hooks  *hooks.Runner
-	Logger *slog.Logger
-}
-
-// Resolved is a model as one turn uses it.
-type Resolved struct {
-	// Provider answers the turn's model requests. It is the router over the
-	// model's chain, which sets each request's model and credential.
-	Provider provider.Provider
-	// Tools is the session's tool set.
-	Tools tools.Set
-	// Schemas is the compiled input schema of each tool in Tools that has
-	// one, by tool name. Nil means the loop compiles them, once a turn.
-	Schemas map[string]*repair.Schema
-	// Model is the provider's own name for the model, of the chain's first
-	// entry. It is for logs: the router names the model of each request.
-	Model string
-	// ProviderName identifies the first entry's provider for native context.
-	// A router supplies the actual entry's ProviderID before each request.
-	ProviderName string
-	// ContextSize is the model's context window in tokens, for usage
-	// updates. Zero means it is not known, and no usage update is sent.
-	ContextSize int64
-	// MaxOutputTokens and Effort are sent with every request, and not sent
-	// when zero.
-	MaxOutputTokens int64
-	Effort          string
-	// Interruption is the text that tells the model the turn before was
-	// interrupted. It is required.
-	Interruption string
-}
-
-// Loop runs prompt turns. It keeps nothing between turns: a session's
-// conversation is read from the store when a turn starts.
-type Loop struct {
-	o Options
-}
-
-// New returns a loop over its dependencies.
-func New(o Options) (*Loop, error) {
-	switch {
-	case o.Resolve == nil:
-		return nil, errors.New("loop: Resolve is required")
-	case o.Store == nil:
-		return nil, errors.New("loop: Store is required")
-	case o.System == nil:
-		return nil, errors.New("loop: System is required")
-	case o.Now == nil:
-		return nil, errors.New("loop: Now is required")
-	case o.Hooks == nil:
-		return nil, errors.New("loop: Hooks is required")
-	case o.Logger == nil:
-		return nil, errors.New("loop: Logger is required")
-	}
-	return &Loop{o: o}, nil
-}
 
 // DeniedError is a prompt a hook denied. The turn did not start. It is the
 // Err of a *StopError of kind harness.StopDenied, so a caller may match
@@ -116,135 +31,8 @@ type DeniedError struct {
 
 func (e *DeniedError) Error() string { return "prompt denied by a hook: " + e.Reason }
 
-// StopReason is the ACP stop reason for a response the model ended. It
-// reports false for tool use, which does not end a turn, and for a reason
-// outside provider's list.
-func StopReason(stop provider.StopReason) (acp.StopReason, bool) {
-	switch stop {
-	case provider.StopEndTurn:
-		return acp.StopReasonEndTurn, true
-	case provider.StopMaxTokens:
-		return acp.StopReasonMaxTokens, true
-	case provider.StopRefusal:
-		return acp.StopReasonRefusal, true
-	}
-	return "", false
-}
-
 // errWall is the cause of a turn's context ending at limits.max_wall.
 var errWall = errors.New("loop: the turn reached " + config.KeyMaxWall)
-
-// Response collects one model response from its events.
-type Response struct {
-	// Items are the finished items, in order.
-	Items []transcript.Item
-	// Usage is the last usage reported, nil when none was.
-	Usage *transcript.Usage
-	// Stop is empty until the last event.
-	Stop provider.StopReason
-
-	// textShown and thoughtShown say a delta was sent since the last
-	// finished item of that kind.
-	textShown, thoughtShown bool
-	// writing holds the ids of the calls announced while the model was
-	// still writing them, in order, until each one finishes.
-	writing []string
-}
-
-// Add takes one event and returns the updates that show it to the client.
-// A finished text or thinking item is shown only when no delta came for it,
-// since its deltas already showed it.
-func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
-	switch {
-	case e.TextDelta != "":
-		r.textShown = true
-		return []acp.SessionUpdate{TextChunk(e.TextDelta)}
-	case e.ThinkingDelta != "":
-		r.thoughtShown = true
-		return []acp.SessionUpdate{ThoughtChunk(e.ThinkingDelta)}
-	case e.ToolCall != nil:
-		return r.progress(*e.ToolCall)
-	case e.Item != nil:
-		item := *e.Item
-		r.Items = append(r.Items, item)
-		switch {
-		case item.Text != nil:
-			shown := r.textShown
-			r.textShown = false
-			if !shown && item.Text.Text != "" {
-				return []acp.SessionUpdate{TextChunk(item.Text.Text)}
-			}
-		case item.Thinking != nil:
-			shown := r.thoughtShown
-			r.thoughtShown = false
-			if !shown && item.Thinking.Text != "" {
-				return []acp.SessionUpdate{ThoughtChunk(item.Thinking.Text)}
-			}
-		case item.ToolCall != nil:
-			call := m.ToolCall(*item.ToolCall)
-			i := slices.Index(r.writing, item.ToolCall.ID)
-			if i < 0 {
-				return []acp.SessionUpdate{{ToolCall: &call}}
-			}
-			// The call was announced under its name. Now that its argument
-			// is whole it gets its title, kind, locations and input.
-			r.writing = slices.Delete(r.writing, i, i+1)
-			return []acp.SessionUpdate{{ToolCallUpdate: &acp.SessionToolCallUpdate{
-				ToolCallId: call.ToolCallId, Title: &call.Title, Kind: &call.Kind,
-				Locations: call.Locations, RawInput: call.RawInput,
-			}}}
-		case item.Native != nil:
-			return HostedSearch(item)
-		}
-	case e.Usage != nil:
-		r.Usage = e.Usage
-	case e.Stop != "":
-		r.Stop = e.Stop
-	}
-	return nil
-}
-
-// progress announces a call the model has started writing, once, when it
-// has an id and a name. The pieces of its argument are not shown: ACP has
-// no update for part of an argument, and the whole one follows.
-func (r *Response) progress(p provider.ToolCallProgress) []acp.SessionUpdate {
-	if p.ID == "" || p.Name == "" || slices.Contains(r.writing, p.ID) {
-		return nil
-	}
-	r.writing = append(r.writing, p.ID)
-	return []acp.SessionUpdate{{ToolCall: &acp.SessionUpdateToolCall{
-		ToolCallId: acp.ToolCallId(p.ID), Name: &p.Name, Title: p.Name,
-		Kind: acp.ToolKindOther, Status: acp.ToolCallStatusPending,
-	}}}
-}
-
-// Writing returns the ids of the calls that were announced and never
-// finished, in the order they were announced.
-func (r *Response) Writing() []string {
-	return r.writing
-}
-
-// Text returns the response's text items joined.
-func (r *Response) Text() string {
-	var text strings.Builder
-	for _, item := range r.Items {
-		if item.Text != nil {
-			text.WriteString(item.Text.Text)
-		}
-	}
-	return text.String()
-}
-
-// Calls returns the response's tool calls in order.
-func (r *Response) Calls() []transcript.ToolCall {
-	var calls []transcript.ToolCall
-	for _, item := range r.Items {
-		if item.ToolCall != nil {
-			calls = append(calls, *item.ToolCall)
-		}
-	}
-	return calls
-}
 
 // turn is the state of one running turn.
 type turn struct {
@@ -297,211 +85,110 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 	return result, err
 }
 
+// run is the turn from its prompt to its end. The deferred compaction work
+// reports through out and runErr, so an error from it joins the turn's own.
 func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
-	l, t, id := tn.l, tn.t, tn.id
 	if tn.limits.MaxWall > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeoutCause(ctx, tn.limits.MaxWall, errWall)
 		defer cancel()
 	}
-	user, err := UserItem(t.Prompt)
+	user, err := UserItem(tn.t.Prompt)
 	if err != nil {
 		return Result{}, err
 	}
-	hookSession := hooks.Session{ID: string(t.SessionID), Cwd: t.Cwd}
-	decision, hookErr := l.o.Hooks.Prompt(ctx, hookSession, user.User.Parts)
-	logHook(ctx, l.o.Logger, t.SessionID, hookErr)
-	if decision.Action != hooks.Allow {
-		// Nothing is stored: the model never saw the prompt.
-		return Result{}, &StopError{
-			Stop: harness.Stop{Kind: harness.StopDenied, Message: decision.Reason},
-			Err:  &DeniedError{Reason: decision.Reason},
-		}
+	session := hooks.Session{ID: string(tn.t.SessionID), Cwd: tn.t.Cwd}
+	if err := tn.admit(ctx, session, user); err != nil {
+		return Result{}, err
 	}
 	if err := tn.resolve(ctx); err != nil {
 		return Result{}, StopFor(err)
 	}
-	if l.o.NewCompactor != nil {
-		current := copyTurn(t)
-		limits := tn.limits
-		current.Limits, current.Update = &limits, tn.update
-		tn.compactor, err = l.o.NewCompactor(ctx, current, tn.model)
-		if err != nil {
-			return Result{}, fmt.Errorf("loop: creating compaction controller: %w", err)
-		}
-		if tn.compactor == nil {
-			return Result{}, errors.New("loop: NewCompactor returned no controller")
-		}
+	if err := tn.startCompactor(ctx); err != nil {
+		return Result{}, err
+	}
+	if tn.compactor != nil {
 		defer func() {
 			defer tn.compactor.Close()
 			if tn.compactionInput == nil {
 				return
 			}
-			in := *tn.compactionInput
-			in.Entries = tn.entries
-			effects, finishErr := tn.compactor.Finish(ctx, in)
-			if finishErr == nil && len(effects) > 0 {
-				finishErr = tn.applyCompaction(ctx, effects)
-			}
-			if finishErr != nil {
-				runErr = errors.Join(runErr, StopFor(finishErr))
+			if err := tn.finishCompaction(ctx); err != nil {
+				runErr = errors.Join(runErr, StopFor(err))
 			}
 			out.Usage = tn.snapshot().Usage()
 		}()
 	}
-	if err := tn.load(ctx); err != nil {
+	system, err := tn.begin(ctx, user)
+	if err != nil {
 		return Result{}, err
+	}
+	for {
+		if result, done, err := tn.step(ctx, session, system); done {
+			return result, err
+		}
+	}
+}
+
+// admit runs the prompt hook. Nothing is stored for a denied prompt: the
+// model never saw it.
+func (tn *turn) admit(ctx context.Context, session hooks.Session, user transcript.Item) error {
+	decision, hookErr := tn.l.o.Hooks.Prompt(ctx, session, user.User.Parts)
+	logHook(ctx, tn.l.o.Logger, tn.t.SessionID, hookErr)
+	if decision.Action != hooks.Allow {
+		return &StopError{
+			Stop: harness.Stop{Kind: harness.StopDenied, Message: decision.Reason},
+			Err:  &DeniedError{Reason: decision.Reason},
+		}
+	}
+	return nil
+}
+
+// startCompactor creates the turn's compaction controller. It leaves
+// tn.compactor nil when compaction is off.
+func (tn *turn) startCompactor(ctx context.Context) error {
+	if tn.l.o.NewCompactor == nil {
+		return nil
+	}
+	current := copyTurn(tn.t)
+	limits := tn.limits
+	current.Limits, current.Update = &limits, tn.update
+	compactor, err := tn.l.o.NewCompactor(ctx, current, tn.model)
+	if err != nil {
+		return fmt.Errorf("loop: creating compaction controller: %w", err)
+	}
+	if compactor == nil {
+		return errors.New("loop: NewCompactor returned no controller")
+	}
+	tn.compactor = compactor
+	return nil
+}
+
+// finishCompaction lets the controller end the turn's pending work and
+// stores what it produced.
+func (tn *turn) finishCompaction(ctx context.Context) error {
+	in := *tn.compactionInput
+	in.Entries = tn.entries
+	effects, err := tn.compactor.Finish(ctx, in)
+	if err == nil && len(effects) > 0 {
+		err = tn.applyCompaction(ctx, effects)
+	}
+	return err
+}
+
+// begin loads the session, stores the prompt and builds the system prompt.
+func (tn *turn) begin(ctx context.Context, user transcript.Item) ([]provider.SystemBlock, error) {
+	if err := tn.load(ctx); err != nil {
+		return nil, err
 	}
 	if err := tn.append(ctx, user); err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	system, err := l.o.System(ctx, t)
+	system, err := tn.l.o.System(ctx, tn.t)
 	if err != nil {
-		return Result{}, fmt.Errorf("loop: system prompt: %w", err)
+		return nil, fmt.Errorf("loop: system prompt: %w", err)
 	}
-
-	for {
-		if result, done, err := tn.ended(ctx, nil); done {
-			return result, err
-		}
-		tn.spent.Wall = l.o.Now().Sub(tn.started)
-		if key, over := Exceeded(tn.limits, tn.snapshot()); over {
-			return LimitResult(key, tn.snapshot()), nil
-		}
-
-		resp, streamErr := tn.stream(ctx, system)
-		tn.final = resp.Text()
-		calls := resp.Calls()
-		runs := streamErr == nil && resp.Stop == provider.StopToolUse
-		stored := resp.Items
-		if !runs {
-			// The calls of a response that failed, was cut off or ended
-			// for another reason are not run. They still get a result.
-			for _, call := range calls {
-				unrun := result(call, transcript.OutcomeCancelled, textNotRun)
-				stored = append(stored, transcript.Item{ToolResult: &unrun})
-				tn.toolUpdate(ctx, unrun, nil)
-			}
-		}
-		// A call the response announced and never finished is not an item
-		// and is not stored. The client is still told that it ended.
-		for _, id := range resp.Writing() {
-			failed := acp.ToolCallStatusFailed
-			tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
-				ToolCallId: acp.ToolCallId(id), Status: &failed,
-				Content: []acp.ToolCallContent{tools.TextContent(textNotRun)},
-			}})
-		}
-		if resp.Usage != nil {
-			tn.add(*resp.Usage)
-			stored = append(stored, transcript.Item{Usage: resp.Usage})
-			if update, ok := tn.mapper.Usage(*resp.Usage); ok {
-				tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
-			}
-		}
-		// The calls are durable before any of them is dispatched, so a
-		// process that dies here leaves a call without a result, which the
-		// next turn records as unknown and does not run.
-		if err := tn.append(ctx, stored...); err != nil {
-			return Result{}, err
-		}
-		if tn.sendErr != nil {
-			return Result{}, tn.sendErr
-		}
-		if result, done, err := tn.ended(ctx, streamErr); done {
-			return result, err
-		}
-
-		if resp.Stop == provider.StopPaused {
-			// The provider carries on from what it is sent back, so the
-			// conversation goes as it is. The next request is counted
-			// against the limits at the top like any other.
-			continue
-		}
-		if resp.Stop != provider.StopToolUse {
-			reason, ok := StopReason(resp.Stop)
-			if !ok {
-				return Result{}, fmt.Errorf("loop: the response ended with the stop reason %q", resp.Stop)
-			}
-			decision, hookErr := l.o.Hooks.Stop(ctx, hookSession, string(reason))
-			if result, done, err := tn.ended(ctx, nil); done {
-				return result, err
-			}
-			logHook(ctx, l.o.Logger, t.SessionID, hookErr)
-			if decision.Action == hooks.Allow {
-				// A turn that ends by itself with todo items unfinished
-				// is sent back to them, a bounded number of times.
-				if reason != acp.StopReasonEndTurn || tn.limits.MaxTodoPokes == 0 {
-					return tn.result(reason), nil
-				}
-				// Without the tool the model cannot finish or drop an item.
-				if _, ok := tn.model.Tools.Lookup(todo.Name); !ok {
-					return tn.result(reason), nil
-				}
-				open, sent, err := todo.Open(tn.entries)
-				if err != nil {
-					return Result{}, err
-				}
-				if len(open) == 0 || int64(sent) >= tn.limits.MaxTodoPokes {
-					return tn.result(reason), nil
-				}
-				poke := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: todo.Poke(open)}}}}
-				if err := tn.append(ctx, poke); err != nil {
-					return Result{}, err
-				}
-				continue
-			}
-			// A hook that always denies must not run the turn forever.
-			if tn.stopDenials >= tn.limits.MaxStopDenials {
-				return LimitResult(config.KeyMaxStopDenials, tn.snapshot()), nil
-			}
-			tn.stopDenials++
-			denied := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: decision.Reason}}}}
-			if err := tn.append(ctx, denied); err != nil {
-				return Result{}, err
-			}
-			continue
-		}
-		if len(calls) == 0 {
-			return Result{}, errors.New("loop: the model stopped for tool use without a tool call")
-		}
-
-		left, limited := ToolCallsLeft(tn.limits, tn.snapshot())
-		// A tool that runs a model of its own, a subagent, reports what it
-		// used here, so the turn's limits count it.
-		toolCtx := tn.toolContext(ctx)
-		done := Dispatcher{
-			Tools: tn.model.Tools,
-			Env:   tools.Env{SessionID: t.SessionID, Cwd: t.Cwd, Dirs: t.Dirs},
-			Left:  left, Limited: limited, LimitKey: config.KeyMaxToolCalls,
-			Permit: t.Permit,
-			Update: func(update acp.SessionToolCallUpdate) {
-				tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &update})
-			},
-			PutBlob: func(ctx context.Context, mimeType string, content io.Reader) (transcript.Stored, error) {
-				return l.o.Store.PutBlob(ctx, id, mimeType, content)
-			},
-			Schemas: tn.schemas, Repair: l.o.Repair, Gate: l.o.Gate, Hooks: l.o.Hooks, Logger: l.o.Logger,
-		}.Run(toolCtx, calls)
-		tn.spentMu.Lock()
-		tn.spent.ToolCalls += done.Ran
-		tn.spentMu.Unlock()
-		results := make([]transcript.Item, len(done.Results))
-		for i := range done.Results {
-			results[i] = transcript.Item{ToolResult: &done.Results[i]}
-		}
-		if err := tn.append(ctx, results...); err != nil {
-			return Result{}, err
-		}
-		switch {
-		case tn.sendErr != nil:
-			return Result{}, tn.sendErr
-		case done.Err != nil:
-			return Result{}, done.Err
-		case done.OverLimit:
-			return LimitResult(config.KeyMaxToolCalls, tn.snapshot()), nil
-		}
-	}
+	return system, nil
 }
 
 // ended says how the turn ends when its context is over or its model
@@ -558,34 +245,6 @@ func (tn *turn) result(reason acp.StopReason) Result {
 	return Result{StopReason: reason, Usage: tn.snapshot().Usage()}
 }
 
-type spendKey struct{}
-
-// Spend adds usage to the turn that dispatched the tool whose context ctx
-// is. A tool that makes model requests of its own, such as one that runs a
-// subagent, calls it with each request's usage, and the turn's token limits
-// then count it before the next request. It may be called from tools that
-// run at the same time. It reports false outside a call the loop
-// dispatched, where there is no turn to charge.
-func Spend(ctx context.Context, u transcript.Usage) bool {
-	add, ok := ctx.Value(spendKey{}).(func(transcript.Usage))
-	if ok {
-		add(u)
-	}
-	return ok
-}
-
-func (tn *turn) add(u transcript.Usage) {
-	tn.spentMu.Lock()
-	defer tn.spentMu.Unlock()
-	tn.spent.Add(u)
-}
-
-func (tn *turn) snapshot() Spent {
-	tn.spentMu.Lock()
-	defer tn.spentMu.Unlock()
-	return tn.spent
-}
-
 // resolve asks for the turn's model and checks what came back.
 func (tn *turn) resolve(ctx context.Context) error {
 	model, err := tn.l.o.Resolve(ctx, tn.t.Model)
@@ -611,168 +270,165 @@ func (tn *turn) resolve(ctx context.Context) error {
 	return nil
 }
 
-// load reads the session's conversation, creating the session when the
-// store does not have it, and stores a result for every call left without
-// one.
-func (tn *turn) load(ctx context.Context) error {
-	st := tn.l.o.Store
-	entries, err := st.History(ctx, tn.id, store.Range{})
-	if errors.Is(err, store.ErrNotFound) {
-		meta := store.Meta{ID: tn.id, Cwd: tn.t.Cwd, Dirs: tn.t.Dirs, Model: tn.t.Model}
-		if tn.t.ParentID != "" {
-			parent, err := uuid.Parse(string(tn.t.ParentID))
-			if err != nil {
-				return fmt.Errorf("loop: parent session id %q is not a UUID: %w", tn.t.ParentID, err)
-			}
-			meta.ParentID = parent
-		}
-		meta.Created = tn.l.o.Now()
-		meta.Updated = meta.Created
-		return st.Create(ctx, meta)
+// step runs one pass of the turn: a model request and what follows from its
+// response. It reports false when the turn goes on.
+func (tn *turn) step(ctx context.Context, session hooks.Session, system []provider.SystemBlock) (Result, bool, error) {
+	if result, done, err := tn.ended(ctx, nil); done {
+		return result, true, err
 	}
-	if err != nil {
-		return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
+	tn.spent.Wall = tn.l.o.Now().Sub(tn.started)
+	if key, over := Exceeded(tn.limits, tn.snapshot()); over {
+		return LimitResult(key, tn.snapshot()), true, nil
 	}
-	var history []transcript.Item
-	for entry, err := range entries {
-		if err != nil {
-			return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
-		}
-		tn.entries = append(tn.entries, entry)
-		if entry.Item.Compaction == nil {
-			history = append(history, entry.Item)
-		}
-		tn.parent = entry.ID
+
+	resp, streamErr := tn.stream(ctx, system)
+	tn.final = resp.Text()
+	if err := tn.record(ctx, resp, streamErr); err != nil {
+		return Result{}, true, err
 	}
-	_, repairs, err := Conversation(history, tn.model.Interruption)
-	if err != nil {
+	if result, done, err := tn.ended(ctx, streamErr); done {
+		return result, true, err
+	}
+	switch resp.Stop {
+	case provider.StopPaused:
+		// The provider carries on from what it is sent back, so the
+		// conversation goes as it is. The next request is counted
+		// against the limits at the top like any other.
+		return Result{}, false, nil
+	case provider.StopToolUse:
+		return tn.dispatch(ctx, resp.Calls())
+	}
+	return tn.stopped(ctx, session, resp.Stop)
+}
+
+// record tells the client how a response ended and stores it.
+func (tn *turn) record(ctx context.Context, resp *Response, streamErr error) error {
+	stored := resp.Items
+	if streamErr != nil || resp.Stop != provider.StopToolUse {
+		// The calls of a response that failed, was cut off or ended
+		// for another reason are not run. They still get a result.
+		for _, call := range resp.Calls() {
+			unrun := result(call, transcript.OutcomeCancelled, textNotRun)
+			stored = append(stored, transcript.Item{ToolResult: &unrun})
+			tn.toolUpdate(ctx, unrun, nil)
+		}
+	}
+	// A call the response announced and never finished is not an item
+	// and is not stored. The client is still told that it ended.
+	for _, id := range resp.Writing() {
+		failed := acp.ToolCallStatusFailed
+		tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+			ToolCallId: acp.ToolCallId(id), Status: &failed,
+			Content: []acp.ToolCallContent{tools.TextContent(textNotRun)},
+		}})
+	}
+	if resp.Usage != nil {
+		tn.add(*resp.Usage)
+		stored = append(stored, transcript.Item{Usage: resp.Usage})
+		if update, ok := tn.mapper.Usage(*resp.Usage); ok {
+			tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
+		}
+	}
+	// The calls are durable before any of them is dispatched, so a
+	// process that dies here leaves a call without a result, which the
+	// next turn records as unknown and does not run.
+	if err := tn.append(ctx, stored...); err != nil {
 		return err
 	}
-	return tn.store(ctx, repairs)
-}
-
-// append stores items in their original order.
-func (tn *turn) append(ctx context.Context, items ...transcript.Item) error {
-	return tn.store(ctx, items)
-}
-
-func (tn *turn) store(ctx context.Context, items []transcript.Item) error {
-	if len(items) == 0 {
-		return nil
-	}
-	now := tn.l.o.Now()
-	entries := make([]transcript.Entry, len(items))
-	for i, item := range items {
-		entries[i] = transcript.NewEntry(tn.parent, now, item)
-		tn.parent = entries[i].ID
-	}
-	// A cancelled turn still records how it ended.
-	if err := tn.l.o.Store.Append(context.WithoutCancel(ctx), tn.id, entries); err != nil {
-		return fmt.Errorf("loop: storing %d entries of session %s: %w", len(entries), tn.id, err)
-	}
-	tn.entries = append(tn.entries, entries...)
-	return nil
-}
-
-// stream sends one model request and collects the response, showing it to
-// the client as it arrives. The response holds what arrived before an error.
-func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Response, error) {
-	ctx = router.WithReport(ctx, func(m router.Move) { tn.moved(ctx, m) })
-	req := provider.Request{
-		System:          system,
-		Model:           tn.model.Model,
-		Tools:           tn.model.Tools.Specs(),
-		MaxOutputTokens: tn.model.MaxOutputTokens,
-		Effort:          tn.model.Effort,
-		CacheKey:        string(tn.t.SessionID),
-	}
-	resp := &Response{}
-	if _, routed := tn.model.Provider.(*router.Router); routed {
-		ctx = router.WithPrepare(ctx, tn.prepareRequest)
-	} else {
-		var err error
-		req, err = tn.prepareRequest(ctx, router.Entry{}, req)
-		if err != nil {
-			return resp, err
-		}
-	}
-	for event, err := range tn.model.Provider.Stream(ctx, req) {
-		if err != nil {
-			return resp, err
-		}
-		if event.Item != nil {
-			item, _, err := compact.AutoItem(*event.Item)
-			if err != nil {
-				return resp, err
-			}
-			event.Item = &item
-		}
-		for _, update := range resp.Add(tn.mapper, event) {
-			tn.send(ctx, update)
-		}
-		if tn.sendErr != nil {
-			return resp, tn.sendErr
-		}
-		if resp.Stop != "" {
-			return resp, nil
-		}
-		// A cancelled turn stops reading at once. Leaving the range closes
-		// the connection, and what was not finished is not stored.
-		if ctx.Err() != nil {
-			return resp, context.Cause(ctx)
-		}
-	}
-	// The stream ended without a stop and without an error. If the turn
-	// was cancelled that is why, and the caller sees it in ctx.
-	if ctx.Err() != nil {
-		return resp, context.Cause(ctx)
-	}
-	return resp, errors.New("loop: the model's response ended without a stop reason")
-}
-
-// moved logs a move of the router and reports a retry or fallback to the
-// client. A credential refresh is not a move the client acts on.
-func (tn *turn) moved(ctx context.Context, m router.Move) {
-	tn.l.o.Logger.WarnContext(ctx, "model request moved", "session", tn.t.SessionID, "kind", m.Kind,
-		"from", m.From.String(), "to", m.To.String(), "wait", m.Wait, "err", m.Err)
-	if m.Kind == router.MoveRefresh {
-		return
-	}
-	move, ok := MoveFor(m)
-	if !ok {
-		return
-	}
-	tn.send(ctx, acp.SessionUpdate{SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
-		Meta: harness.Meta(nil, harness.Addition{Move: &move}),
-	}})
-}
-
-func (tn *turn) toolUpdate(ctx context.Context, r transcript.ToolResult, content []acp.ToolCallContent) {
-	update, err := ToolResult(r, content)
-	if err != nil {
-		tn.sendMu.Lock()
-		tn.sendErr = errors.Join(tn.sendErr, err)
-		tn.sendMu.Unlock()
-		return
-	}
-	tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &update})
-}
-
-// send sends one update. The first failure is kept and ends the turn: a
-// client that cannot be reached is not worth spending tokens on.
-func (tn *turn) send(ctx context.Context, update acp.SessionUpdate) {
-	_ = tn.update(ctx, update)
-}
-
-func (tn *turn) update(ctx context.Context, update acp.SessionUpdate) error {
-	tn.sendMu.Lock()
-	defer tn.sendMu.Unlock()
-	if tn.sendErr != nil {
-		return tn.sendErr
-	}
-	// A cancelled turn still tells the client how its tool calls ended.
-	if err := tn.t.Update(context.WithoutCancel(ctx), update); err != nil {
-		tn.sendErr = fmt.Errorf("loop: sending an update: %w", err)
-	}
 	return tn.sendErr
+}
+
+// stopped handles a response the model ended: the stop hook may send the
+// turn back to work.
+func (tn *turn) stopped(ctx context.Context, session hooks.Session, stop provider.StopReason) (Result, bool, error) {
+	reason, ok := StopReason(stop)
+	if !ok {
+		return Result{}, true, fmt.Errorf("loop: the response ended with the stop reason %q", stop)
+	}
+	decision, hookErr := tn.l.o.Hooks.Stop(ctx, session, string(reason))
+	if result, done, err := tn.ended(ctx, nil); done {
+		return result, true, err
+	}
+	logHook(ctx, tn.l.o.Logger, tn.t.SessionID, hookErr)
+	if decision.Action == hooks.Allow {
+		return tn.pokeTodos(ctx, reason)
+	}
+	// A hook that always denies must not run the turn forever.
+	if tn.stopDenials >= tn.limits.MaxStopDenials {
+		return LimitResult(config.KeyMaxStopDenials, tn.snapshot()), true, nil
+	}
+	tn.stopDenials++
+	return tn.continueWith(ctx, decision.Reason)
+}
+
+// pokeTodos ends the turn, unless it ended by itself with todo items
+// unfinished: then it is sent back to them, a bounded number of times.
+func (tn *turn) pokeTodos(ctx context.Context, reason acp.StopReason) (Result, bool, error) {
+	if reason != acp.StopReasonEndTurn || tn.limits.MaxTodoPokes == 0 {
+		return tn.result(reason), true, nil
+	}
+	// Without the tool the model cannot finish or drop an item.
+	if _, ok := tn.model.Tools.Lookup(todo.Name); !ok {
+		return tn.result(reason), true, nil
+	}
+	open, sent, err := todo.Open(tn.entries)
+	if err != nil {
+		return Result{}, true, err
+	}
+	if len(open) == 0 || int64(sent) >= tn.limits.MaxTodoPokes {
+		return tn.result(reason), true, nil
+	}
+	return tn.continueWith(ctx, todo.Poke(open))
+}
+
+// continueWith stores text as a user message and keeps the turn going.
+func (tn *turn) continueWith(ctx context.Context, text string) (Result, bool, error) {
+	if err := tn.append(ctx, userText(text)); err != nil {
+		return Result{}, true, err
+	}
+	return Result{}, false, nil
+}
+
+// dispatch runs the calls of a response that stopped for tool use and
+// stores their results.
+func (tn *turn) dispatch(ctx context.Context, calls []transcript.ToolCall) (Result, bool, error) {
+	if len(calls) == 0 {
+		return Result{}, true, errors.New("loop: the model stopped for tool use without a tool call")
+	}
+	left, limited := ToolCallsLeft(tn.limits, tn.snapshot())
+	// A tool that runs a model of its own, a subagent, reports what it
+	// used here, so the turn's limits count it.
+	toolCtx := tn.toolContext(ctx)
+	done := Dispatcher{
+		Tools: tn.model.Tools,
+		Env:   tools.Env{SessionID: tn.t.SessionID, Cwd: tn.t.Cwd, Dirs: tn.t.Dirs},
+		Left:  left, Limited: limited, LimitKey: config.KeyMaxToolCalls,
+		Permit: tn.t.Permit,
+		Update: func(update acp.SessionToolCallUpdate) {
+			tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &update})
+		},
+		PutBlob: func(ctx context.Context, mimeType string, content io.Reader) (transcript.Stored, error) {
+			return tn.l.o.Store.PutBlob(ctx, tn.id, mimeType, content)
+		},
+		Schemas: tn.schemas, Repair: tn.l.o.Repair, Gate: tn.l.o.Gate, Hooks: tn.l.o.Hooks, Logger: tn.l.o.Logger,
+	}.Run(toolCtx, calls)
+	tn.spentMu.Lock()
+	tn.spent.ToolCalls += done.Ran
+	tn.spentMu.Unlock()
+	results := make([]transcript.Item, len(done.Results))
+	for i := range done.Results {
+		results[i] = transcript.Item{ToolResult: &done.Results[i]}
+	}
+	if err := tn.append(ctx, results...); err != nil {
+		return Result{}, true, err
+	}
+	switch {
+	case tn.sendErr != nil:
+		return Result{}, true, tn.sendErr
+	case done.Err != nil:
+		return Result{}, true, done.Err
+	case done.OverLimit:
+		return LimitResult(config.KeyMaxToolCalls, tn.snapshot()), true, nil
+	}
+	return Result{}, false, nil
 }

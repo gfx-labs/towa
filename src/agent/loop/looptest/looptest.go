@@ -36,6 +36,7 @@ import (
 	"github.com/gfx-labs/towa/src/provider/chat"
 	"github.com/gfx-labs/towa/src/provider/providertest"
 	"github.com/gfx-labs/towa/src/provider/router"
+	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/store/dir"
 	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/tools"
@@ -205,23 +206,36 @@ func (s *sequence) count() int {
 	return s.served
 }
 
+func fail(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("looptest: %v", err)
+	}
+}
+
 func build(t testing.TB, s Scenario, base string, transport func(next http.RoundTripper) *sequence) *Fixture {
 	t.Helper()
-	fail := func(err error) {
-		if err != nil {
-			t.Helper()
-			t.Fatalf("looptest: %v", err)
-		}
-	}
 	loaded, err := configtest.Load(config.Sources{})
-	fail(err)
+	fail(t, err)
 	cfg := loaded.Config
 
 	cwd := t.TempDir()
 	for name, text := range s.Files {
-		fail(os.WriteFile(filepath.Join(cwd, name), []byte(text), 0o600))
+		fail(t, os.WriteFile(filepath.Join(cwd, name), []byte(text), 0o600))
 	}
+	routed, served := newRouter(t, s, cfg, base, transport)
+	st, err := dir.New(dir.Options{Root: t.TempDir(), Compression: dir.CompressionNone})
+	fail(t, err)
+	opts := loopOptions(s, cfg, routed, st)
+	l, err := loop.New(opts)
+	fail(t, err)
+	return &Fixture{Loop: l, Store: st, Cwd: cwd, Config: cfg, Options: opts, Served: served, scenario: s}
+}
 
+// newRouter returns the provider chain of one entry against base, and the
+// count of requests transport served when there is a transport.
+func newRouter(t testing.TB, s Scenario, cfg config.Config, base string, transport func(next http.RoundTripper) *sequence) (*router.Router, func() int) {
+	t.Helper()
 	httpClient := httpclient.New()
 	var served func() int
 	if transport != nil {
@@ -234,7 +248,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 		Provider:   config.Provider{ID: ProviderID, Kind: config.ProviderChat, BaseURL: base},
 		UserAgent:  "towa/test",
 	})
-	fail(err)
+	fail(t, err)
 
 	source, err := auth.NewSource(t.Context(), auth.Options{
 		Accounts:   []config.Account{{ID: Account, Provider: ProviderID, Kind: config.AccountAPIKey, APIKeyEnv: "OLLAMA_API_KEY"}},
@@ -244,23 +258,23 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 		Getenv:       func(string) string { return "ollama" },
 		TokenTimeout: time.Minute,
 	})
-	fail(err)
+	fail(t, err)
 	routed, err := router.New(router.Options{
 		Chain: []router.Entry{{Provider: client, ProviderID: ProviderID, Account: Account, Model: s.Model}},
 		Auth:  source,
 		Retry: cfg.Limits.Retry,
 		Rand:  rand.Float64,
 	})
-	fail(err)
+	fail(t, err)
+	return routed, served
+}
 
-	st, err := dir.New(dir.Options{Root: t.TempDir(), Compression: dir.CompressionNone})
-	fail(err)
-
+func loopOptions(s Scenario, cfg config.Config, routed *router.Router, st store.Store) loop.Options {
 	var set tools.Set
 	if s.Tools {
 		set = tools.Set{Tools: []tools.Tool{ReadTool(cfg.Tools.Files)}}
 	}
-	opts := loop.Options{
+	return loop.Options{
 		Resolve: func(_ context.Context, model string) (loop.Resolved, error) {
 			if model != "" {
 				return loop.Resolved{}, fmt.Errorf("looptest: the fixture has one model and was asked for %q", model)
@@ -284,9 +298,6 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 		Hooks:  hooks.New(nil),
 		Logger: slog.New(slog.DiscardHandler),
 	}
-	l, err := loop.New(opts)
-	fail(err)
-	return &Fixture{Loop: l, Store: st, Cwd: cwd, Config: cfg, Options: opts, Served: served, scenario: s}
 }
 
 // ReadToolName is the name of the fixture's one tool.
