@@ -34,6 +34,7 @@ func Select(entries []transcript.Entry, keep int) (Source, error) {
 	return source, nil
 }
 
+// sourceFor starts a Source with the guards that detect a stale result.
 func sourceFor(entries []transcript.Entry, view View) Source {
 	source := Source{Previous: view.Summary()}
 	if len(entries) > 0 {
@@ -62,46 +63,17 @@ func PortableSource(entries []transcript.Entry) (Source, error) {
 	if source.FirstKept == uuid.Nil() && len(view.Active) > 0 {
 		source.FirstKept = view.Active[0].ID
 	}
-	end := -1
-	for i, e := range entries {
-		if e.ID == view.Compaction.ID {
-			end = i
-			break
-		}
-	}
+	end := indexOfID(entries, view.Compaction.ID)
 	if view.Compaction.Item.Compaction.FirstKept != uuid.Nil() {
-		for i, e := range entries[:end] {
-			if e.ID == source.FirstKept {
-				end = i
-				break
-			}
+		if i := indexOfID(entries[:end], source.FirstKept); i >= 0 {
+			end = i
 		}
 	}
-	start := 0
-	source.Previous = ""
-	for i := end - 1; i >= 0; i-- {
-		c := entries[i].Item.Compaction
-		if c == nil || c.Summary == "" {
-			continue
-		}
-		previous, err := Read(entries[:i+1])
-		if err != nil {
-			return Source{}, err
-		}
-		source.Previous = c.Summary
-		if len(previous.Active) == 0 {
-			start = i + 1
-		} else {
-			id := previous.Active[0].ID
-			for j := range entries[:i] {
-				if entries[j].ID == id {
-					start = j
-					break
-				}
-			}
-		}
-		break
+	previous, start, err := earlierSummary(entries, end)
+	if err != nil {
+		return Source{}, err
 	}
+	source.Previous = previous
 	for _, e := range entries[start:end] {
 		if e.Item.Compaction == nil {
 			source.Replaced = append(source.Replaced, e)
@@ -113,39 +85,50 @@ func PortableSource(entries []transcript.Entry) (Source, error) {
 	return source, nil
 }
 
+// earlierSummary finds the newest text summary before entries[end]. It
+// returns that summary and the index where the entries it did not cover
+// begin. Without one it returns no summary and index 0.
+func earlierSummary(entries []transcript.Entry, end int) (summary string, start int, err error) {
+	for i := end - 1; i >= 0; i-- {
+		c := entries[i].Item.Compaction
+		if c == nil || c.Summary == "" {
+			continue
+		}
+		covered, err := Read(entries[:i+1])
+		if err != nil {
+			return "", 0, err
+		}
+		if len(covered.Active) == 0 {
+			return c.Summary, i + 1, nil
+		}
+		return c.Summary, max(indexOfID(entries[:i], covered.Active[0].ID), 0), nil
+	}
+	return "", 0, nil
+}
+
 // ErrSuperseded means another appended compaction made a background result
 // stale. The caller discards it rather than replacing a newer summary.
 var ErrSuperseded = errors.New("compact: another compaction superseded this result")
 
+// firstKept is the id of the first entry that stays after this source's
+// compaction is appended to entries, which may have grown since the capture.
 func (source Source) firstKept(entries []transcript.Entry) (uuid.UUID, error) {
 	view, err := Read(entries)
 	if err != nil {
 		return uuid.Nil(), err
 	}
-	current := uuid.Nil()
-	if view.Compaction != nil {
-		current = view.Compaction.ID
-	}
-	if current != source.BaseCompaction {
+	if view.compactionID() != source.BaseCompaction {
 		return uuid.Nil(), ErrSuperseded
 	}
-	tail := -1
-	for i, e := range entries {
-		if e.ID == source.Tail {
-			tail = i
-			break
-		}
-	}
+	tail := indexOfID(entries, source.Tail)
 	if tail < 0 {
 		return uuid.Nil(), fmt.Errorf("compact: captured tail %s is absent from history", source.Tail)
 	}
 	if source.FirstKept != uuid.Nil() {
-		for _, e := range entries[:tail+1] {
-			if e.ID == source.FirstKept {
-				return source.FirstKept, nil
-			}
+		if indexOfID(entries[:tail+1], source.FirstKept) < 0 {
+			return uuid.Nil(), errors.New("compact: first kept entry is absent from captured history")
 		}
-		return uuid.Nil(), errors.New("compact: first kept entry is absent from captured history")
+		return source.FirstKept, nil
 	}
 	if tail+1 < len(entries) {
 		return entries[tail+1].ID, nil

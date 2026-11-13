@@ -9,14 +9,11 @@
 package compact
 
 import (
-	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
 	"uuid"
 
-	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
@@ -65,6 +62,14 @@ func (v View) Summary() string {
 	return v.Compaction.Item.Compaction.Summary
 }
 
+// compactionID is the id of the latest compaction entry, or the nil id.
+func (v View) compactionID() uuid.UUID {
+	if v.Compaction == nil {
+		return uuid.Nil()
+	}
+	return v.Compaction.ID
+}
+
 // Read finds the latest compaction in entries and the entries it kept. It
 // returns slices of entries and changes nothing.
 func Read(entries []transcript.Entry) (View, error) {
@@ -77,21 +82,9 @@ func Read(entries []transcript.Entry) (View, error) {
 	if last < 0 {
 		return View{Active: entries}, nil
 	}
-	c := entries[last].Item.Compaction
-	// A nil id means nothing before the compaction was kept.
-	first := last
-	if c.FirstKept != uuid.Nil() {
-		first = -1
-		for i := range entries[:last] {
-			if entries[i].ID == c.FirstKept {
-				first = i
-				break
-			}
-		}
-		if first < 0 {
-			return View{}, fmt.Errorf("compact: compaction %s keeps from entry %s, which is not before it in the transcript",
-				entries[last].ID, c.FirstKept)
-		}
+	first, err := keptFrom(entries, last)
+	if err != nil {
+		return View{}, err
 	}
 	active := make([]transcript.Entry, 0, len(entries)-first)
 	for _, e := range entries[first:] {
@@ -100,6 +93,30 @@ func Read(entries []transcript.Entry) (View, error) {
 		}
 	}
 	return View{Compaction: &entries[last], Active: active}, nil
+}
+
+// keptFrom is the index of the first entry the compaction at entries[at]
+// kept. A nil id means nothing before the compaction was kept.
+func keptFrom(entries []transcript.Entry, at int) (int, error) {
+	firstKept := entries[at].Item.Compaction.FirstKept
+	if firstKept == uuid.Nil() {
+		return at, nil
+	}
+	if i := indexOfID(entries[:at], firstKept); i >= 0 {
+		return i, nil
+	}
+	return 0, fmt.Errorf("compact: compaction %s keeps from entry %s, which is not before it in the transcript",
+		entries[at].ID, firstKept)
+}
+
+// indexOfID is the index of the entry with id, or -1.
+func indexOfID(entries []transcript.Entry, id uuid.UUID) int {
+	for i, e := range entries {
+		if e.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // Items returns the items to send to providerName after any compaction: the
@@ -135,19 +152,7 @@ func standIn(entry transcript.Entry, providerName string, target ...transcript.O
 		return nil, errors.New("compact: more than one target origin")
 	}
 	if len(target) == 1 && item.OpaqueCompatible(providerName, target[0]) {
-		var native []transcript.Item
-		if err := json.Unmarshal(item.Opaque, &native); err != nil {
-			return nil, fmt.Errorf("compact: read the native items of compaction %s: %w", entry.ID, err)
-		}
-		if err := validateNativeWindow(native, providerName); err != nil {
-			return nil, fmt.Errorf("compact: stored native window %s: %w", entry.ID, err)
-		}
-		for _, child := range native {
-			if len(child.Opaque) > 0 && !child.OpaqueCompatible(providerName, target[0]) {
-				return nil, &UnreadableError{Entry: entry.ID, Provider: item.Provider, Wanted: providerName}
-			}
-		}
-		return native, nil
+		return nativeWindow(entry, providerName, target[0])
 	}
 	summary := item.Compaction.Summary
 	if strings.TrimSpace(summary) == "" {
@@ -158,117 +163,4 @@ func standIn(entry transcript.Entry, providerName string, target ...transcript.O
 	}
 	text := summaryPrefix + summary + summarySuffix
 	return []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: text}}}}}, nil
-}
-
-// Native asks a provider to compact a conversation itself. The OpenAI
-// Responses client's Compact does this. Its result is that package's own
-// type, so the wiring wraps it in a NativeFunc.
-type Native interface {
-	Compact(ctx context.Context, req provider.Request) (NativeResult, error)
-}
-
-// NativeFunc is a function that is a Native.
-type NativeFunc func(ctx context.Context, req provider.Request) (NativeResult, error)
-
-// Compact calls f.
-func (f NativeFunc) Compact(ctx context.Context, req provider.Request) (NativeResult, error) {
-	return f(ctx, req)
-}
-
-// NativeResult is what a provider returned for a native compaction.
-type NativeResult struct {
-	// Items stand for the request's items in later requests to the same
-	// provider. No other provider can read them.
-	Items []transcript.Item
-	// Usage is nil when the provider reported none.
-	Usage *transcript.Usage
-}
-
-// NativeItem builds the item of a native compaction. The provider's items
-// ride in the item's Opaque, tagged with providerName, and Items gives them
-// back to that provider only. The item has no summary text: the provider's
-// summary is encrypted. The explicit endpoint's whole returned window is
-// retained, including any user or tool items beside the encrypted item.
-func NativeItem(result NativeResult, providerName string, firstKept uuid.UUID) (transcript.Item, error) {
-	if len(result.Items) == 0 {
-		return transcript.Item{}, ErrEmptySummary
-	}
-	if providerName == "" {
-		return transcript.Item{}, errors.New("compact: the native compaction names no provider")
-	}
-	if err := validateNativeWindow(result.Items, providerName); err != nil {
-		return transcript.Item{}, err
-	}
-	opaque, err := json.Marshal(result.Items)
-	if err != nil {
-		return transcript.Item{}, fmt.Errorf("compact: encode the native items: %w", err)
-	}
-	var origin *transcript.Origin
-	for _, item := range result.Items {
-		if item.Native != nil && item.Native.Kind == "compaction" && item.Origin != nil {
-			value := *item.Origin
-			origin = &value
-			break
-		}
-	}
-	return transcript.Item{
-		Compaction: &transcript.Compaction{FirstKept: firstKept, Mode: ModeNative},
-		Provider:   providerName,
-		Opaque:     opaque,
-		Origin:     origin,
-	}, nil
-}
-
-func validateNativeWindow(items []transcript.Item, providerName string) error {
-	found := false
-	for i, item := range items {
-		if err := item.Validate(); err != nil {
-			return fmt.Errorf("compact: native item %d: %w", i, err)
-		}
-		if item.Compaction != nil || item.Usage != nil || item.ModelSwitch != nil || item.Interrupted != nil {
-			return fmt.Errorf("compact: native item %d is not a provider request item", i)
-		}
-		if item.Native != nil {
-			if item.Provider != providerName || len(item.Opaque) == 0 {
-				return fmt.Errorf("compact: native item %d has a different provider or no content", i)
-			}
-			found = found || item.Native.Kind == "compaction"
-		}
-	}
-	if !found {
-		return errors.New("compact: native window contains no compaction item")
-	}
-	return nil
-}
-
-// AutoItem converts a completed server-side compaction item at its stream
-// position. Append it instead of the Native item. Everything before it is
-// represented by it, and entries appended afterward remain active. This is
-// for stateless input-array chaining, never previous_response_id chaining.
-// Non-compaction items are returned unchanged with converted false.
-func AutoItem(item transcript.Item) (out transcript.Item, converted bool, err error) {
-	if item.Native == nil || item.Native.Kind != "compaction" {
-		return item, false, nil
-	}
-	if len(item.Opaque) == 0 {
-		return transcript.Item{}, false, errors.New("compact: automatic compaction has no opaque content")
-	}
-	out, err = NativeItem(NativeResult{Items: []transcript.Item{item}}, item.Provider, uuid.Nil())
-	return out, err == nil, err
-}
-
-// EmergencySummary is the summary recorded when the context is cut without
-// asking a model. It is the earlier summary, if any, and jcode's sentence
-// saying how much was cut, with the names of the tools the cut entries
-// used. contextTokens and budget are in tokens.
-func EmergencySummary(previous string, cut []transcript.Entry, contextTokens, budget int64) string {
-	var parts []string
-	if strings.TrimSpace(previous) != "" {
-		parts = append(parts, previous)
-	}
-	parts = append(parts, fmt.Sprintf(emergencyFormat, len(spans(cut)), contextTokens/1000, budget/1000))
-	if names := toolNames(cut); len(names) > 0 {
-		parts = append(parts, "Tools used: "+strings.Join(names, ", "))
-	}
-	return strings.Join(parts, "\n\n")
 }

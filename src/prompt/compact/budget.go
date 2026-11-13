@@ -58,40 +58,55 @@ func BoundedSummaryRequest(in SummaryInput, contextWindow int64) (provider.Reque
 		conversation, wrap = shortConversation(in.Replaced), shortWrap
 	}
 	report.Omissions = serializationOmissions(in)
+	system := req.System[0].Text
 	// Count all fixed text, including the previous summary and search sentence.
-	fixed := len(req.System[0].Text) + len(wrap(in, ""))
+	fixed := len(system) + len(wrap(in, ""))
 	available := contextWindow - report.ReservedTokens
 	if int64(fixed)/summaryCharsPerToken >= available {
 		return provider.Request{}, report, errors.New("compact: summary instructions and previous summary exceed the context budget")
 	}
 	text := conversation
-	if estimatedSummaryTokens(req.System[0].Text, wrap(in, text)) > available {
-		const marker = "[Oldest conversation text omitted to fit the summary context.]\n"
-		// Work in bytes as jcode's estimate does, then advance to a UTF-8
-		// boundary. The marker is part of the budget too.
-		room := available*summaryCharsPerToken - int64(fixed+len(marker))
-		if room <= 0 {
-			return provider.Request{}, report, errors.New("compact: no conversation text fits beside the summary instructions")
+	if estimatedSummaryTokens(system, wrap(in, text)) > available {
+		var omitted int
+		text, omitted, err = newestText(conversation, available, fixed)
+		if err != nil {
+			return provider.Request{}, report, err
 		}
-		start := len(conversation) - int(min(room, int64(len(conversation))))
-		for start < len(conversation) && !utf8.RuneStart(conversation[start]) {
-			start++
-		}
-		report.Omissions = append(report.Omissions, Omission{Reason: "context budget", Bytes: start})
-		text = marker + conversation[start:]
+		report.Omissions = append(report.Omissions, Omission{Reason: "context budget", Bytes: omitted})
 	}
 	req.Items[0].User.Parts[0].Text = wrap(in, text)
-	report.InputTokens = estimatedSummaryTokens(req.System[0].Text, req.Items[0].User.Parts[0].Text)
+	report.InputTokens = estimatedSummaryTokens(system, req.Items[0].User.Parts[0].Text)
 	if report.InputTokens > available {
 		return provider.Request{}, report, fmt.Errorf("compact: summary estimate %d exceeds budget %d", report.InputTokens, available)
 	}
 	return req, report, nil
 }
 
+// newestText drops the oldest bytes of conversation so that it fits in
+// available tokens beside fixed bytes of other text, and puts a marker in
+// their place. It returns the new text and the number of bytes dropped.
+func newestText(conversation string, available int64, fixed int) (text string, omitted int, err error) {
+	const marker = "[Oldest conversation text omitted to fit the summary context.]\n"
+	// Work in bytes as jcode's estimate does, then advance to a UTF-8
+	// boundary. The marker is part of the budget too.
+	room := available*summaryCharsPerToken - int64(fixed+len(marker))
+	if room <= 0 {
+		return "", 0, errors.New("compact: no conversation text fits beside the summary instructions")
+	}
+	start := len(conversation) - int(min(room, int64(len(conversation))))
+	for start < len(conversation) && !utf8.RuneStart(conversation[start]) {
+		start++
+	}
+	return marker + conversation[start:], start, nil
+}
+
 func estimatedSummaryTokens(system, text string) int64 {
 	return (int64(len(system)) + int64(len(text)) + summaryCharsPerToken - 1) / summaryCharsPerToken
 }
 
+// serializationOmissions lists what the summary text leaves out of the
+// replaced entries: thinking, native content and the end of long tool
+// results.
 func serializationOmissions(in SummaryInput) []Omission {
 	var out []Omission
 	for _, e := range in.Replaced {
@@ -103,30 +118,32 @@ func serializationOmissions(in SummaryInput) []Omission {
 			out = append(out, Omission{Entry: e.ID, Reason: "unreadable native content"})
 		case item.ToolResult != nil:
 			text := partsText(item.ToolResult.Parts, "")
-			var retained string
-			if in.Prompt == config.SummaryShort {
-				retained = cutBytes(text, shortResultBytes)
-			} else {
-				// The rendered marker is not retained source text.
-				units := 0
-				end := 0
-				for at, r := range text {
-					n := 1
-					if r > 0xffff {
-						n = 2
-					}
-					if units+n > checkpointResultChars {
-						break
-					}
-					units += n
-					end = at + utf8.RuneLen(r)
-				}
-				retained = text[:end]
-			}
-			if len(retained) < len(text) {
-				out = append(out, Omission{Entry: e.ID, Reason: "tool result limit", Bytes: len(text) - len(retained)})
+			if cut := len(text) - len(retainedResult(text, in.Prompt)); cut > 0 {
+				out = append(out, Omission{Entry: e.ID, Reason: "tool result limit", Bytes: cut})
 			}
 		}
 	}
 	return out
+}
+
+// retainedResult is the part of a tool result's text that the summary
+// request shows.
+func retainedResult(text, prompt string) string {
+	if prompt == config.SummaryShort {
+		return cutBytes(text, shortResultBytes)
+	}
+	// The rendered marker is not retained source text.
+	units, end := 0, 0
+	for at, r := range text {
+		n := 1
+		if r > 0xffff {
+			n = 2
+		}
+		if units+n > checkpointResultChars {
+			break
+		}
+		units += n
+		end = at + utf8.RuneLen(r)
+	}
+	return text[:end]
 }

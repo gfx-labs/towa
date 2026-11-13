@@ -1,5 +1,15 @@
 package compact
 
+import (
+	"bytes"
+	"encoding/json/jsontext"
+	"fmt"
+	"strings"
+	"unicode/utf16"
+
+	"github.com/gfx-labs/towa/src/transcript"
+)
+
 // The checkpoint prompts are Pi's, copied byte for byte from
 // github.com/earendil-works/pi at commit
 // 4839e41d6463d759a92ee55f4ca7c8ae57e52c9c (MIT, Copyright (c) 2025 Mario
@@ -104,3 +114,121 @@ const (
 // packages/coding-agent/src/core/compaction/utils.ts: how much of a tool
 // result the summary request shows, in UTF-16 units as Pi counts them.
 const checkpointResultChars = 2000
+
+// checkpointText follows generateSummaryWithUsage and serializeConversation
+// in Pi's compaction.ts and utils.ts. Pi has no sentence about searching:
+// jcode's is added after the prompt when the tool is enabled.
+func checkpointText(in SummaryInput) string {
+	return checkpointWrap(in, checkpointConversation(in.Replaced))
+}
+
+func checkpointConversation(replaced []transcript.Entry) string {
+	var parts []string
+	for _, m := range spans(replaced) {
+		entries := replaced[m.start:m.end]
+		if m.role == roleUser {
+			parts = append(parts, checkpointUserParts(entries)...)
+		} else {
+			parts = append(parts, checkpointAssistantParts(entries)...)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func checkpointUserParts(entries []transcript.Entry) []string {
+	var parts []string
+	for _, e := range entries {
+		switch {
+		case e.Item.User != nil:
+			if text := partsText(e.Item.User.Parts, ""); text != "" {
+				parts = append(parts, "[User]: "+text)
+			}
+		case e.Item.ToolResult != nil:
+			if text := partsText(e.Item.ToolResult.Parts, ""); text != "" {
+				parts = append(parts, "[Tool result]: "+cutUTF16(text, checkpointResultChars))
+			}
+		}
+	}
+	return parts
+}
+
+func checkpointAssistantParts(entries []transcript.Entry) []string {
+	var texts, calls, parts []string
+	for _, e := range entries {
+		switch {
+		case e.Item.Text != nil:
+			texts = append(texts, e.Item.Text.Text)
+		case e.Item.ToolCall != nil:
+			calls = append(calls, e.Item.ToolCall.Name+"("+callArguments(e.Item.ToolCall.Input)+")")
+		}
+	}
+	if len(texts) > 0 {
+		parts = append(parts, "[Assistant]: "+strings.Join(texts, "\n"))
+	}
+	if len(calls) > 0 {
+		parts = append(parts, "[Assistant tool calls]: "+strings.Join(calls, "; "))
+	}
+	return parts
+}
+
+func checkpointWrap(in SummaryInput, conversation string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "<conversation>\n%s\n</conversation>\n\n", conversation)
+	prompt := checkpointPrompt
+	if in.Previous != "" {
+		fmt.Fprintf(&b, "<previous-summary>\n%s\n</previous-summary>\n\n", in.Previous)
+		prompt = checkpointMergePrompt
+	}
+	b.WriteString(prompt)
+	if in.ConversationSearch {
+		b.WriteString("\n\n" + searchSentence)
+	}
+	return b.String()
+}
+
+// callArguments writes a tool call's input as Pi does: key=value pairs in
+// the order the model wrote them, each value as JSON. An input that is not
+// an object, such as a free-text tool's string, is written whole.
+func callArguments(input jsontext.Value) string {
+	dec := jsontext.NewDecoder(bytes.NewReader(input))
+	if dec.PeekKind() != '{' {
+		return strings.TrimSpace(string(input))
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return strings.TrimSpace(string(input))
+	}
+	var pairs []string
+	for dec.PeekKind() == '"' {
+		name, err := dec.ReadToken()
+		if err != nil {
+			break
+		}
+		// The token is only valid until the decoder is used again.
+		key := name.String()
+		value, err := dec.ReadValue()
+		if err != nil {
+			break
+		}
+		value = value.Clone()
+		if err := value.Compact(); err != nil {
+			break
+		}
+		pairs = append(pairs, key+"="+string(value))
+	}
+	return strings.Join(pairs, ", ")
+}
+
+// cutUTF16 keeps the first limit UTF-16 units of text and says how many
+// were left out, as Pi's truncateForSummary does. A surrogate pair is not
+// split.
+func cutUTF16(text string, limit int) string {
+	units := utf16.Encode([]rune(text))
+	if len(units) <= limit {
+		return text
+	}
+	end := limit
+	if end > 0 && utf16.IsSurrogate(rune(units[end-1])) && utf16.IsSurrogate(rune(units[end])) && units[end-1] < 0xDC00 {
+		end--
+	}
+	return fmt.Sprintf("%s\n\n[... %d more characters truncated]", string(utf16.Decode(units[:end])), len(units)-limit)
+}

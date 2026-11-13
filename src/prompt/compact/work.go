@@ -60,22 +60,30 @@ func Run(ctx context.Context, work Work) (*Result, error) {
 	if len(work.Source.Replaced) == 0 {
 		return nil, errors.New("compact: nothing was selected for compaction")
 	}
-	result := &Result{Source: work.Source}
 	if work.Native != nil {
-		if work.Source.FirstKept != uuid.Nil() {
-			return nil, errors.New("compact: a native request must cover the whole captured context")
-		}
-		got, err := work.Native.Compact(ctx, work.NativeRequest)
-		if err != nil {
-			return nil, err
-		}
-		result.item, err = NativeItem(got, work.ProviderName, work.Source.FirstKept)
-		if err != nil {
-			return nil, err
-		}
-		result.Usage = got.Usage
-		return result, nil
+		return runNative(ctx, work)
 	}
+	return runSummary(ctx, work)
+}
+
+// runNative asks the provider to compact the whole captured context.
+func runNative(ctx context.Context, work Work) (*Result, error) {
+	if work.Source.FirstKept != uuid.Nil() {
+		return nil, errors.New("compact: a native request must cover the whole captured context")
+	}
+	got, err := work.Native.Compact(ctx, work.NativeRequest)
+	if err != nil {
+		return nil, err
+	}
+	item, err := NativeItem(got, work.ProviderName, work.Source.FirstKept)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Source: work.Source, Usage: got.Usage, item: item}, nil
+}
+
+// runSummary asks the summary model for a text summary of the source.
+func runSummary(ctx context.Context, work Work) (*Result, error) {
 	if work.Model == nil || work.Mode == "" {
 		return nil, errors.New("compact: summary model and mode are required")
 	}
@@ -85,24 +93,12 @@ func Run(ctx context.Context, work Work) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.Report = report
-	var items []transcript.Item
-	var stop provider.StopReason
-	for event, err := range work.Model.Stream(ctx, req) {
-		if err != nil {
-			return nil, err
-		}
-		if event.Item != nil {
-			items = append(items, *event.Item)
-		}
-		if event.Usage != nil {
-			u := *event.Usage
-			result.Usage = &u
-		}
-		if event.Stop != "" {
-			stop = event.Stop
-		}
+	result := &Result{Source: work.Source, Report: report}
+	items, stop, usage, err := collectStream(ctx, work.Model, req)
+	if err != nil {
+		return nil, err
 	}
+	result.Usage = usage
 	if err := ctx.Err(); err != nil {
 		return nil, context.Cause(ctx)
 	}
@@ -114,6 +110,27 @@ func Run(ctx context.Context, work Work) (*Result, error) {
 		Summary: summary, FirstKept: work.Source.FirstKept, Mode: work.Mode,
 	}}
 	return result, nil
+}
+
+// collectStream reads a whole response: its finished items, stop reason
+// and the last usage it reported.
+func collectStream(ctx context.Context, model provider.Provider, req provider.Request) (items []transcript.Item, stop provider.StopReason, usage *transcript.Usage, err error) {
+	for event, err := range model.Stream(ctx, req) {
+		if err != nil {
+			return nil, "", nil, err
+		}
+		if event.Item != nil {
+			items = append(items, *event.Item)
+		}
+		if event.Usage != nil {
+			u := *event.Usage
+			usage = &u
+		}
+		if event.Stop != "" {
+			stop = event.Stop
+		}
+	}
+	return items, stop, usage, nil
 }
 
 // EnsurePortable writes a real model summary when a different provider

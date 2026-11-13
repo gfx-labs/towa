@@ -139,13 +139,7 @@ func Decide(in Input) (Decision, error) {
 	// the mode and even with a compaction under way: its summary would
 	// arrive too late.
 	if fraction >= cfg.EmergencyThreshold {
-		d.Trigger = TriggerFull
-		if cfg.Mode == config.CompactionOff || in.Messages <= cfg.EmergencyKeepRecentMessages {
-			d.Action = Stop
-			return d, nil
-		}
-		d.Action, d.Keep = Emergency, cfg.EmergencyKeepRecentMessages
-		return d, nil
+		return decideFull(in, d), nil
 	}
 	if in.Running || in.Messages <= cfg.KeepRecentMessages {
 		return d, nil
@@ -153,21 +147,53 @@ func Decide(in Input) (Decision, error) {
 	d.Keep = cfg.KeepRecentMessages
 
 	if in.NativeAvailable {
-		switch cfg.OpenAINative {
-		case config.NativeAuto:
-			// The server compacts in the stream at its own threshold.
-			return d, nil
-		case config.NativeExplicit:
-			if tokens >= cfg.OpenAINativeThresholdTokens {
-				d.Action, d.Trigger, d.Native = Background, TriggerNative, true
-			}
-			return d, nil
-		case config.NativeOff:
-		default:
-			return Decision{}, fmt.Errorf("compact: native mode %q is not known", cfg.OpenAINative)
+		if done, err := decideNative(in, &d); done || err != nil {
+			return d, err
 		}
 	}
+	err := decideByMode(in, &d, fraction)
+	return d, err
+}
 
+// decideFull is the decision when the context is at the emergency
+// threshold: cut it, or stop when no cut is allowed.
+func decideFull(in Input, d Decision) Decision {
+	cfg := in.Config
+	d.Trigger = TriggerFull
+	if cfg.Mode == config.CompactionOff || in.Messages <= cfg.EmergencyKeepRecentMessages {
+		d.Action = Stop
+		return d
+	}
+	d.Action, d.Keep = Emergency, cfg.EmergencyKeepRecentMessages
+	return d
+}
+
+// decideNative applies the native compaction setting. done says d is final.
+// A failed decision returns the zero Decision through d.
+func decideNative(in Input, d *Decision) (done bool, err error) {
+	cfg := in.Config
+	switch cfg.OpenAINative {
+	case config.NativeAuto:
+		// The server compacts in the stream at its own threshold.
+		return true, nil
+	case config.NativeExplicit:
+		if d.ContextTokens >= cfg.OpenAINativeThresholdTokens {
+			d.Action, d.Trigger, d.Native = Background, TriggerNative, true
+		}
+		return true, nil
+	case config.NativeOff:
+		return false, nil
+	default:
+		*d = Decision{}
+		return true, fmt.Errorf("compact: native mode %q is not known", cfg.OpenAINative)
+	}
+}
+
+// decideByMode applies the configured mode's rule for compacting ahead of
+// need. A failed decision returns the zero Decision through d.
+func decideByMode(in Input, d *Decision, fraction float64) error {
+	cfg := in.Config
+	tokens := d.ContextTokens
 	switch cfg.Mode {
 	case config.CompactionOff:
 	case config.CompactionReactive:
@@ -178,7 +204,7 @@ func Decide(in Input) (Decision, error) {
 			d.Action, d.Trigger = Background, TriggerTokens
 		}
 	case config.CompactionProactive:
-		if !held(in, tokens, fraction) && projected(in, budget) {
+		if !held(in, tokens, fraction) && projected(in, d.Budget) {
 			d.Action, d.Trigger = Background, TriggerProjection
 		}
 	case config.CompactionSemantic:
@@ -186,13 +212,14 @@ func Decide(in Input) (Decision, error) {
 		case held(in, tokens, fraction):
 		case TopicShift(in.Embeddings, cfg.TopicShiftThreshold):
 			d.Action, d.Trigger = Background, TriggerTopicShift
-		case projected(in, budget):
+		case projected(in, d.Budget):
 			d.Action, d.Trigger = Background, TriggerProjection
 		}
 	default:
-		return Decision{}, fmt.Errorf("compact: mode %q is not known", cfg.Mode)
+		*d = Decision{}
+		return fmt.Errorf("compact: mode %q is not known", cfg.Mode)
 	}
-	return d, nil
+	return nil
 }
 
 // held reports a reason not to compact ahead of need: the context is below

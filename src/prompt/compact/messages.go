@@ -1,7 +1,6 @@
 package compact
 
 import (
-	"slices"
 	"uuid"
 
 	"github.com/gfx-labs/towa/src/transcript"
@@ -75,7 +74,16 @@ func Cut(active []transcript.Entry, keep int) (replace int, firstKept uuid.UUID)
 		// Leading entries with no role stay with the replaced part.
 		return len(active), uuid.Nil()
 	}
-	cut := msgs[len(msgs)-keep].start
+	cut := pullBack(active, msgs, msgs[len(msgs)-keep].start)
+	if cut == 0 {
+		return 0, uuid.Nil()
+	}
+	return cut, active[cut].ID
+}
+
+// pullBack moves cut back until it is on a message boundary and every tool
+// result after it has its call after it too.
+func pullBack(active []transcript.Entry, msgs []span, cut int) int {
 	calls := map[string]int{}
 	for i, e := range active {
 		if e.Item.ToolCall != nil {
@@ -99,20 +107,5 @@ func Cut(active []transcript.Entry, keep int) (replace int, firstKept uuid.UUID)
 			}
 		}
 	}
-	if cut == 0 {
-		return 0, uuid.Nil()
-	}
-	return cut, active[cut].ID
-}
-
-// toolNames returns the names of the tools called in entries, sorted.
-func toolNames(entries []transcript.Entry) []string {
-	var names []string
-	for _, e := range entries {
-		if c := e.Item.ToolCall; c != nil && !slices.Contains(names, c.Name) {
-			names = append(names, c.Name)
-		}
-	}
-	slices.Sort(names)
-	return names
+	return cut
 }
