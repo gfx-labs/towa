@@ -162,6 +162,23 @@ func (s *session) options() map[acp.SessionConfigId]Value {
 	return maps.Clone(s.values)
 }
 
+// set stores a config option value. It returns a copy of all values and
+// whether this one differed from the stored one. The caller holds setMu.
+func (s *session) set(id acp.SessionConfigId, value Value) (map[acp.SessionConfigId]Value, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, false, unknownSession(s.id)
+	}
+	changed := s.values[id] != value
+	s.values[id] = value
+	if changed && id == ModeOption {
+		// "Allow always" was given in the mode it was asked in.
+		clear(s.allowed)
+	}
+	return maps.Clone(s.values), changed, nil
+}
+
 // close cancels every prompt and returns once the running turn has stopped.
 // It keeps the slot, so nothing runs in a closed session.
 func (s *session) close(ctx context.Context) error {

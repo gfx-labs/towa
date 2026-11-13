@@ -26,7 +26,7 @@ func (a *Agent) baseTurn(s *session) (loop.Turn, error) {
 			if !ok {
 				return false, errors.New("session: runtime permission request has no prompt arrival")
 			}
-			return a.permit(ctx, s, arrival, tool, effect, call)
+			return a.permit(ctx, s, permitRequest{arrival: arrival, tool: tool, effect: effect, call: call})
 		},
 	}
 	if err := wireCopy(s.systemPrompt, &base.SystemPrompt); err != nil {
@@ -35,14 +35,7 @@ func (a *Agent) baseTurn(s *session) (loop.Turn, error) {
 	if err := wireCopy(s.mcpServers, &base.McpServers); err != nil {
 		return loop.Turn{}, err
 	}
-	for id, value := range s.options() {
-		if apply := a.registry.option(id).Apply; apply != nil {
-			apply(&base, value)
-		}
-	}
-	for _, apply := range s.perTurn {
-		apply(&base)
-	}
+	a.applyOptions(s, &base)
 	base.Dirs = slices.Clone(base.Dirs)
 	base.ContextFiles = slices.Clone(base.ContextFiles)
 	base.SkillsDirs = slices.Clone(base.SkillsDirs)

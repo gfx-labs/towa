@@ -3,11 +3,11 @@ package session
 import (
 	"context"
 	"encoding/json/v2"
-	"errors"
 	"time"
 	"uuid"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/towa/src/store"
 )
 
 // UnstableArchiveSession closes a session on any connection before hiding it
@@ -77,10 +77,7 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	if err := a.ready(); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
-	if err := errors.Join(a.checkDirs(p.Cwd, p.AdditionalDirectories), a.checkSystemPrompt(p.SystemPrompt), a.checkMCP(p.McpServers)); err != nil {
-		if refused, ok := errors.AsType[*acp.RequestError](err); ok {
-			return acp.UnstableForkSessionResponse{}, refused
-		}
+	if err := a.checkRequest(p.Cwd, p.AdditionalDirectories, p.SystemPrompt, p.McpServers); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
 	defer a.lock(p.SessionId)()
@@ -88,11 +85,7 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	if err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
-	state, merged, prompt, err := a.restore(meta, p.Meta, p.SystemPrompt)
-	if err != nil {
-		return acp.UnstableForkSessionResponse{}, err
-	}
-	values, perTurn, err := a.startValues(merged, nil, state.Values)
+	plan, err := a.planAttach(attachRequest{meta: p.Meta, systemPrompt: p.SystemPrompt}, meta)
 	if err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
@@ -100,35 +93,45 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	if err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
-	source := meta.ID
 	id := uuid.NewV7()
-	s := newSession(acp.SessionId(id.String()), p.Cwd)
-	s.dirs, s.systemPrompt, s.mcpServers = p.AdditionalDirectories, prompt, p.McpServers
-	s.values, s.perTurn = values, perTurn
-	s.overrides = overrides(merged)
-	s.title = meta.Title
+	s := newFromPlan(acp.SessionId(id.String()), p.Cwd, p.AdditionalDirectories, p.McpServers, plan)
 	attached := false
 	defer a.discard(ctx, s, &attached)
 	a.announceAfterResponse(ctx, s)
 	if err := a.openRuntime(ctx, s); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
-	meta.ID, meta.ParentID = id, uuid.Nil()
-	meta.Cwd, meta.Created, meta.Updated, meta.Archived = p.Cwd, time.Now(), time.Now(), false
-	if err := a.fillMeta(s, &meta); err != nil {
+	if err := a.storeFork(ctx, s, forkSource{id: p.SessionId, stored: meta.ID}, id, meta); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
-	}
-	s.meta = meta
-	if err := a.store.Fork(ctx, source, meta); err != nil {
-		return acp.UnstableForkSessionResponse{}, storeError(p.SessionId, err)
 	}
 	if err := a.put(s, a); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
 	attached = true
 	var response acp.UnstableForkSessionResponse
-	err = wireCopy(acp.NewSessionResponse{SessionId: s.id, Modes: modeState(a.registry.option(ModeOption), values[ModeOption].ID), ConfigOptions: a.registry.configOptions(values, a.Gate().BooleanOptions()), Meta: repairMeta(repaired)}, &response)
+	err = wireCopy(acp.NewSessionResponse{SessionId: s.id, Modes: modeState(a.registry.option(ModeOption), plan.values[ModeOption].ID), ConfigOptions: a.registry.configOptions(plan.values, a.Gate().BooleanOptions()), Meta: repairMeta(repaired)}, &response)
 	return response, err
+}
+
+// forkSource names the session a fork copies.
+type forkSource struct {
+	id     acp.SessionId
+	stored uuid.UUID
+}
+
+// storeFork writes the fork's meta, taken from the source's, and copies the
+// source's history to it.
+func (a *Agent) storeFork(ctx context.Context, s *session, source forkSource, id uuid.UUID, meta store.Meta) error {
+	meta.ID, meta.ParentID = id, uuid.Nil()
+	meta.Cwd, meta.Created, meta.Updated, meta.Archived = s.cwd, time.Now(), time.Now(), false
+	if err := a.fillMeta(s, &meta); err != nil {
+		return err
+	}
+	s.meta = meta
+	if err := a.store.Fork(ctx, source.stored, meta); err != nil {
+		return storeError(source.id, err)
+	}
+	return nil
 }
 
 func wireCopy(from, to any) error {

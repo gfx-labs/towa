@@ -91,10 +91,7 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	if err := a.ready(); err != nil {
 		return nil, nil, err
 	}
-	if err := errors.Join(a.checkDirs(r.cwd, r.dirs), a.checkSystemPrompt(r.systemPrompt), a.checkMCP(r.mcpServers)); err != nil {
-		if refused, ok := errors.AsType[*acp.RequestError](err); ok {
-			return nil, nil, refused
-		}
+	if err := a.checkRequest(r.cwd, r.dirs, r.systemPrompt, r.mcpServers); err != nil {
 		return nil, nil, err
 	}
 	// One at a time for a session, so that two loads cannot both make it
@@ -108,49 +105,18 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	if meta.Cwd != r.cwd {
 		return nil, nil, cwdMismatch(r.cwd, meta.Cwd)
 	}
-	state, merged, prompt, err := a.restore(meta, r.meta, r.systemPrompt)
+	plan, live, err := a.planAfterDrain(ctx, r, meta)
 	if err != nil {
 		return nil, nil, err
 	}
-	values, perTurn, err := a.startValues(merged, r.initial, state.Values)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// From whichever connection has it. Its client is told nothing, since
-	// the protocol has no message for it: the turn it was running answers
-	// as cancelled, and its next request for the session answers that the
-	// session is unknown.
-	live, err := a.drain(ctx, r.id, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	if live != nil {
-		// The old turn may have updated metadata while it stopped.
-		meta, err = a.storedMeta(ctx, r.id)
-		if err != nil {
-			return nil, nil, err
-		}
-		state, merged, prompt, err = a.restore(meta, r.meta, r.systemPrompt)
-		if err != nil {
-			return nil, nil, err
-		}
-		values, perTurn, err = a.startValues(merged, r.initial, state.Values)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
+	meta = plan.meta
 
 	*r.repaired, err = a.repair(ctx, r.id, meta.ID)
 	if err != nil {
 		return nil, nil, err
 	}
-	s := newSession(r.id, meta.Cwd)
-	// The request's list is the session's whole list from now on.
-	s.dirs, s.systemPrompt, s.mcpServers = r.dirs, prompt, r.mcpServers
-	s.values, s.perTurn = values, perTurn
-	s.overrides = overrides(merged)
-	s.title, s.meta = meta.Title, meta
+	s := newFromPlan(r.id, meta.Cwd, r.dirs, r.mcpServers, plan)
+	s.meta = meta
 	attached := false
 	defer a.discard(ctx, s, &attached)
 	a.announceAfterResponse(ctx, s)
@@ -160,49 +126,120 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	if err := a.persist(ctx, s); err != nil {
 		return nil, nil, err
 	}
-
 	if replay {
-		var mapper loop.Mapper
-		if s.runtime.Mapper != nil {
-			mapper = *s.runtime.Mapper
-		}
-		// Every entry, including the ones a compaction took out of the
-		// model's context: the client saw them.
-		entries, err := a.store.History(ctx, meta.ID, store.Range{})
-		if err != nil {
-			return nil, nil, storeError(r.id, err)
-		}
-		for entry, err := range entries {
-			if err != nil {
-				return nil, nil, storeError(r.id, err)
-			}
-			updates, err := mapper.Updates(entry.Item)
-			if err != nil {
-				return nil, nil, fmt.Errorf("session: replaying entry %s of session %s: %w", entry.ID, r.id, err)
-			}
-			for _, update := range updates {
-				if err := a.send(ctx, s, update); err != nil {
-					return nil, nil, err
-				}
-			}
+		if err := a.replayHistory(ctx, s); err != nil {
+			return nil, nil, err
 		}
 	}
-	// The client named the session, so what describes it can go out before
-	// the answer.
-	info := &acp.SessionSessionInfoUpdate{SessionUpdate: "session_info_update", UpdatedAt: new(meta.Updated.UTC().Format(time.RFC3339))}
-	if meta.Title != "" {
-		info.Title = &meta.Title
-	}
-	if err := a.send(ctx, s, acp.SessionUpdate{SessionInfoUpdate: info}); err != nil {
+	if err := a.sendInfo(ctx, s, meta); err != nil {
 		return nil, nil, err
 	}
 	if err := a.put(s, a); err != nil {
 		return nil, nil, err
 	}
 	attached = true
-	a.logger.Info("session attached from the store", "session", s.id, "replayed", replay, "was_live", live != nil)
-	return modeState(a.registry.option(ModeOption), values[ModeOption].ID),
-		a.registry.configOptions(values, a.Gate().BooleanOptions()), nil
+	a.logger.Info("session attached from the store", "session", s.id, "replayed", replay, "was_live", live)
+	return modeState(a.registry.option(ModeOption), plan.values[ModeOption].ID),
+		a.registry.configOptions(plan.values, a.Gate().BooleanOptions()), nil
+}
+
+// attachPlan is what a stored session starts with in this process.
+type attachPlan struct {
+	meta    store.Meta
+	prompt  *acp.SystemPrompt
+	merged  map[string]any
+	values  map[acp.SessionConfigId]Value
+	perTurn []func(*loop.Turn)
+}
+
+// planAttach works out the state, system prompt and config values the
+// request and the stored meta give the session.
+func (a *Agent) planAttach(r attachRequest, meta store.Meta) (attachPlan, error) {
+	state, merged, prompt, err := a.restore(meta, r.meta, r.systemPrompt)
+	if err != nil {
+		return attachPlan{}, err
+	}
+	values, perTurn, err := a.startValues(merged, r.initial, state.Values)
+	if err != nil {
+		return attachPlan{}, err
+	}
+	return attachPlan{meta: meta, prompt: prompt, merged: merged, values: values, perTurn: perTurn}, nil
+}
+
+// planAfterDrain plans the attach, then takes the session over from
+// whichever connection has it. live says one had it, in which case the plan
+// is made again from the metadata it left.
+func (a *Agent) planAfterDrain(ctx context.Context, r attachRequest, meta store.Meta) (plan attachPlan, live bool, err error) {
+	plan, err = a.planAttach(r, meta)
+	if err != nil {
+		return attachPlan{}, false, err
+	}
+	// From whichever connection has it. Its client is told nothing, since
+	// the protocol has no message for it: the turn it was running answers
+	// as cancelled, and its next request for the session answers that the
+	// session is unknown.
+	drained, err := a.drain(ctx, r.id, nil)
+	if err != nil || drained == nil {
+		return plan, false, err
+	}
+	// The old turn may have updated metadata while it stopped.
+	meta, err = a.storedMeta(ctx, r.id)
+	if err != nil {
+		return attachPlan{}, true, err
+	}
+	plan, err = a.planAttach(r, meta)
+	return plan, true, err
+}
+
+// newFromPlan makes a session that starts from a stored one, not yet open.
+// The request's directory and server lists are the session's whole lists
+// from now on.
+func newFromPlan(id acp.SessionId, cwd string, dirs []string, servers []acp.McpServer, plan attachPlan) *session {
+	s := newSession(id, cwd)
+	s.dirs, s.systemPrompt, s.mcpServers = dirs, plan.prompt, servers
+	s.values, s.perTurn = plan.values, plan.perTurn
+	s.overrides = overrides(plan.merged)
+	s.title = plan.meta.Title
+	return s
+}
+
+// replayHistory sends the stored history of the session to the client.
+func (a *Agent) replayHistory(ctx context.Context, s *session) error {
+	var mapper loop.Mapper
+	if s.runtime.Mapper != nil {
+		mapper = *s.runtime.Mapper
+	}
+	// Every entry, including the ones a compaction took out of the
+	// model's context: the client saw them.
+	entries, err := a.store.History(ctx, s.meta.ID, store.Range{})
+	if err != nil {
+		return storeError(s.id, err)
+	}
+	for entry, err := range entries {
+		if err != nil {
+			return storeError(s.id, err)
+		}
+		updates, err := mapper.Updates(entry.Item)
+		if err != nil {
+			return fmt.Errorf("session: replaying entry %s of session %s: %w", entry.ID, s.id, err)
+		}
+		for _, update := range updates {
+			if err := a.send(ctx, s, update); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// sendInfo tells the client what describes the session. The client named
+// the session, so this can go out before the answer.
+func (a *Agent) sendInfo(ctx context.Context, s *session, meta store.Meta) error {
+	info := &acp.SessionSessionInfoUpdate{SessionUpdate: "session_info_update", UpdatedAt: new(meta.Updated.UTC().Format(time.RFC3339))}
+	if meta.Title != "" {
+		info.Title = &meta.Title
+	}
+	return a.send(ctx, s, acp.SessionUpdate{SessionInfoUpdate: info})
 }
 
 // ListSessions lists the stored sessions, oldest first. Sessions spawned
