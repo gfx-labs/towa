@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/gfx-labs/towa/compare/v0.1.1...v0.1.2) (2026-11-13)
+
+
+### chore
+
+* release 0.1.2 ([fac42d7](https://github.com/gfx-labs/towa/commit/fac42d7e191772fa68174d4804e175bfd69ec5eb))
+
 ## [0.1.1](https://github.com/gfx-labs/towa/compare/v0.1.0...v0.1.1) (2026-11-13)
 
 
