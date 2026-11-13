@@ -37,4 +37,4 @@ Measured after the fix:
 
 - Nothing says whether a model reads images. A model that does not is still sent the image, and what it does with it is the endpoint's business: Ollama's `qwen2.5:7b` answered without it. `models.go` has no such field and none was added.
 - Only Ollama was measured. No hosted endpoint was reachable with credit. Two reports from other projects say the same shape is taken where an image inside the tool message is refused: xai-org/plugin-marketplace issue 1554 for a DeepSeek model, and atlasfutures/semantic-router issue 255 for a Moonshot model. Neither was checked here.
-- `docs/notes/2026-11-11-dialect-codex.md` leaves `view_image` out of the Codex tool set and gives Chat's refusal as one of two reasons. That reason is gone. The tool is still left out, for the other one.
+- `view_image` is still not a tool. Chat's refusal of an image in a tool result was one of two reasons for that, and it is gone.

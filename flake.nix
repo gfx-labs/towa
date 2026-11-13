@@ -28,7 +28,6 @@
             pkgs.go_1_27
             pkgs.gopls
             pkgs.golangci-lint
-            pkgs.ripgrep
           ];
         };
       });

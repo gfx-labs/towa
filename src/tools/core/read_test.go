@@ -7,14 +7,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools/core"
 	"github.com/gfx-labs/towa/src/tools/fsops"
-	"github.com/stretchr/testify/require"
 )
 
 func TestReadFileNormalizesBeforeOutputLimitAndRecordsOnlySuccess(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config.Tools.Files
 	cfg.ImageMaxBytes = 20000
@@ -25,7 +27,7 @@ func TestReadFileNormalizesBeforeOutputLimitAndRecordsOnlySuccess(t *testing.T) 
 	require.NoError(t, os.WriteFile(path, data, 0o600))
 	roots := fsops.Roots{Cwd: dir, Confine: true}
 	input := fsops.ReadInput{Path: path}
-	_, err = fsops.Read(t.Context(), roots, cfg, input)
+	_, err = fsops.Read(t.Context(), roots, cfg, input, nil)
 	var tooLarge *fsops.Error
 	require.ErrorAs(t, err, &tooLarge)
 	require.Equal(t, fsops.KindTooLarge, tooLarge.Kind)

@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/models"
 )
@@ -13,7 +14,7 @@ import (
 // claude-haiku-4-5 answers the adaptive thinking parameter with an HTTP 400
 // (docs/notes/2026-11-12-claude-thinking.md), so the default must not reach it.
 func TestClaudeThinkingIsLeftOffAModelThatRefusesIt(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config.Claude
 

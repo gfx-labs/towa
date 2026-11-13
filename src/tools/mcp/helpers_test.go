@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
@@ -249,7 +250,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 // defaultConfig is the mcp section with its real defaults.
 func defaultConfig(t *testing.T) config.MCP {
 	t.Helper()
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	return loaded.Config.MCP
 }

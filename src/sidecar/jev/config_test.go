@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/sidecar/jev"
 	"github.com/gfx-labs/towa/src/support/httpclient"
 )
@@ -18,7 +19,7 @@ func loadConfig(t *testing.T, body string) (*config.Loaded, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	return config.Load(config.Sources{Files: []string{path}})
+	return configtest.Load(config.Sources{Files: []string{path}})
 }
 
 // The design's own example, loaded from a file and turned into a client.

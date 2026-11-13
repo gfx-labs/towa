@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/gate"
 	"github.com/gfx-labs/towa/src/tools/shell"
@@ -24,7 +25,7 @@ import (
 
 func toolsConfig(t *testing.T) config.Tools {
 	t.Helper()
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	return loaded.Config.Tools
 }

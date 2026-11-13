@@ -15,10 +15,14 @@ import (
 	"testing"
 	"uuid"
 
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
@@ -29,13 +33,11 @@ import (
 	"github.com/gfx-labs/towa/src/tools/fsops"
 	"github.com/gfx-labs/towa/src/tools/mcp"
 	"github.com/gfx-labs/towa/src/transcript"
-	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRuntimeOwnsMCPInventoryAndReadAuthority(t *testing.T) {
 	server := newRuntimeMCP(t)
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config
 	cfg.MCP.SessionServersDirect = true
@@ -129,7 +131,7 @@ func runtimeToolNames(list []tools.Tool) []string {
 // disabled tool has no line, and an entry whose provider searches gets the
 // lines of that provider's tool where another entry gets ours.
 func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config
 	cfg.ConversationSearch.Enabled = false
@@ -186,7 +188,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 // A session's prompt holds its context files as they were when it opened. A
 // file changed during the session is in the prompt of the next session.
 func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config
 	cfg.ConversationSearch.Enabled = false
@@ -308,7 +310,7 @@ func TestAFallbackSendsTheNextEntrysEffort(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config
 	cfg.Providers = []config.Provider{{ID: "local", Kind: config.ProviderResponses, BaseURL: server.URL + "/v1"}}

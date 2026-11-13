@@ -50,15 +50,10 @@ type ReadResult struct {
 	Image *transcript.Blob
 }
 
-// Read returns a range of a text file's lines, or an image whole.
-func Read(ctx context.Context, roots Roots, cfg config.ToolsFiles, in ReadInput) (ReadResult, error) {
-	return ReadWithImage(ctx, roots, cfg, in, nil)
-}
-
-// ReadWithImage normalizes image bytes before applying the output byte limit.
-// A non-nil normalize permits source images larger than that output limit.
-// Text reads and path access follow Read's rules.
-func ReadWithImage(ctx context.Context, roots Roots, cfg config.ToolsFiles, in ReadInput, normalize func(context.Context, transcript.Blob) (transcript.Blob, error)) (ReadResult, error) {
+// Read returns a range of a text file's lines, or an image whole. normalize,
+// when not nil, changes image bytes before the output byte limit applies,
+// which permits source images larger than that limit.
+func Read(ctx context.Context, roots Roots, cfg config.ToolsFiles, in ReadInput, normalize func(context.Context, transcript.Blob) (transcript.Blob, error)) (ReadResult, error) {
 	if in.Offset < 0 || in.Limit < 0 {
 		return ReadResult{}, &Error{Kind: KindInvalidRange, Path: in.Path}
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/provider"
 )
 
@@ -15,7 +16,7 @@ func loadProviders(t *testing.T, yaml string) (*config.Loaded, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0o600))
-	return config.Load(config.Sources{Files: []string{path}})
+	return configtest.Load(config.Sources{Files: []string{path}})
 }
 
 // A provider written in a config file reaches the request body: the file's

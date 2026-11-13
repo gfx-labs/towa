@@ -17,7 +17,7 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 - TUI, sandboxing or isolation (wrappers such as acphost do that), swarm (leave room), self-learning or memory.
 - macOS as a tested platform. It is a headless build target only: the tree must cross-build for `darwin/arm64`, because iOS captures run on a Mac.
 
-## First milestone
+## Aim
 
 The agent completes coding tasks locally with quality comparable to jcode and passes ACP compliance checks with real ACP clients (acphost, and jobshop's `acp-go-sdk` v0.13.5 client). jobcity integration and footprint comparison come after.
 
@@ -251,7 +251,7 @@ Wire clients:
 - `openai`: Responses API, streaming. Codex OAuth through `chatgpt.com/backend-api/codex` with towa's own instructions and function tools, as jcode does. jcode's 2026-11-05 probe found the backend accepts any `originator`, so towa sends `towa`. API keys against `api.openai.com` or any Responses-compatible endpoint. Native compaction.
 - `chat`: Chat Completions, streaming, for OpenRouter, z.ai, DeepSeek, OpenCode Go and others. OpenRouter extras: provider routing preferences, reasoning parameters, `HTTP-Referer` and `X-OpenRouter-Title` (the header OpenRouter's app attribution page documents). A tool message is text, so an image or audio a tool returned goes in a user message after the run of tool results, and a call's arguments always go back as a JSON object (`docs/notes/2026-11-12-chat-tool-result-images.md`, `docs/notes/2026-11-12-chat-call-arguments.md`).
 
-Model metadata (context window, max output) comes from a pinned table plus provider model listings (`/models` on OpenRouter), with config overrides. An unknown model with no metadata is an error at selection time, not a silent default.
+Model metadata (context window, max output) comes from the first of: the built-in table of exceptions, the config keys when set, the account's own model list (kept in `models.json` in the state directory), and the model's name (`docs/notes/2026-11-12-model-lists.md`, `docs/notes/2026-11-12-model-guess.md`). A model none of them settles is an error at selection time, not a silent default.
 
 ### Accounts and fallback
 
@@ -519,14 +519,13 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 
 ## Workflow
 
-- Commits go straight to master until the first milestone. After that: PRs with conventional titles, and release-please.
+- Commits go straight to master.
 - CI runs on the `talos-metal-gfx` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
-- Parallel packages may be built by swarm workers once the core loop works: `claude-fable-5-2` at low effort on the `claude-panda` account.
 
 ## Release
 
 - Private repo `gfx-labs/towa`, Go module `github.com/gfx-labs/towa`. The binary is `towa`, built from `cmd/towa`. The same word names the config and state directories, the `TOWA_` environment prefix, the `_meta` key and what is sent to providers. The name is the Towa Organization of Boogiepop Phantom.
-- release-please, static binaries (`CGO_ENABLED=0`, linux amd64 and arm64), Nix flake with the package and a NixOS or home-manager module later.
+- Static binaries (`CGO_ENABLED=0`, linux amd64 and arm64). A Nix flake has the package (`flake.nix`, `nix/package.nix`). Not built: release-please, and a NixOS or home-manager module.
 - Dependencies: `alecthomas/kong`, `goccy/go-yaml`, OTel Go SDK aligned with jobshop and `otelslog`, `modelcontextprotocol/go-sdk`, `gfx-labs/sse`, `valyala/bytebufferpool`, `coder/websocket`, `klauspost/compress`, `golang.org/x/sys`, `JohannesKaufmann/html-to-markdown/v2` for webfetch. Provider wire clients use `net/http`, `gfx-labs/sse` for SSE decoding, and `coder/websocket` for the OpenAI WebSocket transport. New dependencies need a recorded reason.
 
 ## Validation
@@ -537,20 +536,6 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 - Tests use testify, as acphost does.
 - Task quality: about 10 real closed issues from acphost and jobshop, run on towa and jcode with the same model, comparing completion, turns, tokens and wall time.
 - Footprint: RSS and CPU for 1, 10 and 200 idle and active sessions, compared with jcode, measured by a reproducible script.
-
-## Implementation order
-
-1. Repo scaffold, config, slog and OTel, ACP server on stdio with `initialize`, `session/new`, `session/prompt`, `session/cancel`, and a stub loop. Done 2026-11-11: `docs/notes/2026-11-11-acp-layer.md` and `docs/notes/2026-11-11-config-telemetry-server.md`.
-2. Chat Completions provider (OpenRouter), core tools, agent loop with parallel tools, limits, cancellation. First real tasks run here.
-3. Anthropic provider with OAuth login, refresh and locking.
-4. Responses provider with Codex OAuth, native compaction.
-5. Model chains, fallback, retries, model switching through `session/set_config_option`, usage and cost reporting.
-6. Session store interface with a first backend, `session/load`, store benchmark.
-7. Extras: batch, output gating, search, todo and plan, web, subagents.
-8. MCP meta-tool with all three transports and OAuth.
-9. Compaction modes, embeddings client, Jev decisions, hooks, modes, slash commands, context loading options.
-10. Unix and TCP listeners with mTLS, multi-session process mode.
-11. Conformance suite, task quality comparison, footprint benchmark, then jobcity trial.
 
 ## Clients today
 

@@ -23,7 +23,7 @@ func ReadFile(ctx context.Context, roots fsops.Roots, cfg config.ToolsFiles, tra
 	var result fsops.ReadResult
 	err = tracker.Read(ctx, path, func() error {
 		var readErr error
-		result, readErr = fsops.ReadWithImage(ctx, roots, cfg, in, func(ctx context.Context, source transcript.Blob) (transcript.Blob, error) {
+		result, readErr = fsops.Read(ctx, roots, cfg, in, func(ctx context.Context, source transcript.Blob) (transcript.Blob, error) {
 			// Captured 2.1.280 chunk-6bcrsx06.js:11 sets both dimensions to 2000.
 			image, imageErr := NormalizeImage(ctx, source.Data, ImageLimits{MaxWidth: 2000, MaxHeight: 2000, MaxBytes: cfg.ImageMaxBytes})
 			if imageErr != nil {

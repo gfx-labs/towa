@@ -15,6 +15,7 @@ import (
 	"github.com/gfx-labs/towa/pkg/acp/harness"
 	"github.com/gfx-labs/towa/src/cli"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 )
 
 // The whole program: flags and a config file reach the logger, and a client
@@ -122,7 +123,7 @@ websearch:
 	require.Contains(t, stdout.String(), "example.com/mcp")
 	require.Contains(t, stdout.String(), "MCP_KEY")
 	require.Contains(t, stdout.String(), "API_TOKEN")
-	loaded, err := config.Load(config.Sources{Files: []string{file}})
+	loaded, err := configtest.Load(config.Sources{Files: []string{file}})
 	require.NoError(t, err)
 	require.Equal(t, "https://provider-user:provider-password@example.com/v1?key=provider-query", loaded.Config.Providers[0].BaseURL)
 	require.Equal(t, "Bearer header-secret", loaded.Config.MCP.Servers[0].Headers["Authorization"])

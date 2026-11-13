@@ -17,6 +17,7 @@ import (
 	"github.com/gfx-labs/towa/src/agent/loop/looptest"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/providertest"
@@ -54,7 +55,7 @@ func TestControllerExchange(t *testing.T) {
 		t.Skip("this controller check only replays the existing summary fixture")
 	}
 	fixture, id, entries := recordedHistory(t)
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config.Compaction
 	cfg.Mode, cfg.SummaryPrompt, cfg.OpenAINative = config.CompactionReactive, config.SummaryShort, config.NativeOff

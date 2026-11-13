@@ -37,21 +37,6 @@ jobs:
           go generate ./...
           git diff --exit-code
           test -z "$(git status --porcelain)"
-      # The search tools run ripgrep and have no fallback, so their tests
-      # need the real binary. The version and checksum are pinned.
-      - name: install ripgrep
-        env:
-          RG_VERSION: 14.1.1
-          RG_SHA256: 4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
-        run: |
-          name="ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl"
-          curl --fail --silent --show-error --location --output "${RUNNER_TEMP}/rg.tar.gz" \
-            "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/${name}.tar.gz"
-          echo "${RG_SHA256}  ${RUNNER_TEMP}/rg.tar.gz" | sha256sum --check
-          mkdir -p "${RUNNER_TEMP}/rg"
-          tar --extract --gzip --file "${RUNNER_TEMP}/rg.tar.gz" --directory "${RUNNER_TEMP}/rg" --strip-components 1 "${name}/rg"
-          echo "${RUNNER_TEMP}/rg" >> "${GITHUB_PATH}"
-          "${RUNNER_TEMP}/rg/rg" --version
       # go test -json goes to a file and is printed from it unfiltered. rc
       # keeps the test exit code.
       - name: tests

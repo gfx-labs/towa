@@ -71,14 +71,6 @@ type Loaded struct {
 	Origin map[string]string
 }
 
-// Load resolves the configuration from src and args, the flags of a command
-// line without commands.
-func Load(src Sources, args ...string) (*Loaded, error) {
-	var flags Flags
-	_, loaded, err := Parse(src, &flags, &flags, args, kong.NoDefaultHelp())
-	return loaded, err
-}
-
 // Parse parses args with grammar, a struct that embeds *flags beside its
 // commands, and resolves the configuration from src and the flags. A key
 // that Config does not have is an error, whichever layer it came from.
@@ -471,9 +463,7 @@ func readFile(path string) (map[string]any, error) {
 // findIn returns the one config file in dir, or "" when there is none.
 func findIn(dir string) (string, error) {
 	var found []string
-	// config.toml was read before the loader moved to YAML. One that is
-	// still there is reported, not skipped.
-	for _, name := range []string{"config.yaml", "config.yml", "config.json", "config.toml"} {
+	for _, name := range []string{"config.yaml", "config.yml", "config.json"} {
 		path := filepath.Join(dir, name)
 		switch _, err := os.Stat(path); {
 		case err == nil:
@@ -488,8 +478,6 @@ func findIn(dir string) (string, error) {
 		return "", nil
 	case len(found) > 1:
 		return "", fmt.Errorf("config: %s holds more than one config file: %s", dir, strings.Join(found, ", "))
-	case filepath.Ext(found[0]) == ".toml":
-		return "", fmt.Errorf("config: %s is not read: the config file is config.yaml, config.yml or config.json", found[0])
 	}
 	return found[0], nil
 }

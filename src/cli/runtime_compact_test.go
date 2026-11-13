@@ -14,14 +14,16 @@ import (
 	"testing"
 	"uuid"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/src/agent/loop/looptest"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/provider/providertest"
 	"github.com/gfx-labs/towa/src/sidecar/embed"
 	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/support/telemetry"
-	"github.com/stretchr/testify/require"
 )
 
 // Recording requires separate approval for exactly one local embedding request.
@@ -43,7 +45,7 @@ func TestRuntimeRetainsSemanticEmbeddingAcrossTurns(t *testing.T) {
 		panic(http.ErrAbortHandler)
 	}))
 	t.Cleanup(main.Close)
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config
 	// The second entry is the first with an effort, so that it is another

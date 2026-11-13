@@ -40,7 +40,7 @@ type Runtime struct {
 	Turn  TurnFunc
 	Close func(context.Context) error
 	// Mapper describes replay with this runtime's tools and model metadata.
-	// Nil uses Options.Mapper. A supplied mapper stays immutable until Close.
+	// Nil replays with an empty mapper. A supplied mapper stays immutable until Close.
 	Mapper *loop.Mapper
 }
 
@@ -73,17 +73,15 @@ type Supports struct {
 	Prompt acp.PromptCapabilities
 }
 
-// Options configures an Agent. Every field but Registry and Supports is
-// required.
+// Options configures a Host. Every field but Registry, Supports and Store
+// is required.
 type Options struct {
 	// Version is reported to the client as the agent's version.
 	Version string
-	Turn    TurnFunc
 	// Open builds a runtime from the session's immutable base turn. The
 	// base has no prompt. Its permission callback uses the calling prompt's
 	// context. The runtime's context lives
 	// until the session closes, not until session/new or load returns.
-	// Nil preserves the process-wide Turn function.
 	Open   func(context.Context, loop.Turn) (Runtime, error)
 	Logger *slog.Logger
 	Tracer trace.Tracer
@@ -99,9 +97,6 @@ type Options struct {
 	// means sessions live in this process only: the methods that need a
 	// store then answer Method not found and are not advertised.
 	Store store.Store
-	// Mapper is the replay mapper for legacy Turn callers and runtimes
-	// that leave Runtime.Mapper nil. A runtime mapper takes precedence.
-	Mapper loop.Mapper
 }
 
 // Agent is the ACP agent for one connection. It advertises only what it
@@ -125,17 +120,6 @@ type Agent struct {
 }
 
 var _ acp.Agent = (*Agent)(nil)
-
-// NewAgent returns the agent of a process that serves one connection, such
-// as standard input and output. Call SetClient before the connection is
-// served.
-func NewAgent(o Options) (*Agent, error) {
-	h, err := NewHost(o)
-	if err != nil {
-		return nil, err
-	}
-	return h.NewAgent(), nil
-}
 
 // SetClient sets the client the agent sends session updates to. The agent is
 // needed to make the connection and the connection is the client, so this

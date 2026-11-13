@@ -9,6 +9,7 @@ import (
 
 	"github.com/gfx-labs/towa/src/cli/hosts"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 )
 
 // load resolves a YAML file as the program would.
@@ -16,7 +17,7 @@ func load(t *testing.T, yaml string) config.Config {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0o600))
-	loaded, err := config.Load(config.Sources{Files: []string{path}})
+	loaded, err := configtest.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	return loaded.Config
 }

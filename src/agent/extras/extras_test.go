@@ -15,11 +15,14 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/sidecar/jev"
 	"github.com/gfx-labs/towa/src/store"
@@ -29,7 +32,6 @@ import (
 	"github.com/gfx-labs/towa/src/tools/core"
 	"github.com/gfx-labs/towa/src/tools/repair"
 	"github.com/gfx-labs/towa/src/transcript"
-	"github.com/stretchr/testify/require"
 )
 
 func run(t *testing.T, tool tools.Tool, input string, env tools.Env) tools.Result {
@@ -230,7 +232,7 @@ func TestBatchRunsRealToolsThroughLoopAndRejectsNesting(t *testing.T) {
 // The file tools take no member but their own, so an entry that had to carry
 // one more was refused by each of them.
 func TestBatchEntryIsTheToolAndItsOwnArguments(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	env := tools.Env{Cwd: t.TempDir()}
 	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "a.txt"), []byte("alpha\n"), 0o600))

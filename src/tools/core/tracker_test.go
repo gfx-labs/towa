@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools/core"
 	"github.com/gfx-labs/towa/src/tools/fsops"
-	"github.com/stretchr/testify/require"
 )
 
 func TestReadTrackerGuardsTheEditCapability(t *testing.T) {
@@ -20,14 +22,14 @@ func TestReadTrackerGuardsTheEditCapability(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "file")
 			require.NoError(t, os.WriteFile(path, []byte("first\nsecond\n"), 0o600))
-			loaded, err := config.Load(config.Sources{})
+			loaded, err := configtest.Load(config.Sources{})
 			require.NoError(t, err)
 			cfg := loaded.Config.Tools.Files
 			roots := fsops.Roots{Cwd: dir}
 			var tracker core.ReadTracker
 			read := func() error {
 				return tracker.Read(ctx, path, func() error {
-					_, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path, Limit: 1})
+					_, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path, Limit: 1}, nil)
 					return err
 				})
 			}

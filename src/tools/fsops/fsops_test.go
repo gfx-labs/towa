@@ -13,12 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools/fsops"
 )
 
 func filesConfig(t *testing.T) config.ToolsFiles {
 	t.Helper()
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	return loaded.Config.Tools.Files
 }
@@ -63,7 +64,7 @@ func TestPathsOutsideTheSessionDirectoriesAreAllowedByDefault(t *testing.T) {
 	require.NoError(t, os.Symlink(outside, filepath.Join(roots.Cwd, "linkdir")))
 
 	for _, path := range []string{secret, "../outside/secret.txt", "linkdir/secret.txt"} {
-		res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path})
+		res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path}, nil)
 		require.NoError(t, err, path)
 		require.Equal(t, "secret\n", res.Text)
 		require.Equal(t, secret, res.Path)
@@ -80,7 +81,7 @@ func TestPathsOutsideTheSessionDirectoriesAreAllowedByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "edited\n", string(got))
 
-	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "in.txt"})
+	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "in.txt"}, nil)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(roots.Cwd, "in.txt"), res.Path)
 }
@@ -103,7 +104,7 @@ func TestPathsAreConfinedToTheSessionDirectoriesWhenAsked(t *testing.T) {
 		"linkdir/new.txt",
 		"linkdir/sub/new.txt",
 	} {
-		_, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path})
+		_, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path}, nil)
 		requireKind(t, err, fsops.KindOutside)
 		_, err = fsops.Write(ctx, roots, cfg, fsops.WriteInput{Path: path, Content: "x"})
 		requireKind(t, err, fsops.KindOutside)
@@ -123,7 +124,7 @@ func TestPathsAreConfinedToTheSessionDirectoriesWhenAsked(t *testing.T) {
 	// The additional directory is allowed, by its own path and through a
 	// link from the working directory.
 	for _, path := range []string{filepath.Join(roots.Dirs[0], "more.txt"), "to-extra"} {
-		res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path})
+		res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: path}, nil)
 		require.NoError(t, err, path)
 		require.Equal(t, "extra\n", res.Text)
 		require.Equal(t, filepath.Join(roots.Dirs[0], "more.txt"), res.Path)
@@ -135,7 +136,7 @@ func TestReadReturnsTheLinesAskedFor(t *testing.T) {
 	cfg, ctx := filesConfig(t), context.Background()
 	put(t, filepath.Join(roots.Cwd, "five.txt"), "one\ntwo\nthree\nfour\nfive")
 
-	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: 2, Limit: 2})
+	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: 2, Limit: 2}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "two\nthree\n", res.Text)
 	require.Equal(t, 2, res.FirstLine)
@@ -143,23 +144,23 @@ func TestReadReturnsTheLinesAskedFor(t *testing.T) {
 	require.True(t, res.More)
 
 	// The last line has no newline and is still a line.
-	res, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: 4})
+	res, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: 4}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "four\nfive", res.Text)
 	require.Equal(t, 2, res.Lines)
 	require.False(t, res.More)
 
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: 6})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: 6}, nil)
 	require.Equal(t, 5, requireKind(t, err, fsops.KindPastEnd).Lines)
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: -1})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "five.txt", Offset: -1}, nil)
 	requireKind(t, err, fsops.KindInvalidRange)
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "absent.txt"})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "absent.txt"}, nil)
 	requireKind(t, err, fsops.KindNotFound)
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "."})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "."}, nil)
 	requireKind(t, err, fsops.KindIsDirectory)
 
 	put(t, filepath.Join(roots.Cwd, "empty.txt"), "")
-	res, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "empty.txt"})
+	res, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "empty.txt"}, nil)
 	require.NoError(t, err)
 	require.Zero(t, res.Lines)
 
@@ -167,9 +168,9 @@ func TestReadReturnsTheLinesAskedFor(t *testing.T) {
 	// than the bufio buffer exercises the piecewise path too.
 	cfg.ReadMaxBytes = 100
 	put(t, filepath.Join(roots.Cwd, "long.txt"), "short\n"+strings.Repeat("x", 10000)+"\nlast\n")
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "long.txt"})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "long.txt"}, nil)
 	require.Equal(t, int64(100), requireKind(t, err, fsops.KindTooLarge).Limit)
-	res, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "long.txt", Offset: 3})
+	res, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "long.txt", Offset: 3}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "last\n", res.Text)
 }
@@ -181,7 +182,7 @@ func TestReadTellsImagesAndBinaryFromText(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))))
 	put(t, filepath.Join(roots.Cwd, "pixel.dat"), buf.String())
-	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "pixel.dat"})
+	res, err := fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "pixel.dat"}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, res.Image)
 	require.Equal(t, "image/png", res.Image.MimeType)
@@ -189,7 +190,7 @@ func TestReadTellsImagesAndBinaryFromText(t *testing.T) {
 	require.Empty(t, res.Text)
 
 	cfg.ImageMaxBytes = 10
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "pixel.dat"})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "pixel.dat"}, nil)
 	requireKind(t, err, fsops.KindTooLarge)
 
 	self, err := os.Executable()
@@ -197,12 +198,12 @@ func TestReadTellsImagesAndBinaryFromText(t *testing.T) {
 	exe, err := os.ReadFile(self)
 	require.NoError(t, err)
 	put(t, filepath.Join(roots.Cwd, "prog"), string(exe[:20000]))
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "prog"})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "prog"}, nil)
 	requireKind(t, err, fsops.KindBinary)
 
 	// Latin-1 text has no NUL byte and is still not text we can send.
 	put(t, filepath.Join(roots.Cwd, "latin1.txt"), "caf\xe9\n")
-	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "latin1.txt"})
+	_, err = fsops.Read(ctx, roots, cfg, fsops.ReadInput{Path: "latin1.txt"}, nil)
 	requireKind(t, err, fsops.KindBinary)
 }
 

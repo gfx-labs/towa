@@ -31,6 +31,7 @@ import (
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/chat"
 	"github.com/gfx-labs/towa/src/provider/providertest"
@@ -212,7 +213,7 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 			t.Fatalf("looptest: %v", err)
 		}
 	}
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	fail(err)
 	cfg := loaded.Config
 
@@ -328,7 +329,7 @@ func ReadTool(cfg config.ToolsFiles) tools.Tool {
 			if err != nil {
 				return tools.Result{}, err
 			}
-			res, err := fsops.Read(ctx, fsops.RootsOf(call.Env, cfg), cfg, fsops.ReadInput{Path: in.Path})
+			res, err := fsops.Read(ctx, fsops.RootsOf(call.Env, cfg), cfg, fsops.ReadInput{Path: in.Path}, nil)
 			var refused *fsops.Error
 			switch {
 			case errors.As(err, &refused):

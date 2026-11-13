@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/models"
 )
@@ -231,7 +232,7 @@ providers:
       - id: gpt-6.1-sol
         max_output_tokens: 32000
 `), 0o600))
-	loaded, err := config.Load(config.Sources{Files: []string{path}})
+	loaded, err := configtest.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	cfg := loaded.Config
 	unlisted := models.Unlisted{Providers: cfg.Providers, Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens}}
@@ -263,7 +264,7 @@ providers:
 	require.ErrorContains(t, err, `models of provider "zai"`)
 
 	// A flag lists the models separated by commas, and replaces the file's.
-	loaded, err = config.Load(config.Sources{Files: []string{path}}, "--models", "zai:main/glm-5#high,claude:work/claude-opus-4-7")
+	loaded, err = configtest.Load(config.Sources{Files: []string{path}}, "--models", "zai:main/glm-5#high,claude:work/claude-opus-4-7")
 	require.NoError(t, err)
 	require.Equal(t, []string{"zai:main/glm-5#high", "claude:work/claude-opus-4-7"}, loaded.Config.Models)
 }

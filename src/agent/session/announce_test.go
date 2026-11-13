@@ -4,9 +4,10 @@ import (
 	"encoding/json/v2"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/pkg/acp/acptest"
-	"github.com/stretchr/testify/require"
 )
 
 func commandNotification(t *testing.T, w *acptest.Wire, id string) acp.SessionNotification {

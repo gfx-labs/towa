@@ -19,7 +19,6 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/gfx-labs/towa/pkg/acp"
-	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/cli/hosts"
@@ -243,7 +242,6 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 			ContextOverrides:      true,
 			MCP:                   &acp.McpCapabilities{Http: true, Sse: true},
 		},
-		Mapper: loop.Mapper{},
 	})
 	if err != nil {
 		return errors.Join(err, factory.Close())

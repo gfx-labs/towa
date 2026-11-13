@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/tools"
@@ -43,7 +44,7 @@ func names(set tools.Set) []string {
 
 func gateOn(t *testing.T) config.ToolsGate {
 	t.Helper()
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	require.True(t, loaded.Config.Tools.Gate.Enabled)
 	return loaded.Config.Tools.Gate
@@ -67,7 +68,7 @@ func mcpTools(t *testing.T, toolName string) []tools.Tool {
 		ts.CloseClientConnections()
 		ts.Close()
 	})
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	manager, err := mcp.NewManager(mcp.Options{
 		Config:        loaded.Config.MCP,

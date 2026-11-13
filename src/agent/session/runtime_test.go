@@ -6,10 +6,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/store/dir"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSessionOwnsRuntimeUntilItsTurnStops(t *testing.T) {

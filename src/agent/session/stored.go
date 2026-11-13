@@ -12,6 +12,7 @@ import (
 
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/pkg/acp/harness"
+	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/store"
 )
 
@@ -162,7 +163,7 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	}
 
 	if replay {
-		mapper := a.mapper
+		var mapper loop.Mapper
 		if s.runtime.Mapper != nil {
 			mapper = *s.runtime.Mapper
 		}

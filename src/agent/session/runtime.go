@@ -60,10 +60,6 @@ func (a *Agent) openRuntime(ctx context.Context, s *session) error {
 	a.opening.Add(1)
 	s.finishOpen = a.opening.Done
 	a.liveMu.Unlock()
-	s.runtime.Turn = a.turn
-	if a.open == nil {
-		return nil
-	}
 	base, err := a.baseTurn(s)
 	if err != nil {
 		return err

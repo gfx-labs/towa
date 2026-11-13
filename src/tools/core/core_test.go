@@ -7,13 +7,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gfx-labs/towa/pkg/acp"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/core"
 	"github.com/gfx-labs/towa/src/tools/toolset"
 	"github.com/gfx-labs/towa/src/transcript"
-	"github.com/stretchr/testify/require"
 )
 
 // assemble builds the core tools as a session does, with the gate's member
@@ -43,7 +45,7 @@ func run(t *testing.T, set toolset.Result, env tools.Env, name string, input any
 }
 
 func TestFileToolsShareOneSessionsReadState(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config.Tools
 	cfg.Todo.Enabled = true
@@ -159,7 +161,7 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 }
 
 func TestApplyPatchChangesFilesAndKeepsWhatWasAppliedBeforeAFailure(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	cfg := loaded.Config.Tools
 	env := tools.Env{Cwd: t.TempDir()}
@@ -220,7 +222,7 @@ func TestApplyPatchChangesFilesAndKeepsWhatWasAppliedBeforeAFailure(t *testing.T
 }
 
 func TestBashRunsACommandAndRefusesABadTimeout(t *testing.T) {
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	env := tools.Env{Cwd: t.TempDir()}
 	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker)})

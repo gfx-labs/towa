@@ -44,10 +44,11 @@ func TestMain(m *testing.M) {
 	}
 	options := agentOptions(storedTurn(st))
 	options.Store = st
-	agent, err := session.NewAgent(options)
+	host, err := session.NewHost(options)
 	if err != nil {
 		panic(err)
 	}
+	agent := host.NewAgent()
 	conn := acp.NewAgentSideConnection(agent, os.Stdout, os.Stdin, nil)
 	agent.SetClient(conn)
 	if err := conn.Serve(context.Background()); err != nil {
@@ -56,10 +57,17 @@ func TestMain(m *testing.M) {
 	os.Exit(0)
 }
 
+// opens is the Open of a host whose every session runs turn.
+func opens(turn session.TurnFunc) func(context.Context, loop.Turn) (session.Runtime, error) {
+	return func(context.Context, loop.Turn) (session.Runtime, error) {
+		return session.Runtime{Turn: turn}, nil
+	}
+}
+
 func agentOptions(turn session.TurnFunc) session.Options {
 	return session.Options{
 		Version: "test",
-		Turn:    turn,
+		Open:    opens(turn),
 		Logger:  slog.New(slog.DiscardHandler),
 		Tracer:  tracenoop.NewTracerProvider().Tracer("test"),
 		Meter:   metricnoop.NewMeterProvider().Meter("test"),

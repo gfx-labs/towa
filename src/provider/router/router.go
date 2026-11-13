@@ -28,7 +28,7 @@ type Entry struct {
 	// Effort is the reasoning effort sent with a request to this entry.
 	// Empty sends none.
 	Effort string
-	// Preparation is the selected model's request metadata. Nil keeps the caller's legacy metadata.
+	// Preparation is the selected model's request metadata. Nil leaves the request as the caller built it.
 	Preparation *Preparation
 }
 

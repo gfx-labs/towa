@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 )
 
 func write(t *testing.T, path, body string) string {
@@ -50,14 +51,14 @@ func TestLaterLayersOverrideEarlierOnes(t *testing.T) {
 	}
 	for _, step := range steps {
 		step.apply()
-		got, err := config.Load(src, args...)
+		got, err := configtest.Load(src, args...)
 		require.NoError(t, err, step.name)
 		require.Equal(t, step.wantLevel, got.Config.Telemetry.Logs.Stderr.Level, step.name)
 		require.Equal(t, step.wantOrigin, got.Origin["telemetry.logs.stderr.level"], step.name)
 	}
 
 	// The system file's other keys survived every layer above it.
-	got, err := config.Load(src, args...)
+	got, err := configtest.Load(src, args...)
 	require.NoError(t, err)
 	require.True(t, got.Config.Telemetry.OTel)
 	require.Equal(t, config.FormatJSON, got.Config.Telemetry.Logs.Stderr.Format)
@@ -67,10 +68,9 @@ func TestLaterLayersOverrideEarlierOnes(t *testing.T) {
 
 func TestInvalidInputIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	two, old := filepath.Join(dir, "two"), filepath.Join(dir, "old")
+	two := filepath.Join(dir, "two")
 	write(t, filepath.Join(two, "config.yaml"), "")
 	write(t, filepath.Join(two, "config.json"), "{}")
-	write(t, filepath.Join(old, "config.toml"), "")
 	file := func(name, body string) config.Sources {
 		return config.Sources{Files: []string{write(t, filepath.Join(dir, name), body)}}
 	}
@@ -129,13 +129,11 @@ func TestInvalidInputIsAnError(t *testing.T) {
 		{"listed file is missing", config.Sources{Files: []string{filepath.Join(dir, "absent.yaml")}}, nil, "absent.yaml"},
 		{"file of --config is missing", config.Sources{}, []string{"--config", filepath.Join(dir, "gone.yaml")}, "gone.yaml"},
 		{"listed file of an unknown format", file("c.ini", ""), nil, ".ini"},
-		{"listed file of the format that is no longer read", file("c.toml", ""), nil, ".toml"},
 		{"two config files in one directory", config.Sources{UserDir: two}, nil, "more than one"},
-		{"config.toml left in a directory", config.Sources{UserDir: old}, nil, "config.toml"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.Load(tt.src, tt.args...)
+			_, err := configtest.Load(tt.src, tt.args...)
 			require.ErrorContains(t, err, tt.want)
 			for _, secret := range []string{"url-user", "url-password", "url-query-secret"} {
 				require.NotContains(t, err.Error(), secret)
@@ -183,7 +181,7 @@ context:
     - name: policy
       file: policy.md
 `)
-	got, err := config.Load(config.Sources{Files: []string{path}})
+	got, err := configtest.Load(config.Sources{Files: []string{path}})
 	require.NoError(t, err)
 	// A list item keeps its comma, and an empty value in a file replaces a
 	// default that is not empty.
@@ -197,7 +195,7 @@ context:
 func TestATableFromTheEnvironmentReplacesTheFilesTable(t *testing.T) {
 	path := write(t, filepath.Join(t.TempDir(), "config.yaml"),
 		"hooks:\n  - event: prompt\n    command: [one]\n    timeout: 1s\n  - event: stop\n    command: [two]\n    timeout: 1s\n")
-	got, err := config.Load(config.Sources{
+	got, err := configtest.Load(config.Sources{
 		Files:   []string{path},
 		Environ: []string{`TOWA_HOOKS=[{event: stop, command: [three], timeout: 2s}]`},
 	})
@@ -214,13 +212,13 @@ func TestTheLastModelsListWins(t *testing.T) {
 	system := write(t, filepath.Join(dir, "system.yaml"),
 		"models: ['claude:work/claude-opus-4-7#high', 'claude:work/claude-sonnet-4-6']\nmodel_context_window: 1000\n")
 	user := write(t, filepath.Join(dir, "user.yaml"), "models:\n  - codex:chatgpt/gpt-6.1-sol\n")
-	got, err := config.Load(config.Sources{Files: []string{system, user}})
+	got, err := configtest.Load(config.Sources{Files: []string{system, user}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"codex:chatgpt/gpt-6.1-sol"}, got.Config.Models)
 	require.EqualValues(t, 1000, got.Config.ModelContextWindow)
 	require.Equal(t, user, got.Origin["models"])
 
-	got, err = config.Load(config.Sources{Files: []string{system, user}}, "--models", "claude:work/claude-opus-4-7#low,codex:chatgpt/gpt-6.1-sol")
+	got, err = configtest.Load(config.Sources{Files: []string{system, user}}, "--models", "claude:work/claude-opus-4-7#low,codex:chatgpt/gpt-6.1-sol")
 	require.NoError(t, err)
 	require.Equal(t, []string{"claude:work/claude-opus-4-7#low", "codex:chatgpt/gpt-6.1-sol"}, got.Config.Models)
 }
@@ -239,7 +237,7 @@ accounts:
     provider: claude
     kind: proxied_oauth
 `)
-	got, err := config.Load(config.Sources{
+	got, err := configtest.Load(config.Sources{
 		Files: []string{path},
 		StoredAccounts: func() (map[string]string, error) {
 			return map[string]string{"work": "claude", "gpt": "codex"}, nil
@@ -264,14 +262,14 @@ providers:
     kind: chat
     base_url: https://example.com/v1
 `)
-	_, err = config.Load(config.Sources{Files: []string{path}})
+	_, err = configtest.Load(config.Sources{Files: []string{path}})
 	require.ErrorContains(t, err, "nobody")
 }
 
 // Text from a command substitution is one entry per flag, commas and
 // newlines included.
 func TestEachAgentsTextFlagIsOneEntry(t *testing.T) {
-	got, err := config.Load(config.Sources{}, "--context.agents_text=a, b\nc", "--context.agents_text=d")
+	got, err := configtest.Load(config.Sources{}, "--context.agents_text=a, b\nc", "--context.agents_text=d")
 	require.NoError(t, err)
 	require.Equal(t, []string{"a, b\nc", "d"}, got.Config.Context.AgentsText)
 }

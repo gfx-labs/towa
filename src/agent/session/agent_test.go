@@ -54,7 +54,7 @@ func serveWith(t *testing.T, turn session.TurnFunc, adjust func(*session.Options
 	t.Helper()
 	options := session.Options{
 		Version: "test",
-		Turn:    turn,
+		Open:    opens(turn),
 		Logger:  slog.New(slog.DiscardHandler),
 		Tracer:  tracenoop.NewTracerProvider().Tracer("test"),
 		Meter:   metricnoop.NewMeterProvider().Meter("test"),
@@ -63,8 +63,9 @@ func serveWith(t *testing.T, turn session.TurnFunc, adjust func(*session.Options
 	if adjust != nil {
 		adjust(&options)
 	}
-	agent, err := session.NewAgent(options)
+	host, err := session.NewHost(options)
 	require.NoError(t, err)
+	agent := host.NewAgent()
 	w, in, out := acptest.New(t)
 	conn := acp.NewAgentSideConnection(agent, out, in, nil)
 	agent.SetClient(conn)
@@ -212,7 +213,7 @@ func TestRejectedRequests(t *testing.T) {
 			acp.NewInvalidParams(nil).Code,
 		},
 		{
-			"MCP servers, which are not supported yet", true,
+			"MCP servers on an agent without MCP support", true,
 			`{"jsonrpc":"2.0","id":"new","method":"session/new","params":{"cwd":"/work","mcpServers":[{"name":"fs","command":"/bin/mcp","args":[],"env":[]}]}}`,
 			acp.NewInvalidParams(nil).Code,
 		},

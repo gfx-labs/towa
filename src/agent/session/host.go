@@ -27,7 +27,6 @@ type Host struct {
 // the process's settings as its own.
 type shared struct {
 	version  string
-	turn     TurnFunc
 	open     func(context.Context, loop.Turn) (Runtime, error)
 	logger   *slog.Logger
 	tracer   trace.Tracer
@@ -36,7 +35,6 @@ type shared struct {
 	registry *Registry
 	supports Supports
 	store    store.Store
-	mapper   loop.Mapper
 	// pageSize is session.list_page_size.
 	pageSize int
 
@@ -60,8 +58,8 @@ type idLock struct {
 
 // NewHost returns a host with no sessions.
 func NewHost(o Options) (*Host, error) {
-	if o.Turn == nil && o.Open == nil {
-		return nil, errors.New("session: Turn or Open is required")
+	if o.Open == nil {
+		return nil, errors.New("session: Open is required")
 	}
 	turns, err := o.Meter.Int64Counter("towa.turns",
 		metric.WithDescription("Prompt turns finished, by stop reason."),
@@ -97,7 +95,6 @@ func NewHost(o Options) (*Host, error) {
 	lifetime, stop := context.WithCancel(context.Background())
 	return &Host{&shared{
 		version:  o.Version,
-		turn:     o.Turn,
 		open:     o.Open,
 		lifetime: lifetime,
 		stop:     stop,
@@ -108,7 +105,6 @@ func NewHost(o Options) (*Host, error) {
 		registry: registry,
 		supports: o.Supports,
 		store:    o.Store,
-		mapper:   o.Mapper,
 		pageSize: o.Session.ListPageSize,
 		live:     map[acp.SessionId]*session{},
 		busy:     map[acp.SessionId]*idLock{},

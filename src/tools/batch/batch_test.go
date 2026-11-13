@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/batch"
 	"github.com/gfx-labs/towa/src/tools/fsops"
@@ -34,7 +35,7 @@ type arg struct {
 
 func newSession(t *testing.T) *session {
 	t.Helper()
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -61,7 +62,7 @@ func (s *session) dispatcher() batch.Dispatcher {
 			}
 			switch call.Name {
 			case "read":
-				res, err := fsops.Read(ctx, roots, s.cfg.Files, fsops.ReadInput{Path: a.Path})
+				res, err := fsops.Read(ctx, roots, s.cfg.Files, fsops.ReadInput{Path: a.Path}, nil)
 				if err != nil {
 					return tools.Result{}, err
 				}

@@ -22,6 +22,7 @@ import (
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/config"
+	"github.com/gfx-labs/towa/src/config/configtest"
 )
 
 const transportTestTimeout = 10 * time.Second
@@ -58,12 +59,14 @@ func (l *transportLog) WithGroup(string) slog.Handler      { return l }
 
 func transportHost(t *testing.T) *session.Host {
 	t.Helper()
-	loaded, err := config.Load(config.Sources{})
+	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	host, err := session.NewHost(session.Options{
 		Version: "test", Session: loaded.Config.Session,
-		Turn: func(context.Context, loop.Turn) (loop.Result, error) {
-			return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
+		Open: func(context.Context, loop.Turn) (session.Runtime, error) {
+			return session.Runtime{Turn: func(context.Context, loop.Turn) (loop.Result, error) {
+				return loop.Result{StopReason: acp.StopReasonEndTurn}, nil
+			}}, nil
 		},
 		Logger: slog.New(slog.DiscardHandler),
 		Tracer: tracenoop.NewTracerProvider().Tracer("test"),

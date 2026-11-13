@@ -609,10 +609,6 @@ func (tn *turn) resolve(ctx context.Context) error {
 	}
 	tn.model, tn.schemas = model, schemas
 	tn.mapper = Mapper{Tools: model.Tools}
-	if model.ContextSize > 0 {
-		// Legacy routers have no selected-entry metadata; preparation replaces this when available.
-		tn.mapper.ContextSize = func(string) (int, bool) { return int(model.ContextSize), true }
-	}
 	return nil
 }
 
