@@ -162,11 +162,16 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 		}
 		seen[id] = true
 		option := a.registry.option(id)
-		if option == nil || option.Boolean != (entry.Boolean != nil) || option.Boolean && !gate.BooleanOptions() || option.check(value) != nil {
+		if option == nil || option.Boolean != (entry.Boolean != nil) || option.Boolean && !gate.BooleanOptions() {
 			a.logger.Debug("initial config option ignored", "option", id)
 			continue
 		}
-		values[id] = value
+		resolved, err := option.check(value)
+		if err != nil {
+			a.logger.Debug("initial config option ignored", "option", id, "err", err)
+			continue
+		}
+		values[id] = resolved
 	}
 	// A stored value the request did not replace must still be usable
 	// here: this process may be configured differently from the one that
@@ -179,7 +184,7 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 		if option == nil {
 			return nil, nil, invalid("stored config option %q is not supported here", id)
 		}
-		if err := option.check(value); err != nil {
+		if _, err := option.check(value); err != nil {
 			return nil, nil, invalid("the session was stored with a value that cannot be used here, set another in configOptions: %v", err)
 		}
 	}

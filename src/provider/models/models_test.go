@@ -75,7 +75,7 @@ func TestSelectResolvesAModelAndTheOnesAfterIt(t *testing.T) {
 	require.Equal(t, "openrouter", noClient.Provider)
 
 	_, err = models.Select(list, unlisted, "claude:work/claude-sonnet-4-6")
-	var noSuch *models.UnknownModelError
+	var noSuch *config.UnknownModelError
 	require.ErrorAs(t, err, &noSuch)
 
 	_, err = models.Select(nil, unlisted, "")
@@ -267,4 +267,28 @@ providers:
 	loaded, err = configtest.Load(config.Sources{Files: []string{path}}, "--models", "zai:main/glm-5#high,claude:work/claude-opus-4-7")
 	require.NoError(t, err)
 	require.Equal(t, []string{"zai:main/glm-5#high", "claude:work/claude-opus-4-7"}, loaded.Config.Models)
+}
+
+// An entry without an account is one entry per account of its provider, in
+// the accounts' order, and is selected by the model's name alone.
+func TestSelectExpandsEveryAccount(t *testing.T) {
+	unlisted := models.Unlisted{Accounts: []config.Account{
+		{ID: "work", Provider: config.ProviderCodex},
+		{ID: "key", Provider: "openrouter"},
+		{ID: "personal", Provider: config.ProviderCodex},
+	}}
+	list := []string{"codex:gpt-6.1-sol#high", "codex:chatgpt/gpt-6-luna"}
+	m, err := models.Select(list, unlisted, "gpt-6.1-sol")
+	require.NoError(t, err)
+	require.Equal(t, list[0], m.Name)
+	var chain []string
+	for _, e := range m.Entries {
+		chain = append(chain, e.String())
+	}
+	require.Equal(t, []string{"codex:work/gpt-6.1-sol#high", "codex:personal/gpt-6.1-sol#high", "codex:chatgpt/gpt-6-luna"}, chain)
+
+	// A provider with no account cannot run the entry.
+	_, err = models.Select([]string{"claude:claude-opus-5-5"}, unlisted, "")
+	var none *models.NoAccountError
+	require.ErrorAs(t, err, &none)
 }

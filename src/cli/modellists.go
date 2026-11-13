@@ -39,6 +39,7 @@ func (f *runtimeFactory) unlistedModels(ctx context.Context, now time.Time) (mod
 		Providers:  cfg.Providers,
 		Configured: models.Metadata{ContextWindow: cfg.ModelContextWindow, MaxOutputTokens: cfg.ModelMaxOutputTokens},
 		Lists:      models.Lists{},
+		Accounts:   cfg.Accounts,
 	}
 	wanted, err := f.modelsWithLists()
 	if err != nil {
@@ -72,7 +73,7 @@ func (f *runtimeFactory) modelsWithLists() ([]config.ChainEntry, error) {
 			return nil, fmt.Errorf("models: %w", err)
 		}
 		if _, lists := f.providers.clients[entry.Provider].(provider.ModelLister); lists && !models.InTable(entry.Model) {
-			wanted = append(wanted, entry)
+			wanted = append(wanted, config.ExpandAccounts(entry, f.cfg.Accounts)...)
 		}
 	}
 	return wanted, nil

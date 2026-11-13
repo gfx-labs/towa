@@ -54,6 +54,10 @@ type ConfigOption struct {
 	Choices []Choice
 	// Default is the value a new session starts with.
 	Default Value
+	// Resolve turns a value a client may write in place of a choice, such
+	// as a short name, into the choice. It may be nil. Its error refuses
+	// the value.
+	Resolve func(Value) (Value, error)
 	// Validate refuses a value that is one of the choices and still cannot
 	// be used. It may be nil.
 	Validate func(value Value) error
@@ -62,21 +66,31 @@ type ConfigOption struct {
 	Apply func(turn *loop.Turn, value Value)
 }
 
-// check reports a value the option cannot take.
-func (o *ConfigOption) check(v Value) error {
+// check returns the choice v stands for, or reports a value the option
+// cannot take.
+func (o *ConfigOption) check(v Value) (Value, error) {
 	if o.Boolean {
 		if v.ID != "" {
-			return fmt.Errorf("config option %q is a boolean and has no value %q", o.ID, v.ID)
+			return Value{}, fmt.Errorf("config option %q is a boolean and has no value %q", o.ID, v.ID)
 		}
-		return nil
+		return v, nil
+	}
+	if o.Resolve != nil {
+		resolved, err := o.Resolve(v)
+		if err != nil {
+			return Value{}, fmt.Errorf("config option %q: %w", o.ID, err)
+		}
+		v = resolved
 	}
 	if !slices.ContainsFunc(o.Choices, func(c Choice) bool { return c.Value == v.ID }) {
-		return fmt.Errorf("config option %q has no value %q", o.ID, v.ID)
+		return Value{}, fmt.Errorf("config option %q has no value %q", o.ID, v.ID)
 	}
 	if o.Validate != nil {
-		return o.Validate(v)
+		if err := o.Validate(v); err != nil {
+			return Value{}, err
+		}
 	}
-	return nil
+	return v, nil
 }
 
 // Command is a slash command the client is told about.
@@ -145,7 +159,7 @@ func (r *Registry) AddConfigOption(o ConfigOption) error {
 	case !o.Boolean && len(o.Choices) == 0:
 		return fmt.Errorf("session: config option %q has no choices", o.ID)
 	}
-	if err := o.check(o.Default); err != nil {
+	if _, err := o.check(o.Default); err != nil {
 		return fmt.Errorf("session: default of %w", err)
 	}
 	r.options = append(r.options, o)
@@ -240,10 +254,11 @@ func (r *Registry) applyMeta(meta map[string]any, values map[acp.SessionConfigId
 			if option == nil {
 				return nil, fmt.Errorf("%s: sets config option %q, which does not exist", at, id)
 			}
-			if err := option.check(v); err != nil {
+			resolved, err := option.check(v)
+			if err != nil {
 				return nil, fmt.Errorf("%s: %w", at, err)
 			}
-			values[id] = v
+			values[id] = resolved
 		}
 		if effect.Turn != nil {
 			perTurn = append(perTurn, effect.Turn)

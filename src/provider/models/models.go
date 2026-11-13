@@ -47,6 +47,9 @@ type Unlisted struct {
 	Configured Metadata
 	// Lists are the model lists read from providers.
 	Lists Lists
+	// Accounts are the configured accounts. An entry whose account is
+	// config.AnyAccount stands for one entry per account of its provider.
+	Accounts []config.Account
 }
 
 // Model is a selected model, resolved.
@@ -64,11 +67,12 @@ type NoModelError struct{}
 
 func (*NoModelError) Error() string { return "models: no model is configured" }
 
-// UnknownModelError reports a name that no configured model has.
-type UnknownModelError struct{ Name string }
+// NoAccountError reports an entry for every account of a provider that
+// has none.
+type NoAccountError struct{ Entry string }
 
-func (e *UnknownModelError) Error() string {
-	return fmt.Sprintf("models: %q is not a configured model", e.Name)
+func (e *NoAccountError) Error() string {
+	return fmt.Sprintf("models: %q: provider has no account: log in or configure one", e.Entry)
 }
 
 // MetadataError reports an entry whose model is not in the built-in table
@@ -104,8 +108,10 @@ func (e *ProviderError) Error() string {
 }
 
 // Select resolves the model a session chose from the configured list. An
-// empty name selects the first. The model's chain is the chosen entry and
-// every entry listed after it. A figure that the entry's provider gives for
+// empty name selects the first, and a short name the entry
+// config.ResolveModel gives. The model's chain is the chosen entry and
+// every entry listed after it, with an entry for every account expanded to
+// one per account. A figure that the entry's provider gives for
 // the model in its configuration is the one used. Otherwise a model the
 // built-in table has takes the table's, and any other takes its figures
 // from the rest of unlisted. The table outranks a provider's list: it holds
@@ -120,16 +126,25 @@ func Select(configured []string, unlisted Unlisted, name string) (Model, error) 
 	if name == "" {
 		name = configured[0]
 	}
-	at := slices.Index(configured, name)
-	if at < 0 {
-		return Model{}, &UnknownModelError{Name: name}
+	name, err := config.ResolveModel(configured, name)
+	if err != nil {
+		return Model{}, fmt.Errorf("models: %w", err)
 	}
-	m := Model{Name: name}
-	for _, raw := range configured[at:] {
+	var chain []config.ChainEntry
+	for _, raw := range configured[slices.Index(configured, name):] {
 		parsed, err := config.ParseChainEntry(raw)
 		if err != nil {
 			return Model{}, fmt.Errorf("models: %w", err)
 		}
+		expanded := config.ExpandAccounts(parsed, unlisted.Accounts)
+		if len(expanded) == 0 {
+			return Model{}, &NoAccountError{Entry: raw}
+		}
+		chain = append(chain, expanded...)
+	}
+	m := Model{Name: name}
+	for _, parsed := range chain {
+		raw := parsed.String()
 		meta, tabled := builtin[parsed.Model]
 		var configuredProvider string
 		var described config.ProviderModel

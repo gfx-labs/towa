@@ -150,7 +150,7 @@ func (e *Error) Error() string {
 	case KindTooMany:
 		return fmt.Sprintf("subagent: %s: %d are running, %s is %d", e.Kind, e.Max, e.Limit, e.Max)
 	case KindModelNotAllowed:
-		return fmt.Sprintf("subagent: %s: %q is not in %s %q", e.Kind, e.Model, e.Limit, e.Allowed)
+		return fmt.Sprintf("subagent: %s: %v, %s is %q", e.Kind, e.Err, e.Limit, e.Allowed)
 	case KindNoPrompt:
 		return fmt.Sprintf("subagent: %s", e.Kind)
 	case KindStopped:
@@ -196,13 +196,14 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 	}
 	model := parent.Turn.Model
 	if in.Model != "" {
-		if !slices.Contains(s.cfg.Models, in.Model) {
+		resolved, err := config.ResolveModel(s.cfg.Models, in.Model)
+		if err != nil {
 			return Result{}, &Error{
 				Kind: KindModelNotAllowed, Limit: config.KeySubagentsModels,
-				Model: in.Model, Allowed: slices.Clone(s.cfg.Models),
+				Model: in.Model, Allowed: slices.Clone(s.cfg.Models), Err: err,
 			}
 		}
-		model = in.Model
+		model = resolved
 	}
 	if !s.start() {
 		return Result{}, &Error{Kind: KindTooMany, Limit: config.KeySubagentsMaxConcurrent, Max: s.cfg.MaxConcurrent}

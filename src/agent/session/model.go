@@ -9,6 +9,7 @@ import (
 
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/loop"
+	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider/models"
 )
 
@@ -45,6 +46,12 @@ func AddModels(r *Registry, configured []string, unlisted models.Unlisted) error
 		Category:    acp.SessionConfigOptionCategoryModel,
 		Choices:     choices,
 		Default:     Value{ID: acp.SessionConfigValueId(names[0])},
+		// A client may name a model as config.ResolveModel reads it, such
+		// as by the model alone.
+		Resolve: func(v Value) (Value, error) {
+			name, err := config.ResolveModel(names, string(v.ID))
+			return Value{ID: acp.SessionConfigValueId(name)}, err
+		},
 		Validate: func(v Value) error {
 			_, err := models.Select(names, unlisted, string(v.ID))
 			return err

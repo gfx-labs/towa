@@ -48,7 +48,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 		require.Equal(t, acp.SessionConfigValueId("claude:work/claude-opus-4-7"), current)
 		require.Equal(t, []acp.SessionConfigValueId{"claude:work/claude-opus-4-7", "codex:work/gpt-6.1-sol"}, choices)
 
-		w.Send(request(`"second"`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"model":"codex:work/gpt-6.1-sol"}}}`))
+		w.Send(request(`"second"`, "session/new", `{"cwd":"/work","mcpServers":[],"_meta":{"towa":{"model":"gpt-6.1-sol"}}}`))
 		got, _ := w.Await(`"second"`)
 		var second acp.NewSessionResponse
 		require.NoError(t, json.Unmarshal(got[`"second"`].Result, &second))
@@ -63,8 +63,10 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 		w.Await(`2`)
 		require.Equal(t, "codex:work/gpt-6.1-sol", <-used)
 
-		// A switch applies to the session's next turn, and only to it.
-		w.Send(request(`3`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"codex:work/gpt-6.1-sol"}`))
+		// A switch applies to the session's next turn, and only to it. A
+		// model may be named without its account, and the option holds the
+		// entry it selects.
+		w.Send(request(`3`, "session/set_config_option", `{"sessionId":"`+id+`","configId":"model","value":"codex:gpt-6.1-sol"}`))
 		got, _ = w.Await(`3`)
 		var set acp.SetSessionConfigOptionResponse
 		require.NoError(t, json.Unmarshal(got[`3`].Result, &set))
@@ -75,7 +77,7 @@ func TestModelIsChosenPerSessionAndSwitchedBetweenTurns(t *testing.T) {
 		require.Equal(t, "codex:work/gpt-6.1-sol", <-used)
 
 		// /model switches back and is answered without a turn.
-		w.Send(prompt(`5`, id, "/model claude:work/claude-opus-4-7"))
+		w.Send(prompt(`5`, id, "/model claude-opus-4-7"))
 		got, others := w.Await(`5`)
 		require.JSONEq(t, endTurn, string(got[`5`].Result))
 		updates := updatesOf(t, others)

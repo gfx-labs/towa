@@ -21,9 +21,11 @@ type optionChange struct {
 // its request did not already tell it.
 func (a *Agent) setOption(ctx context.Context, s *session, change optionChange) error {
 	gate := a.Gate()
-	if err := a.checkChange(gate, change); err != nil {
+	value, err := a.checkChange(gate, change)
+	if err != nil {
 		return err
 	}
+	change.value = value
 	// Held while the updates are sent, so that two changes reach the client
 	// in the order they were made.
 	s.setMu.Lock()
@@ -50,19 +52,21 @@ func (a *Agent) setOption(ctx context.Context, s *session, change optionChange) 
 	}})
 }
 
-// checkChange reports an option change the registry does not accept.
-func (a *Agent) checkChange(gate Gate, change optionChange) error {
+// checkChange returns the value an option change sets, or reports one the
+// registry does not accept.
+func (a *Agent) checkChange(gate Gate, change optionChange) (Value, error) {
 	option := a.registry.option(change.id)
 	switch {
 	case option == nil, option.Boolean && !gate.BooleanOptions():
-		return invalid("unknown config option %q", change.id)
+		return Value{}, invalid("unknown config option %q", change.id)
 	case option.Boolean != change.boolean:
-		return invalid("config option %q is not of that type", change.id)
+		return Value{}, invalid("config option %q is not of that type", change.id)
 	}
-	if err := option.check(change.value); err != nil {
-		return invalid("%v", err)
+	value, err := option.check(change.value)
+	if err != nil {
+		return Value{}, invalid("%v", err)
 	}
-	return nil
+	return value, nil
 }
 
 // SetSessionConfigOption changes one config option and answers with all of
