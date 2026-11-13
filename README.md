@@ -16,26 +16,29 @@ for instance, ask your llm to setup a provider with you, and then run a turn usi
 
 ## install
 
-with nix, from this repository. it is private, so nix needs access to it: an ssh key that can read it, or a github token in `access-tokens` of `nix.conf`.
+with nix:
 
 ```sh
-nix profile install git+ssh://git@github.com/gfx-labs/towa   # over ssh
-nix profile install github:gfx-labs/towa                     # with a token
-nix run git+ssh://git@github.com/gfx-labs/towa -- --help     # without installing
+nix profile install github:gfx-labs/towa
+nix run github:gfx-labs/towa -- --help   # without installing
 ```
 
-or in a flake: `inputs.towa.url = "git+ssh://git@github.com/gfx-labs/towa";`, then `towa.packages.${system}.default`.
+or in a flake: `inputs.towa.url = "github:gfx-labs/towa";`, then `towa.packages.${system}.default`.
 
 the package is one static binary for x86_64-linux, aarch64-linux and aarch64-darwin. it brings no tools with it: the model runs `bash`, `rg` and `find` from the `PATH` towa is started with.
 
-with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`, with `GOPRIVATE=github.com/gfx-labs`.
+with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`.
 
-releases are tagged `vX.Y.Z` by release-please. pin one with `?ref=vX.Y.Z` on the flake url or `@vX.Y.Z` with go install. each github release also has static binaries for linux amd64, linux arm64 and darwin arm64, with `checksums.txt`:
+or download a static binary from the [latest release](https://github.com/gfx-labs/towa/releases/latest), built for linux amd64, linux arm64 and darwin arm64, with `checksums.txt`:
 
 ```sh
-gh release download --repo gfx-labs/towa --pattern 'towa_*_linux_amd64.tar.gz' --pattern checksums.txt
-sha256sum -c --ignore-missing checksums.txt && tar -xzf towa_*_linux_amd64.tar.gz
+curl -fsSLO https://github.com/gfx-labs/towa/releases/latest/download/checksums.txt
+file=$(grep linux_amd64 checksums.txt | awk '{print $2}')
+curl -fsSLO "https://github.com/gfx-labs/towa/releases/latest/download/$file"
+sha256sum -c --ignore-missing checksums.txt && tar -xzf "$file"
 ```
+
+releases are tagged `vX.Y.Z` by release-please. pin one with `/vX.Y.Z` on the flake url (`github:gfx-labs/towa/vX.Y.Z`) or `@vX.Y.Z` with go install.
 
 ## key features
 
