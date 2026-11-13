@@ -28,6 +28,7 @@ Seen on `oku-trade/trade` PR 4673 with `deepseek/deepseek-v4.1-flash-1017` throu
 - A failure names the edit: `edits[1].old_string was not found in the file`, with a hint that an earlier edit of the call may have changed the text when the index is not 0. It says the file was not changed.
 - An empty `old_string` no longer creates a file. `edit` changes a file that exists and says to use `write` otherwise. One way to create a file is enough.
 - The rules gain pi's line, with towa's names: "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls." `apply_patch`'s rule now speaks of several files only.
+- A second commit adds pi's other two edit rules. pi's edits are matched against the original file and towa's against the result of the earlier edits, so the first is reworded: "Each edits[].old_string is matched against the file as the earlier edits of the call left it. Do not emit overlapping or nested edits. Merge nearby changes into one edit." The second, "Do not pad with large unchanged regions.", is added to the line about keeping `old_string` small. The four lines about the list now come before the lines about reading the file.
 
 The shape follows the three harnesses that have a list:
 
@@ -55,7 +56,26 @@ Requests per run. A run passes the merged PR's tests unless marked.
 - On 4673 the branch took half of master's requests because, without the rule against script edits, it edited with a script as pi did. That is the rule's cost with a one-replacement `edit`, not a gain from pi's wording.
 - The branch is not adopted.
 
+## After the change
+
+towa `c42f04c` alone on PR 4673, same model, two runs (`eval21-4673-multiedit-1` and `-2`). The pi figures are the two runs above, not run alongside.
+
+| Run | Requests | Tokens | Seconds | `edit` calls | Replacements per call | PR tests |
+|---|---|---|---|---|---|---|
+| towa `a1b2323`, before | 29 | 1,196,222 | 309 | 9 | 1 | 3 of 3 |
+| towa `c42f04c`, run 1 | 23 | 894,201 | 302 | 2 | 7, 2 | 3 of 3 |
+| towa `c42f04c`, run 2 | 14 | 550,038 | 219 | 2 | 6, 5 | 3 of 3 |
+| pi, run 1 | 12 | 473,013 | 84 | 0 | script in `bash` | 3 of 3 |
+| pi, run 2 | 14 | 624,523 | 86 | 0 | script in `bash` | 3 of 3 |
+
+- The model used the list in both runs without being corrected.
+- Run 2's first `edit` was refused with "File has not been read yet": it had read the file with `cat`. It read the file and sent the edits again.
+- Run 1's second `edit` moved an import line its first call had put in the wrong place, and added one line.
+- Run 1 made 13 of its 25 tool calls after the edits, four of them `lint:browser-agent`. Its count is in checking, not in editing.
+- Three `old_string` values were whole call expressions of 12 or 13 lines (349 and 465 characters), where the change was to a line or two of them.
+
 ## Not measured
 
-- Whether a model uses the list. No task has been run on this build.
+- The effect of the two rules added in the second commit. The runs above are on `c42f04c`, which does not have them.
 - The read-before-edit refusal is unchanged. A model that reads with `cat` still loses a request to it.
+- Each cell is one or two runs, and run 1 and run 2 differ by 9 requests on the same build.
