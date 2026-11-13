@@ -71,6 +71,9 @@ type Turn struct {
 	// Model is the name of the configured model the session chose for this
 	// turn. Empty means none was chosen and the configured default applies.
 	Model string
+	// Effort is the reasoning effort the session chose for Model's entry,
+	// in place of the one the entry names. Empty leaves the entry's.
+	Effort string
 	// ParentID is the session that spawned this one as a subagent. It is
 	// written to the store when the turn creates the session, and must then
 	// be a UUID. It is not read for a session that exists.

@@ -62,8 +62,9 @@ func (f *runtimeFactory) unlistedModels(ctx context.Context, now time.Time) (mod
 	return unlisted, nil
 }
 
-// modelsWithLists returns the configured models that are not in the table
-// and whose provider can list its models.
+// modelsWithLists returns the configured models whose provider can list
+// its models. A model the table has is among them: the table gives no
+// reasoning efforts.
 func (f *runtimeFactory) modelsWithLists() ([]config.ChainEntry, error) {
 	var wanted []config.ChainEntry
 	for _, raw := range f.cfg.Models {
@@ -71,7 +72,7 @@ func (f *runtimeFactory) modelsWithLists() ([]config.ChainEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("models: %w", err)
 		}
-		if _, lists := f.providers.clients[entry.Provider].(provider.ModelLister); lists && !models.InTable(entry.Model) {
+		if _, lists := f.providers.clients[entry.Provider].(provider.ModelLister); lists {
 			wanted = append(wanted, entry)
 		}
 	}
@@ -115,7 +116,7 @@ func fetchModelList(ctx context.Context, p *Providers, entry config.ChainEntry, 
 	}
 	list := models.List{Models: make(map[string]models.Listed, len(infos))}
 	for _, info := range infos {
-		list.Models[info.ID] = models.Listed{ContextWindow: info.ContextWindow, MaxOutputTokens: info.MaxOutputTokens, NoAdaptiveThinking: info.NoAdaptiveThinking}
+		list.Models[info.ID] = models.Listed{ContextWindow: info.ContextWindow, MaxOutputTokens: info.MaxOutputTokens, NoAdaptiveThinking: info.NoAdaptiveThinking, Efforts: info.Efforts}
 	}
 	return list, nil
 }

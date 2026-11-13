@@ -162,17 +162,20 @@ func (s *session) options() map[acp.SessionConfigId]Value {
 	return maps.Clone(s.values)
 }
 
-// set stores a config option value. It returns a copy of all values and
-// whether this one differed from the stored one. The caller holds setMu.
-func (s *session) set(id acp.SessionConfigId, value Value) (map[acp.SessionConfigId]Value, bool, error) {
+// set stores a config option value, then lets align bring the options
+// whose choices follow it into line. It returns a copy of all values and
+// whether any changed. The caller holds setMu.
+func (s *session) set(id acp.SessionConfigId, value Value, align func(map[acp.SessionConfigId]Value)) (map[acp.SessionConfigId]Value, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil, false, unknownSession(s.id)
 	}
-	changed := s.values[id] != value
+	before := maps.Clone(s.values)
 	s.values[id] = value
-	if changed && id == ModeOption {
+	align(s.values)
+	changed := !maps.Equal(before, s.values)
+	if before[ModeOption] != s.values[ModeOption] {
 		// "Allow always" was given in the mode it was asked in.
 		clear(s.allowed)
 	}

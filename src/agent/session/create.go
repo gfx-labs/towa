@@ -133,15 +133,19 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 // startValues returns the config option values a session starts with and
 // the changes its _meta overrides make to each turn. stored holds values
 // kept with a stored session. The order is: defaults, stored values, the
-// request's _meta.towa, the request's configOptions.
+// request's _meta.towa, the request's configOptions. After each step the
+// options whose choices follow other values are aligned, so a model chosen
+// in a step gives the effort choices of the next.
 func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionConfigOption, stored map[acp.SessionConfigId]Value) (map[acp.SessionConfigId]Value, []func(*loop.Turn), error) {
 	gate := a.Gate()
 	values := a.registry.defaults()
 	maps.Copy(values, stored)
+	a.registry.align(values)
 	perTurn, err := a.registry.applyMeta(meta, values)
 	if err != nil {
 		return nil, nil, invalid("%v", err)
 	}
+	a.registry.align(values)
 	// Initial values are applied in order. Unlike session/set_config_option,
 	// the protocol has an entry that does not apply ignored, and only a
 	// repeated id rejected.
@@ -162,11 +166,12 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 		}
 		seen[id] = true
 		option := a.registry.option(id)
-		if option == nil || option.Boolean != (entry.Boolean != nil) || option.Boolean && !gate.BooleanOptions() || option.check(value) != nil {
+		if option == nil || option.Boolean != (entry.Boolean != nil) || option.Boolean && !gate.BooleanOptions() || option.check(value, values) != nil {
 			a.logger.Debug("initial config option ignored", "option", id)
 			continue
 		}
 		values[id] = value
+		a.registry.align(values)
 	}
 	// A stored value the request did not replace must still be usable
 	// here: this process may be configured differently from the one that
@@ -179,7 +184,7 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 		if option == nil {
 			return nil, nil, invalid("stored config option %q is not supported here", id)
 		}
-		if err := option.check(value); err != nil {
+		if err := option.check(value, values); err != nil {
 			return nil, nil, invalid("the session was stored with a value that cannot be used here, set another in configOptions: %v", err)
 		}
 	}

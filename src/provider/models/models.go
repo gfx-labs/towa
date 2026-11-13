@@ -32,6 +32,10 @@ type Entry struct {
 	// GuessedFrom is the table row a figure was taken from, when the model
 	// has no row of its own and its name pointed to one.
 	GuessedFrom string
+	// Efforts are the reasoning efforts a session may choose for the entry:
+	// the ones its provider's configuration names, or else the ones its
+	// account's model list gives. Nil means neither says.
+	Efforts []string
 }
 
 // Unlisted is where a model's figures come from other than the built-in
@@ -146,9 +150,14 @@ func Select(configured []string, unlisted Unlisted, name string) (Model, error) 
 		var guessed Metadata
 		var row, guessedFrom string
 		var fromList bool
+		listed, _ := unlisted.Lists.Lookup(parsed)
+		efforts := described.ReasoningEfforts
+		if efforts == nil {
+			efforts = listed.Efforts
+		}
 		if !tabled {
 			meta = unlisted.Configured
-			list, _ = unlisted.Lists.Lookup(parsed)
+			list = listed
 			guessed, row, _ = guess(parsed.Model)
 		}
 		for _, figure := range []struct {
@@ -178,7 +187,7 @@ func Select(configured []string, unlisted Unlisted, name string) (Model, error) 
 		if len(missing) > 0 {
 			return Model{}, &MetadataError{Entry: raw, Missing: missing, Provider: configuredProvider}
 		}
-		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, Listed: fromList, GuessedFrom: guessedFrom})
+		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, Listed: fromList, GuessedFrom: guessedFrom, Efforts: efforts})
 	}
 	return m, nil
 }

@@ -215,6 +215,10 @@ func (s *Spawner) Run(ctx context.Context, parent Parent, in Input) (Result, err
 	child.ParentID = parent.Turn.SessionID
 	child.Prompt = []acp.ContentBlock{{Text: &acp.ContentBlockText{Type: "text", Text: in.Prompt}}}
 	child.Model = model
+	if model != parent.Turn.Model {
+		// The parent's effort was chosen from its own model's efforts.
+		child.Effort = ""
+	}
 	child.Update = shown.update
 	// The view takes every update and picks what it shows.
 	child.Sendable = func(acp.SessionUpdate) bool { return true }

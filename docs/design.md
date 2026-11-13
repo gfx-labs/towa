@@ -178,11 +178,14 @@ providers:
     # from where it would without the entry. max_output_tokens is sent to a
     # chat endpoint as max_tokens with every request, and an endpoint counts
     # it against the context window: give a figure that leaves room for the
-    # prompt, not the largest the endpoint allows.
+    # prompt, not the largest the endpoint allows. reasoning_efforts are
+    # the efforts an ACP client may choose for the model in its
+    # reasoning_effort option.
     models:
       - id: anthropic/claude-opus-4.7
         context_window: 1000000
         max_output_tokens: 128000
+        reasoning_efforts: [low, medium, high, xhigh, max]
   - id: zai
     kind: chat
     base_url: https://api.z.ai/api/coding/paas/v4
@@ -271,7 +274,8 @@ Model metadata (context window, max output) comes from the first of: the built-i
 ### Runtime model selection
 
 - `session/new` uses `_meta` or the configured default.
-- `session/set_config_option` with the `model` category switches between turns. The session advertises the entries of `models`, in list order, as a select option. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
+- `session/set_config_option` with the `model` category switches between turns. The session advertises the entries of `models`, in list order, as a select option.
+- Reasoning effort is its own config option, `reasoning_effort` in the `thought_level` category, as codex-acp names it (`docs/notes/2026-11-13-reasoning-effort.md`). The `#effort` suffix is how the CLI and config write an entry's starting effort; an ACP client never needs it. The choices are the efforts the selected entry takes: those its configured provider lists under `models[].reasoning_efforts`, or else those its account's model list gives (Anthropic's `capabilities.effort`, the Codex backend's `supported_reasoning_levels`). The option starts at the entry's `#effort`, or at `default`, which sends none. Changing the model keeps the effort when the new model takes it and moves it to the new entry's start when not. A model nothing gives efforts for has no option, and its entry's `#effort` applies. The effort applies to the selected entry; a fallback entry uses its own. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
 - Subagent spawns may name an entry of `subagents.models`, each of which is an entry of `models`.
 
 ## Tools

@@ -54,6 +54,11 @@ type ConfigOption struct {
 	Choices []Choice
 	// Default is the value a new session starts with.
 	Default Value
+	// Depends gives the choices and the default of a select option whose
+	// choices follow the session's other values, in place of Choices and
+	// Default. An option with no choices for the values is not listed and
+	// takes no value.
+	Depends func(values map[acp.SessionConfigId]Value) ([]Choice, Value)
 	// Validate refuses a value that is one of the choices and still cannot
 	// be used. It may be nil.
 	Validate func(value Value) error
@@ -62,15 +67,24 @@ type ConfigOption struct {
 	Apply func(turn *loop.Turn, value Value)
 }
 
-// check reports a value the option cannot take.
-func (o *ConfigOption) check(v Value) error {
+// choices returns the option's choices and default for a session's values.
+func (o *ConfigOption) choices(values map[acp.SessionConfigId]Value) ([]Choice, Value) {
+	if o.Depends != nil {
+		return o.Depends(values)
+	}
+	return o.Choices, o.Default
+}
+
+// check reports a value the option cannot take in a session with values.
+func (o *ConfigOption) check(v Value, values map[acp.SessionConfigId]Value) error {
 	if o.Boolean {
 		if v.ID != "" {
 			return fmt.Errorf("config option %q is a boolean and has no value %q", o.ID, v.ID)
 		}
 		return nil
 	}
-	if !slices.ContainsFunc(o.Choices, func(c Choice) bool { return c.Value == v.ID }) {
+	choices, _ := o.choices(values)
+	if !slices.ContainsFunc(choices, func(c Choice) bool { return c.Value == v.ID }) {
 		return fmt.Errorf("config option %q has no value %q", o.ID, v.ID)
 	}
 	if o.Validate != nil {
@@ -140,12 +154,17 @@ func (r *Registry) AddConfigOption(o ConfigOption) error {
 		return fmt.Errorf("session: config option %q has no name", o.ID)
 	case r.option(o.ID) != nil:
 		return fmt.Errorf("session: config option %q is registered twice", o.ID)
-	case o.Boolean && len(o.Choices) > 0:
+	case o.Boolean && (len(o.Choices) > 0 || o.Depends != nil):
 		return fmt.Errorf("session: config option %q is a boolean with choices", o.ID)
+	case o.Depends != nil && (len(o.Choices) > 0 || o.Default != Value{}):
+		return fmt.Errorf("session: config option %q has both Depends and fixed choices", o.ID)
+	case o.Depends != nil:
+		r.options = append(r.options, o)
+		return nil
 	case !o.Boolean && len(o.Choices) == 0:
 		return fmt.Errorf("session: config option %q has no choices", o.ID)
 	}
-	if err := o.check(o.Default); err != nil {
+	if err := o.check(o.Default, nil); err != nil {
 		return fmt.Errorf("session: default of %w", err)
 	}
 	r.options = append(r.options, o)
@@ -201,9 +220,31 @@ func (r *Registry) option(id acp.SessionConfigId) *ConfigOption {
 func (r *Registry) defaults() map[acp.SessionConfigId]Value {
 	values := make(map[acp.SessionConfigId]Value, len(r.options))
 	for _, o := range r.options {
-		values[o.ID] = o.Default
+		if o.Depends == nil {
+			values[o.ID] = o.Default
+		}
 	}
+	r.align(values)
 	return values
+}
+
+// align gives each option with Depends a value its choices hold: the one it
+// has when it is still a choice, or else its default. One with no choices
+// is left without a value.
+func (r *Registry) align(values map[acp.SessionConfigId]Value) {
+	for _, o := range r.options {
+		if o.Depends == nil {
+			continue
+		}
+		choices, start := o.Depends(values)
+		current, ok := values[o.ID]
+		switch {
+		case len(choices) == 0:
+			delete(values, o.ID)
+		case !ok || !slices.ContainsFunc(choices, func(c Choice) bool { return c.Value == current.ID }):
+			values[o.ID] = start
+		}
+	}
 }
 
 // applyMeta applies the overrides in a session/new request's _meta to
@@ -240,7 +281,7 @@ func (r *Registry) applyMeta(meta map[string]any, values map[acp.SessionConfigId
 			if option == nil {
 				return nil, fmt.Errorf("%s: sets config option %q, which does not exist", at, id)
 			}
-			if err := option.check(v); err != nil {
+			if err := option.check(v, values); err != nil {
 				return nil, fmt.Errorf("%s: %w", at, err)
 			}
 			values[id] = v
@@ -292,15 +333,27 @@ func (r *Registry) available() []acp.AvailableCommand {
 	return commands
 }
 
-// listed returns the options a client is shown, in order.
-func (r *Registry) listed(booleans bool) []*ConfigOption {
-	var shown []*ConfigOption
+// listed returns the options a client is shown, in order, with the choices
+// each has for a session's values.
+func (r *Registry) listed(booleans bool, values map[acp.SessionConfigId]Value) []shownOption {
+	var shown []shownOption
 	for i := range r.options {
-		if !r.options[i].Boolean || booleans {
-			shown = append(shown, &r.options[i])
+		o := &r.options[i]
+		if o.Boolean && !booleans {
+			continue
 		}
+		choices, _ := o.choices(values)
+		if !o.Boolean && len(choices) == 0 {
+			continue
+		}
+		shown = append(shown, shownOption{ConfigOption: o, choices: choices})
 	}
 	return shown
+}
+
+type shownOption struct {
+	*ConfigOption
+	choices []Choice
 }
 
 // configOptions returns the options with a session's values. Boolean
@@ -308,7 +361,7 @@ func (r *Registry) listed(booleans bool) []*ConfigOption {
 func (r *Registry) configOptions(values map[acp.SessionConfigId]Value, booleans bool) []acp.SessionConfigOption {
 	// Not nil: the set_config_option response requires the member.
 	out := []acp.SessionConfigOption{}
-	for _, o := range r.listed(booleans) {
+	for _, o := range r.listed(booleans, values) {
 		if o.Boolean {
 			out = append(out, acp.SessionConfigOption{Boolean: &acp.SessionConfigOptionBoolean{
 				Id: o.ID, Name: o.Name, Description: optional(o.Description), Category: category(o.Category),
@@ -316,8 +369,8 @@ func (r *Registry) configOptions(values map[acp.SessionConfigId]Value, booleans 
 			}})
 			continue
 		}
-		choices := make(acp.SessionConfigSelectOptionsUngrouped, len(o.Choices))
-		for i, c := range o.Choices {
+		choices := make(acp.SessionConfigSelectOptionsUngrouped, len(o.choices))
+		for i, c := range o.choices {
 			choices[i] = acp.SessionConfigSelectOption{Value: c.Value, Name: c.Name, Description: optional(c.Description)}
 		}
 		out = append(out, acp.SessionConfigOption{Select: &acp.SessionConfigOptionSelect{
@@ -332,7 +385,7 @@ func (r *Registry) configOptions(values map[acp.SessionConfigId]Value, booleans 
 // which the schema generates separately.
 func (r *Registry) unstableConfigOptions(values map[acp.SessionConfigId]Value, booleans bool) []acp.UnstableSessionConfigOption {
 	var out []acp.UnstableSessionConfigOption
-	for _, o := range r.listed(booleans) {
+	for _, o := range r.listed(booleans, values) {
 		if o.Boolean {
 			out = append(out, acp.UnstableSessionConfigOption{Boolean: &acp.UnstableSessionConfigOptionBoolean{
 				Id: o.ID, Name: o.Name, Description: optional(o.Description), Category: category(o.Category),
@@ -340,8 +393,8 @@ func (r *Registry) unstableConfigOptions(values map[acp.SessionConfigId]Value, b
 			}})
 			continue
 		}
-		choices := make(acp.UnstableSessionConfigSelectOptionsUngrouped, len(o.Choices))
-		for i, c := range o.Choices {
+		choices := make(acp.UnstableSessionConfigSelectOptionsUngrouped, len(o.choices))
+		for i, c := range o.choices {
 			choices[i] = acp.UnstableSessionConfigSelectOption{Value: c.Value, Name: c.Name, Description: optional(c.Description)}
 		}
 		out = append(out, acp.UnstableSessionConfigOption{Select: &acp.UnstableSessionConfigOptionSelect{
