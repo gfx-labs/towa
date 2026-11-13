@@ -169,8 +169,8 @@ func TestATurnTokenLimitStopsBeforeTheNextRequest(t *testing.T) {
 	assert.Equal(t, 1, f.Served())
 	_, log := entries(t, f.Store, turn.SessionID)
 	require.NotEmpty(t, log)
-	require.IsType(t, transcript.ToolResult{}, log[len(log)-1].Item.Body)
-	assert.Equal(t, transcript.OutcomeCompleted, log[len(log)-1].Item.Body.(transcript.ToolResult).Outcome)
+	require.NotNil(t, log[len(log)-1].Item.ToolResult)
+	assert.Equal(t, transcript.OutcomeCompleted, log[len(log)-1].Item.ToolResult.Outcome)
 }
 
 func TestARecordedTurnThroughTheClientRouterLoopAndStore(t *testing.T) {
@@ -216,30 +216,30 @@ func TestARecordedTurnThroughTheClientRouterLoopAndStore(t *testing.T) {
 		if i > 0 {
 			assert.Equal(t, got[i-1].ID, entry.ParentID)
 		}
-		switch body := entry.Item.Body.(type) {
-		case transcript.User:
+		switch item := entry.Item; {
+		case item.User != nil:
 			kinds = append(kinds, "user")
-			assert.Equal(t, looptest.ReadTurn.Prompt, body.Parts[0].Text)
-		case transcript.ToolCall:
+			assert.Equal(t, looptest.ReadTurn.Prompt, item.User.Parts[0].Text)
+		case item.ToolCall != nil:
 			kinds = append(kinds, "call")
-			call = &body
+			call = item.ToolCall
 			assert.Equal(t, looptest.ReadToolName, call.Name)
 			assert.JSONEq(t, `{"path":"notes.txt"}`, string(call.Input))
-		case transcript.ToolResult:
+		case item.ToolResult != nil:
 			kinds = append(kinds, "result")
-			answer = &body
+			answer = item.ToolResult
 			assert.Equal(t, transcript.OutcomeCompleted, answer.Outcome)
 			assert.Equal(t, "The launch code is 7421.\n", answer.Parts[0].Text)
-		case transcript.Text:
+		case item.Text != nil:
 			kinds = append(kinds, "text")
-			text += body.Text
-		case transcript.Usage:
+			text += item.Text.Text
+		case item.Usage != nil:
 			kinds = append(kinds, "usage")
-			assert.Equal(t, looptest.Model, body.Model)
-			assert.Equal(t, looptest.Account, body.Account)
-			usage.Add(body)
+			assert.Equal(t, looptest.Model, item.Usage.Model)
+			assert.Equal(t, looptest.Account, item.Usage.Account)
+			usage.Add(*item.Usage)
 		default:
-			t.Fatalf("unexpected item: %+v", entry.Item)
+			t.Fatalf("unexpected item: %+v", item)
 		}
 	}
 	assert.Equal(t, []string{"user", "call", "usage", "result", "text", "usage"}, kinds)
@@ -317,9 +317,9 @@ func TestACancelMidStreamStoresAnInterruptionAndNotTheUnfinishedText(t *testing.
 	assert.Empty(t, result.Final, "no text item finished")
 	_, got := entries(t, f.Store, id)
 	require.NotEmpty(t, got)
-	assert.IsType(t, transcript.Interrupted{}, got[len(got)-1].Item.Body)
+	assert.NotNil(t, got[len(got)-1].Item.Interrupted)
 	for _, entry := range got {
-		assert.False(t, transcript.Is[transcript.Text](entry.Item), "unfinished text is not a finished item")
+		assert.Nil(t, entry.Item.Text, "unfinished text is not a finished item")
 	}
 	assert.Equal(t, 2, f.Served())
 	// The first request's usage was reported before the cancel; the
@@ -327,8 +327,8 @@ func TestACancelMidStreamStoresAnInterruptionAndNotTheUnfinishedText(t *testing.
 	require.NotNil(t, result.Usage)
 	var spent loop.Spent
 	for _, entry := range got {
-		if transcript.Is[transcript.Usage](entry.Item) {
-			spent.Add(entry.Item.Body.(transcript.Usage))
+		if entry.Item.Usage != nil {
+			spent.Add(*entry.Item.Usage)
 		}
 	}
 	assert.Equal(t, spent.Usage(), result.Usage)
@@ -361,8 +361,8 @@ func TestACancelBeforeDispatchLeavesEveryCallAnswered(t *testing.T) {
 	var outcomes []transcript.Outcome
 	for _, entry := range got {
 		items = append(items, entry.Item)
-		if transcript.Is[transcript.ToolResult](entry.Item) {
-			outcomes = append(outcomes, entry.Item.Body.(transcript.ToolResult).Outcome)
+		if entry.Item.ToolResult != nil {
+			outcomes = append(outcomes, entry.Item.ToolResult.Outcome)
 		}
 	}
 	assert.Equal(t, []transcript.Outcome{transcript.OutcomeCancelled}, outcomes)
@@ -386,7 +386,7 @@ func TestAnUnknownModel404IsATypedStop(t *testing.T) {
 	assert.Empty(t, c.updates)
 	_, got := entries(t, f.Store, id)
 	require.Len(t, got, 1)
-	assert.IsType(t, transcript.User{}, got[0].Item.Body)
+	assert.NotNil(t, got[0].Item.User)
 }
 
 func TestADeadLoginIsAnAuthStop(t *testing.T) {

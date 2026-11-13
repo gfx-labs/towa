@@ -267,22 +267,22 @@ func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item
 		}
 		// Opaque replay requires exact request provenance.
 		own := item.OpaqueCompatible(c.cfg.Provider, origin)
-		switch body := item.Body.(type) {
-		case transcript.User:
-			if body.Role != "" && body.Role != "user" {
-				return nil, invalidRequest(fmt.Sprintf("item %d: Messages does not support role %q", i, body.Role))
+		switch {
+		case item.User != nil:
+			if item.User.Role != "" && item.User.Role != "user" {
+				return nil, invalidRequest(fmt.Sprintf("item %d: Messages does not support role %q", i, item.User.Role))
 			}
-			blocks, perr := buildContent(body.Parts, false)
+			blocks, perr := buildContent(item.User.Parts, false)
 			if perr != nil {
 				return nil, perr
 			}
 			add("user", blocks...)
-		case transcript.Text:
+		case item.Text != nil:
 			// The API rejects an empty text block.
-			if body.Text != "" {
-				add("assistant", &textBlock{Type: "text", Text: body.Text})
+			if item.Text.Text != "" {
+				add("assistant", &textBlock{Type: "text", Text: item.Text.Text})
 			}
-		case transcript.Thinking:
+		case item.Thinking != nil:
 			// The API takes thinking only with the signature it issued.
 			// Thinking from another provider has none and is left out.
 			if !own {
@@ -296,36 +296,36 @@ func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item
 			case opaque.RedactedData != "":
 				add("assistant", &redactedThinkingBlock{Type: "redacted_thinking", Data: opaque.RedactedData})
 			case opaque.Signature != "":
-				add("assistant", &thinkingBlock{Type: "thinking", Thinking: body.Text, Signature: opaque.Signature})
+				add("assistant", &thinkingBlock{Type: "thinking", Thinking: item.Thinking.Text, Signature: opaque.Signature})
 			default:
 				return nil, invalidRequest(fmt.Sprintf("item %d: thinking has neither a signature nor redacted data", i))
 			}
-		case transcript.ToolCall:
+		case item.ToolCall != nil:
 			// No call from this API has extensions, so these are another
 			// provider's and the call goes without them. Text input has no
 			// plain form to fall back to.
-			if len(item.Opaque) > 0 && body.Input.Kind() == '"' {
+			if len(item.Opaque) > 0 && item.ToolCall.Input.Kind() == '"' {
 				return nil, invalidRequest(fmt.Sprintf("item %d: tool call with text input carries another provider's opaque data", i))
 			}
-			input, perr := toolInput(body)
+			input, perr := toolInput(item.ToolCall)
 			if perr != nil {
 				return nil, perr
 			}
-			add("assistant", &toolUseBlock{Type: "tool_use", ID: body.ID, Name: body.Name, Input: input})
-		case transcript.ToolResult:
-			blocks, perr := buildContent(body.Parts, true)
+			add("assistant", &toolUseBlock{Type: "tool_use", ID: item.ToolCall.ID, Name: item.ToolCall.Name, Input: input})
+		case item.ToolResult != nil:
+			blocks, perr := buildContent(item.ToolResult.Parts, true)
 			if perr != nil {
 				return nil, perr
 			}
 			add("user", &toolResultBlock{
-				Type: "tool_result", ToolUseID: body.CallID, Content: blocks,
-				IsError: body.Outcome != transcript.OutcomeCompleted,
+				Type: "tool_result", ToolUseID: item.ToolResult.CallID, Content: blocks,
+				IsError: item.ToolResult.Outcome != transcript.OutcomeCompleted,
 			})
-		case transcript.Native:
+		case item.Native != nil:
 			// Every native item of this API is a block of the assistant's
 			// message, such as a server tool's use and its result.
 			if !own {
-				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, body.Kind))
+				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
 			}
 			add("assistant", item.Opaque)
 		default:
@@ -340,7 +340,7 @@ func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item
 // of another provider or JSON the model left unfinished, is sent as an
 // object with the text under "input", so the model still sees what was
 // written.
-func toolInput(call transcript.ToolCall) (jsontext.Value, *provider.Error) {
+func toolInput(call *transcript.ToolCall) (jsontext.Value, *provider.Error) {
 	switch call.Input.Kind() {
 	case '{':
 		return call.Input, nil

@@ -67,7 +67,7 @@ func log(t *testing.T, steps ...any) []transcript.Entry {
 	for i, step := range steps {
 		switch v := step.(type) {
 		case string:
-			add(transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: v}}}})
+			add(transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: v}}}})
 		case []string:
 			items := make([]map[string]string, len(v))
 			for j, s := range v {
@@ -77,8 +77,8 @@ func log(t *testing.T, steps ...any) []transcript.Entry {
 			input, err := json.Marshal(map[string]any{"todos": items})
 			require.NoError(t, err)
 			id := fmt.Sprint("call", i)
-			add(transcript.Item{Body: transcript.ToolCall{ID: id, Name: todo.Name, Input: input}})
-			add(transcript.Item{Body: transcript.ToolResult{CallID: id, Name: todo.Name, Outcome: transcript.OutcomeCompleted}})
+			add(transcript.Item{ToolCall: &transcript.ToolCall{ID: id, Name: todo.Name, Input: input}})
+			add(transcript.Item{ToolResult: &transcript.ToolResult{CallID: id, Name: todo.Name, Outcome: transcript.OutcomeCompleted}})
 		}
 	}
 	return entries
@@ -114,9 +114,7 @@ func TestOpenReadsTheLastAcceptedListAndItsPokes(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, open)
 	refused := log(t, "do it", first)
-	failed := refused[len(refused)-1].Item.Body.(transcript.ToolResult)
-	failed.Outcome = transcript.OutcomeFailed
-	refused[len(refused)-1].Item.Body = failed
+	refused[len(refused)-1].Item.ToolResult.Outcome = transcript.OutcomeFailed
 	open, _, err = todo.Open(refused)
 	require.NoError(t, err)
 	require.Empty(t, open)

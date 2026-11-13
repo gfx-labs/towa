@@ -61,9 +61,9 @@ func TestAToolResultTheAPICannotCarryIsStillSent(t *testing.T) {
 				Model: "test", MaxOutputTokens: 64,
 				Credential: auth.Credential{Account: "test", Scheme: auth.SchemeAPIKey, Token: "not-a-secret"},
 				Items: []transcript.Item{
-					{Body: transcript.User{Parts: []transcript.Part{{Text: "build it"}}}},
-					{Body: transcript.ToolCall{ID: "call-1", Name: "build", Input: jsontext.Value(`{}`)}},
-					{Body: transcript.ToolResult{CallID: "call-1", Name: "build", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
+					{User: &transcript.User{Parts: []transcript.Part{{Text: "build it"}}}},
+					{ToolCall: &transcript.ToolCall{ID: "call-1", Name: "build", Input: jsontext.Value(`{}`)}},
+					{ToolResult: &transcript.ToolResult{CallID: "call-1", Name: "build", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
 						{Text: "the build output"},
 						{Audio: &transcript.Blob{MimeType: "audio/x-towa-test", Data: []byte{1, 2, 3}}},
 						{Resource: &transcript.Resource{URI: "file:///out.zip", MimeType: "application/zip", Data: archive}},
@@ -116,7 +116,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 			namer, ok := client.(provider.ContextNamer)
 			require.True(t, ok)
 			cred := auth.Credential{Account: "test", Scheme: auth.SchemeAPIKey, Token: "not-a-secret"}
-			req := provider.Request{Model: "test", Credential: cred, MaxOutputTokens: 64, Items: []transcript.Item{{Body: transcript.User{Role: "developer", Parts: []transcript.Part{{Text: "preserve this priority"}}}}}}
+			req := provider.Request{Model: "test", Credential: cred, MaxOutputTokens: 64, Items: []transcript.Item{{User: &transcript.User{Role: "developer", Parts: []transcript.Part{{Text: "preserve this priority"}}}}}}
 			streamError := func(req provider.Request) *provider.Error {
 				t.Helper()
 				var got *provider.Error
@@ -161,9 +161,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 			require.Equal(t, provider.Fail, perr.Class)
 			require.Equal(t, provider.ReasonRequest, perr.Reason)
 			req.Credential = bad
-			system := req.Items[0].Body.(transcript.User)
-			system.Role = ""
-			req.Items[0].Body = system
+			req.Items[0].User.Role = ""
 			got = streamError(req)
 			require.Equal(t, provider.Fail, got.Class)
 			require.Equal(t, provider.ReasonRequest, got.Reason)
@@ -208,8 +206,8 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 				// provenance must be decided before opaque data is decoded.
 				opaque := jsontext.Value(`"untrusted-opaque-marker"`)
 				for _, item := range []transcript.Item{
-					{Body: transcript.Native{Kind: "untrusted"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
-					{Body: transcript.ToolCall{ID: "opaque-call", Name: "tool", Input: jsontext.Value(`"text input"`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					{Native: &transcript.Native{Kind: "untrusted"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					{ToolCall: &transcript.ToolCall{ID: "opaque-call", Name: "tool", Input: jsontext.Value(`"text input"`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
 				} {
 					req.Items = append(req.Items[:1], item)
 					got = streamError(req)
@@ -227,10 +225,10 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 				}
 				// A structural call goes as a plain call without the extensions.
 				req.Items = append(req.Items[:1],
-					transcript.Item{Body: transcript.Thinking{Text: "incompatible-thinking"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
-					transcript.Item{Body: transcript.Text{Text: "portable-answer"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
-					transcript.Item{Body: transcript.ToolCall{ID: "portable-call", Name: "tool", Input: jsontext.Value(`{}`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
-					transcript.Item{Body: transcript.ToolResult{CallID: "portable-call", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "done"}}}},
+					transcript.Item{Thinking: &transcript.Thinking{Text: "incompatible-thinking"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					transcript.Item{Text: &transcript.Text{Text: "portable-answer"}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					transcript.Item{ToolCall: &transcript.ToolCall{ID: "portable-call", Name: "tool", Input: jsontext.Value(`{}`)}, Provider: source.name, Origin: source.origin, Opaque: opaque},
+					transcript.Item{ToolResult: &transcript.ToolResult{CallID: "portable-call", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "done"}}}},
 				)
 				got = streamError(req)
 				require.Equal(t, http.StatusServiceUnavailable, got.Status)
@@ -255,7 +253,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 				before = requests.Load()
 				req.Tools = nil
 				req.Credential = cred
-				call := transcript.Item{Provider: "foreign", Body: transcript.ToolCall{ID: "call", Name: "apply_patch", Input: jsontext.Value(`"patch text"`)}, Opaque: jsontext.Value(`{"type":"custom_tool_call"}`)}
+				call := transcript.Item{Provider: "foreign", ToolCall: &transcript.ToolCall{ID: "call", Name: "apply_patch", Input: jsontext.Value(`"patch text"`)}, Opaque: jsontext.Value(`{"type":"custom_tool_call"}`)}
 				req.Items = append(req.Items, call)
 				got = streamError(req)
 				require.Equal(t, provider.Fail, got.Class)
@@ -287,9 +285,7 @@ func TestRequestProvenanceBoundaries(t *testing.T) {
 					}
 				}
 				before = requests.Load()
-				object := req.Items[1].Body.(transcript.ToolCall)
-				object.Input = jsontext.Value(`{"not":"text"}`)
-				req.Items[1].Body = object
+				req.Items[1].ToolCall.Input = jsontext.Value(`{"not":"text"}`)
 				got = streamError(req)
 				require.Equal(t, provider.Fail, got.Class)
 				require.Equal(t, provider.ReasonRequest, got.Reason)

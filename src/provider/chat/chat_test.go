@@ -51,22 +51,22 @@ func openRouter(routing config.OpenRouterRouting) config.Provider {
 // results, as the loop stores it.
 func conversation(providerID string) []transcript.Item {
 	return []transcript.Item{
-		{Body: transcript.User{Parts: []transcript.Part{{Text: "list the files"}}}},
-		{Body: transcript.Thinking{Text: "I should look."}, Provider: providerID, Opaque: jsontext.Value(`{"field":"reasoning_content"}`), Origin: &transcript.Origin{Model: "deepseek-chat", Account: "main"}},
-		{Body: transcript.Text{Text: "Looking."}, Provider: providerID},
-		{Body: transcript.ToolCall{ID: "call_1", Name: "shell", Input: jsontext.Value(`{"command":"ls"}`)}, Provider: providerID},
+		{User: &transcript.User{Parts: []transcript.Part{{Text: "list the files"}}}},
+		{Thinking: &transcript.Thinking{Text: "I should look."}, Provider: providerID, Opaque: jsontext.Value(`{"field":"reasoning_content"}`), Origin: &transcript.Origin{Model: "deepseek-chat", Account: "main"}},
+		{Text: &transcript.Text{Text: "Looking."}, Provider: providerID},
+		{ToolCall: &transcript.ToolCall{ID: "call_1", Name: "shell", Input: jsontext.Value(`{"command":"ls"}`)}, Provider: providerID},
 		// Arguments that were not a JSON object are stored in a JSON string.
-		{Body: transcript.ToolCall{ID: "call_2", Name: "shell", Input: jsontext.Value(`"{\"command\":"`)}, Provider: providerID},
+		{ToolCall: &transcript.ToolCall{ID: "call_2", Name: "shell", Input: jsontext.Value(`"{\"command\":"`)}, Provider: providerID},
 		// An object the model wrote inside a JSON string, which the repair ran.
-		{Body: transcript.ToolCall{ID: "call_3", Name: "shell", Input: jsontext.Value(`"{\"command\":\"pwd\"}"`)}, Provider: providerID},
-		{Body: transcript.ToolResult{CallID: "call_1", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
+		{ToolCall: &transcript.ToolCall{ID: "call_3", Name: "shell", Input: jsontext.Value(`"{\"command\":\"pwd\"}"`)}, Provider: providerID},
+		{ToolResult: &transcript.ToolResult{CallID: "call_1", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{
 			{Text: "a.go\n"},
 			{Stored: &transcript.Stored{Hash: "sha256:00", Size: 9000}},
 			{Image: &transcript.Blob{MimeType: "image/png", Data: []byte{4, 5, 6}}},
 		}}},
-		{Body: transcript.ToolResult{CallID: "call_2", Name: "shell", Outcome: transcript.OutcomeFailed, Parts: []transcript.Part{{Text: "invalid arguments"}}}},
-		{Body: transcript.ToolResult{CallID: "call_3", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "/work\n"}}}},
-		{Body: transcript.User{Parts: []transcript.Part{
+		{ToolResult: &transcript.ToolResult{CallID: "call_2", Name: "shell", Outcome: transcript.OutcomeFailed, Parts: []transcript.Part{{Text: "invalid arguments"}}}},
+		{ToolResult: &transcript.ToolResult{CallID: "call_3", Name: "shell", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "/work\n"}}}},
+		{User: &transcript.User{Parts: []transcript.Part{
 			{Text: "and this picture"},
 			{Image: &transcript.Blob{MimeType: "image/png", Data: []byte{1, 2, 3}}},
 		}}},
@@ -154,15 +154,15 @@ func TestRequestBodyForOpenRouter(t *testing.T) {
 
 func TestRequestRejectsWhatItCannotSend(t *testing.T) {
 	c := newClient(t, config.Provider{})
-	user := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}
+	user := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}
 	cases := map[string]provider.Request{
 		"no model":        {Items: []transcript.Item{user}},
 		"nothing to send": {Model: "m"},
-		"usage item":      {Model: "m", Items: []transcript.Item{user, {Body: transcript.Usage{Model: "m"}}}},
+		"usage item":      {Model: "m", Items: []transcript.Item{user, {Usage: &transcript.Usage{Model: "m"}}}},
 		"empty item":      {Model: "m", Items: []transcript.Item{{}}},
-		"empty part":      {Model: "m", Items: []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{{}}}}}},
-		"own native item": {Model: "m", Items: []transcript.Item{user, {Body: transcript.Native{Kind: "x"}, Provider: "test"}}},
-		"file in a prompt": {Model: "m", Items: []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{
+		"empty part":      {Model: "m", Items: []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{}}}}}},
+		"own native item": {Model: "m", Items: []transcript.Item{user, {Native: &transcript.Native{Kind: "x"}, Provider: "test"}}},
+		"file in a prompt": {Model: "m", Items: []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{
 			{Resource: &transcript.Resource{URI: "file:///a.pdf", MimeType: "application/pdf", Data: []byte{1}}},
 		}}}}},
 		"tool without a name": {Model: "m", Items: []transcript.Item{user}, Tools: []provider.Tool{{Description: "d"}}},
@@ -192,10 +192,10 @@ func TestReasoningDetailsGoBackAsTheyCame(t *testing.T) {
 	require.Nil(t, s.end())
 	require.Len(t, s.out, 3)
 	thinking := s.out[0].Item
-	require.Equal(t, "Let me think about this step by step...", thinking.Body.(transcript.Thinking).Text)
+	require.Equal(t, "Let me think about this step by step...", thinking.Thinking.Text)
 	require.Equal(t, provider.StopEndTurn, s.out[2].Stop)
 
-	user := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}
+	user := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}
 	body, perr := encoded(c, provider.Request{Model: "m", Credential: auth.Credential{Account: "main"}, Items: []transcript.Item{user, *thinking, *s.out[1].Item}})
 	require.Nil(t, perr)
 	require.JSONEq(t, `{"model":"m","stream":true,"messages":[
@@ -220,13 +220,13 @@ func TestACallWithNoArgumentTextIsAnEmptyObject(t *testing.T) {
 	require.Nil(t, s.end())
 	require.Len(t, s.out, 2)
 	call := s.out[0].Item
-	require.Equal(t, "{}", string(call.Body.(transcript.ToolCall).Input))
+	require.Equal(t, "{}", string(call.ToolCall.Input))
 	require.Equal(t, provider.StopToolUse, s.out[1].Stop)
 
 	req.Items = []transcript.Item{
-		{Body: transcript.User{Parts: []transcript.Part{{Text: "what time is it"}}}},
+		{User: &transcript.User{Parts: []transcript.Part{{Text: "what time is it"}}}},
 		*call,
-		{Body: transcript.ToolResult{CallID: "call_x", Name: "get_time", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "12:00"}}}},
+		{ToolResult: &transcript.ToolResult{CallID: "call_x", Name: "get_time", Outcome: transcript.OutcomeCompleted, Parts: []transcript.Part{{Text: "12:00"}}}},
 	}
 	body, perr := encoded(c, req)
 	require.Nil(t, perr)
@@ -325,7 +325,7 @@ func streamError(ctx context.Context, t *testing.T, c *Client) *provider.Error {
 	t.Helper()
 	req := provider.Request{
 		Model: "m", Credential: auth.Credential{Account: "main", Scheme: auth.SchemeAPIKey, Token: "sk-test"},
-		Items: []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}},
+		Items: []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: "hi"}}}}},
 	}
 	for ev, err := range c.Stream(ctx, req) {
 		if err != nil {

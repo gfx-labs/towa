@@ -157,8 +157,8 @@ func runProxyTurnChild(t *testing.T) {
 	require.NoError(t, err)
 	for entry, err := range entries {
 		require.NoError(t, err)
-		if transcript.Is[transcript.ToolResult](entry.Item) {
-			report.StoredResults = append(report.StoredResults, entry.Item.Body.(transcript.ToolResult))
+		if entry.Item.ToolResult != nil {
+			report.StoredResults = append(report.StoredResults, *entry.Item.ToolResult)
 		}
 	}
 	encoded, err := json.Marshal(report)

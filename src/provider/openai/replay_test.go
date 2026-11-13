@@ -82,8 +82,8 @@ func checkHostedSearch(t *testing.T, events []provider.Event, err error) {
 			continue
 		}
 		items = append(items, *ev.Item)
-		if transcript.Is[transcript.Text](*ev.Item) {
-			answer.WriteString(ev.Item.Body.(transcript.Text).Text)
+		if ev.Item.Text != nil {
+			answer.WriteString(ev.Item.Text.Text)
 		}
 		if search, ok := hostedsearch.Read(*ev.Item); ok {
 			searches++
@@ -104,7 +104,7 @@ func checkHostedSearch(t *testing.T, events []provider.Event, err error) {
 	for _, item := range portable {
 		_, hosted := hostedsearch.Read(item)
 		require.False(t, hosted)
-		if transcript.Is[transcript.Text](item) && strings.HasPrefix(item.Body.(transcript.Text).Text, "["+hostedsearch.Name+" for ") {
+		if item.Text != nil && strings.HasPrefix(item.Text.Text, "["+hostedsearch.Name+" for ") {
 			standIns++
 			require.Empty(t, item.Opaque)
 		}
@@ -179,8 +179,8 @@ func checkText(t *testing.T, events []provider.Event, err error) {
 	var deltas, finished strings.Builder
 	for _, ev := range events {
 		deltas.WriteString(ev.TextDelta)
-		if ev.Item != nil && transcript.Is[transcript.Text](*ev.Item) {
-			finished.WriteString(ev.Item.Body.(transcript.Text).Text)
+		if ev.Item != nil && ev.Item.Text != nil {
+			finished.WriteString(ev.Item.Text.Text)
 		}
 	}
 	require.NotEmpty(t, finished.String())
@@ -203,11 +203,8 @@ func checkToolCall(kind jsontext.Kind) func(*testing.T, []provider.Event, error)
 				}
 				progress[ev.ToolCall.ID].WriteString(ev.ToolCall.InputDelta)
 			}
-			if ev.Item == nil {
-				continue
-			}
-			if body, ok := ev.Item.Body.(transcript.ToolCall); ok {
-				call = &body
+			if ev.Item != nil && ev.Item.ToolCall != nil {
+				call = ev.Item.ToolCall
 			}
 		}
 		require.NotNil(t, call, "the response holds a tool call")
@@ -230,7 +227,7 @@ func (s scenario) request(model string, cred auth.Credential) provider.Request {
 	req := provider.Request{
 		Model: model, Credential: cred,
 		System:          []provider.SystemBlock{{Name: "instructions", Text: "You are a coding agent under test. Follow the user's request exactly."}},
-		Items:           []transcript.Item{{Body: transcript.User{Parts: []transcript.Part{{Text: s.prompt}}}}},
+		Items:           []transcript.Item{{User: &transcript.User{Parts: []transcript.Part{{Text: s.prompt}}}}},
 		Tools:           s.tools,
 		Effort:          s.effort,
 		CacheKey:        cacheKey,

@@ -58,7 +58,7 @@ func PortableSource(entries []transcript.Entry) (Source, error) {
 		return Source{}, errors.New("compact: no compaction needs a portable summary")
 	}
 	source := sourceFor(entries, view)
-	source.FirstKept = view.compaction().FirstKept
+	source.FirstKept = view.Compaction.Item.Compaction.FirstKept
 	if source.FirstKept == uuid.Nil() && len(view.Active) > 0 {
 		source.FirstKept = view.Active[0].ID
 	}
@@ -69,7 +69,7 @@ func PortableSource(entries []transcript.Entry) (Source, error) {
 			break
 		}
 	}
-	if view.compaction().FirstKept != uuid.Nil() {
+	if view.Compaction.Item.Compaction.FirstKept != uuid.Nil() {
 		for i, e := range entries[:end] {
 			if e.ID == source.FirstKept {
 				end = i
@@ -80,8 +80,8 @@ func PortableSource(entries []transcript.Entry) (Source, error) {
 	start := 0
 	source.Previous = ""
 	for i := end - 1; i >= 0; i-- {
-		c, ok := entries[i].Item.Body.(transcript.Compaction)
-		if !ok || c.Summary == "" {
+		c := entries[i].Item.Compaction
+		if c == nil || c.Summary == "" {
 			continue
 		}
 		previous, err := Read(entries[:i+1])
@@ -103,7 +103,7 @@ func PortableSource(entries []transcript.Entry) (Source, error) {
 		break
 	}
 	for _, e := range entries[start:end] {
-		if !transcript.Is[transcript.Compaction](e.Item) {
+		if e.Item.Compaction == nil {
 			source.Replaced = append(source.Replaced, e)
 		}
 	}

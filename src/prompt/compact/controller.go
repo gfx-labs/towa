@@ -167,7 +167,7 @@ func (c *Controller) Before(ctx context.Context, in BeforeInput) ([]transcript.I
 	if c.opts.Config.Mode == config.CompactionSemantic && latest >= 0 && in.Entries[latest].ID != c.lastEmbedded {
 		start := latest
 		for start > 0 {
-			if prior := in.Entries[start-1].Item; transcript.Is[transcript.Usage](prior) || transcript.Is[transcript.Compaction](prior) {
+			if prior := in.Entries[start-1].Item; prior.Usage != nil || prior.Compaction != nil {
 				break
 			}
 			start--
@@ -227,7 +227,7 @@ func (c *Controller) Before(ctx context.Context, in BeforeInput) ([]transcript.I
 			return nil, contextFull("a tool-safe emergency cut would replace no entries")
 		}
 		summary := EmergencySummary(source.Previous, source.Replaced, decision.ContextTokens, decision.Budget)
-		result := &Result{Source: source, item: transcript.Item{Body: transcript.Compaction{Summary: summary, Mode: ModeEmergency}}}
+		result := &Result{Source: source, item: transcript.Item{Compaction: &transcript.Compaction{Summary: summary, Mode: ModeEmergency}}}
 		return c.effects(result, in.Entries)
 	case Background:
 		keep := decision.Keep
@@ -278,16 +278,11 @@ func (c *Controller) effects(result *Result, history []transcript.Entry) ([]tran
 				native++
 			}
 		}
-		summary, ok := item.Body.(transcript.Compaction)
-		if !ok {
-			return nil, errors.New("compact: the result holds no compaction")
-		}
-		summary.Summary += fmt.Sprintf("\n\n[towa: summary input omitted %d UTF-8 bytes of text and %d unreadable native items. Full entries remain in stored history.]", bytes, native)
-		item.Body = summary
+		item.Compaction.Summary += fmt.Sprintf("\n\n[towa: summary input omitted %d UTF-8 bytes of text and %d unreadable native items. Full entries remain in stored history.]", bytes, native)
 	}
 	var effects []transcript.Item
 	if result.Usage != nil {
-		effects = append(effects, transcript.Item{Body: *result.Usage})
+		effects = append(effects, transcript.Item{Usage: result.Usage})
 	}
 	return append(effects, item), nil
 }
@@ -295,14 +290,13 @@ func (c *Controller) effects(result *Result, history []transcript.Entry) ([]tran
 func (c *Controller) history(entries []transcript.Entry) (usage transcript.Usage, sizes []int64, turns, latest int) {
 	latest = -1
 	for i, e := range entries {
-		if transcript.Is[transcript.Compaction](e.Item) {
+		if e.Item.Compaction != nil {
 			usage, sizes, turns, latest = transcript.Usage{}, nil, 0, -1
 		}
-		used, ok := e.Item.Body.(transcript.Usage)
-		if !ok {
+		if e.Item.Usage == nil {
 			continue
 		}
-		usage, latest = used, i
+		usage, latest = *e.Item.Usage, i
 		sizes = append(sizes, ContextTokens(usage))
 		if len(sizes) > c.opts.Config.HistoryWindow {
 			sizes = sizes[1:]

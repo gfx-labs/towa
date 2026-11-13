@@ -6,7 +6,6 @@ import (
 	"uuid"
 
 	"github.com/gfx-labs/towa/src/store"
-	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // StatsInput asks for totals.
@@ -72,23 +71,21 @@ func Stats(ctx context.Context, st store.Store, access Access, in StatsInput) (S
 			if err != nil {
 				return StatsResult{}, storeError(meta.ID, err)
 			}
-			switch body := entry.Item.Body.(type) {
-			case transcript.User:
+			switch item := entry.Item; {
+			case item.User != nil:
 				s.Prompts++
-			case transcript.ToolCall:
+			case item.ToolCall != nil:
 				s.ToolCalls++
-			case transcript.Compaction:
+			case item.Compaction != nil:
 				s.Compactions++
 				lastCompaction = s.Entries
-			case transcript.Usage:
+			case item.Usage != nil:
 				s.Requests++
-				s.InputTokens += body.InputTokens
-				s.OutputTokens += body.OutputTokens
-				s.CacheReadTokens += body.CacheReadTokens
-				s.CacheWriteTokens += body.CacheWriteTokens
-				s.ThoughtTokens += body.ThoughtTokens
-			default:
-				// Counted as an entry only.
+				s.InputTokens += item.Usage.InputTokens
+				s.OutputTokens += item.Usage.OutputTokens
+				s.CacheReadTokens += item.Usage.CacheReadTokens
+				s.CacheWriteTokens += item.Usage.CacheWriteTokens
+				s.ThoughtTokens += item.Usage.ThoughtTokens
 			}
 			s.span(entry.Time, entry.Time)
 			s.Entries++

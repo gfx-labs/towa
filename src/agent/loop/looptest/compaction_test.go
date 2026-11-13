@@ -45,8 +45,8 @@ func TestCompactedTurn(t *testing.T) {
 	before := allEntries(t, old.Store, id)
 	var window int64
 	for _, e := range before {
-		if transcript.Is[transcript.Usage](e.Item) {
-			window = compact.ContextTokens(e.Item.Body.(transcript.Usage))
+		if e.Item.Usage != nil {
+			window = compact.ContextTokens(*e.Item.Usage)
 		}
 	}
 	require.Positive(t, window)
@@ -109,19 +109,19 @@ func TestCompactedTurn(t *testing.T) {
 	var summed transcript.Usage
 	var compactionID acp.CompactionId
 	newUser := after[len(before)]
-	require.IsType(t, transcript.User{}, newUser.Item.Body)
+	require.NotNil(t, newUser.Item.User)
 	for _, e := range after[len(before):] {
-		if transcript.Is[transcript.ToolCall](e.Item) {
+		if e.Item.ToolCall != nil {
 			toolCalls++
 		}
-		if transcript.Is[transcript.Usage](e.Item) {
-			summed.InputTokens += e.Item.Body.(transcript.Usage).InputTokens
-			summed.OutputTokens += e.Item.Body.(transcript.Usage).OutputTokens
+		if e.Item.Usage != nil {
+			summed.InputTokens += e.Item.Usage.InputTokens
+			summed.OutputTokens += e.Item.Usage.OutputTokens
 		}
-		if transcript.Is[transcript.Compaction](e.Item) {
+		if e.Item.Compaction != nil {
 			compactions++
-			require.NotEmpty(t, e.Item.Body.(transcript.Compaction).Summary)
-			require.Equal(t, newUser.ID, e.Item.Body.(transcript.Compaction).FirstKept)
+			require.NotEmpty(t, e.Item.Compaction.Summary)
+			require.Equal(t, newUser.ID, e.Item.Compaction.FirstKept)
 			compactionID = acp.CompactionId(e.ID.String())
 		}
 	}

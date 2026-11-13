@@ -94,15 +94,15 @@ func storedTurn(st store.Store) session.TurnFunc {
 		text := turn.Prompt[0].Text.Text
 		var hidden []transcript.Item
 		if text == "compact" {
-			hidden = append(hidden, transcript.Item{Body: transcript.Compaction{
+			hidden = append(hidden, transcript.Item{Compaction: &transcript.Compaction{
 				Summary: "what came before", FirstKept: uuid.NewV7(), Mode: "reactive",
 			}})
 		}
 		answer := []transcript.Item{
-			{Body: transcript.Thinking{Text: "thinking about " + text}},
-			{Body: transcript.Text{Text: "reply to " + text}},
-			{Body: transcript.ToolCall{ID: "call-" + text, Name: "read", Input: jsontext.Value(`{"path":"a.go"}`)}},
-			{Body: transcript.ToolResult{
+			{Thinking: &transcript.Thinking{Text: "thinking about " + text}},
+			{Text: &transcript.Text{Text: "reply to " + text}},
+			{ToolCall: &transcript.ToolCall{ID: "call-" + text, Name: "read", Input: jsontext.Value(`{"path":"a.go"}`)}},
+			{ToolResult: &transcript.ToolResult{
 				CallID: "call-" + text, Name: "read", Outcome: transcript.OutcomeCompleted,
 				Parts: []transcript.Part{{Text: "package a"}},
 			}},

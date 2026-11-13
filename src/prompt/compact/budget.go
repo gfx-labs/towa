@@ -8,7 +8,6 @@ import (
 
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
-	"github.com/gfx-labs/towa/src/transcript"
 )
 
 // jcode origin/master 8e11eb23e: crates/jcode-compaction-core/src/lib.rs:43
@@ -81,9 +80,8 @@ func BoundedSummaryRequest(in SummaryInput, contextWindow int64) (provider.Reque
 		report.Omissions = append(report.Omissions, Omission{Reason: "context budget", Bytes: start})
 		text = marker + conversation[start:]
 	}
-	wrapped := wrap(in, text)
-	req.Items[0].Body = transcript.User{Parts: []transcript.Part{{Text: wrapped}}}
-	report.InputTokens = estimatedSummaryTokens(req.System[0].Text, wrapped)
+	req.Items[0].User.Parts[0].Text = wrap(in, text)
+	report.InputTokens = estimatedSummaryTokens(req.System[0].Text, req.Items[0].User.Parts[0].Text)
 	if report.InputTokens > available {
 		return provider.Request{}, report, fmt.Errorf("compact: summary estimate %d exceeds budget %d", report.InputTokens, available)
 	}
@@ -98,13 +96,13 @@ func serializationOmissions(in SummaryInput) []Omission {
 	var out []Omission
 	for _, e := range in.Replaced {
 		item := e.Item
-		switch body := item.Body.(type) {
-		case transcript.Thinking:
-			out = append(out, Omission{Entry: e.ID, Reason: "thinking excluded", Bytes: len(body.Text)})
-		case transcript.Native:
+		switch {
+		case item.Thinking != nil:
+			out = append(out, Omission{Entry: e.ID, Reason: "thinking excluded", Bytes: len(item.Thinking.Text)})
+		case item.Native != nil:
 			out = append(out, Omission{Entry: e.ID, Reason: "unreadable native content"})
-		case transcript.ToolResult:
-			text := partsText(body.Parts, "")
+		case item.ToolResult != nil:
+			text := partsText(item.ToolResult.Parts, "")
 			var retained string
 			if in.Prompt == config.SummaryShort {
 				retained = cutBytes(text, shortResultBytes)
@@ -128,8 +126,6 @@ func serializationOmissions(in SummaryInput) []Omission {
 			if len(retained) < len(text) {
 				out = append(out, Omission{Entry: e.ID, Reason: "tool result limit", Bytes: len(text) - len(retained)})
 			}
-		default:
-			// Serialized whole.
 		}
 	}
 	return out

@@ -34,7 +34,7 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 	path := b.path("notes.txt")
 	input := jsontext.Value(`{"path":"` + path + `"}`)
 
-	updates, err := m.Updates(transcript.Item{Body: transcript.ToolCall{ID: "c1", Name: "read", Input: input}})
+	updates, err := m.Updates(transcript.Item{ToolCall: &transcript.ToolCall{ID: "c1", Name: "read", Input: input}})
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{
 		"sessionUpdate": "tool_call",
@@ -48,13 +48,13 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 	}}, wire(t, updates))
 
 	// A tool the set does not have is still shown.
-	updates, err = m.Updates(transcript.Item{Body: transcript.ToolCall{ID: "c2", Name: "gone", Input: jsontext.Value(`{}`)}})
+	updates, err = m.Updates(transcript.Item{ToolCall: &transcript.ToolCall{ID: "c2", Name: "gone", Input: jsontext.Value(`{}`)}})
 	require.NoError(t, err)
 	shown := wire(t, updates)[0]
 	assert.Equal(t, "gone", shown["title"])
 	assert.Equal(t, "other", shown["kind"])
 
-	updates, err = m.Updates(transcript.Item{Body: transcript.ToolResult{
+	updates, err = m.Updates(transcript.Item{ToolResult: &transcript.ToolResult{
 		CallID: "c1", Name: "read", Outcome: transcript.OutcomeUnknown,
 		Parts: []transcript.Part{
 			{Text: "first lines"},
@@ -72,7 +72,7 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 		}},
 	}}, wire(t, updates))
 
-	_, err = m.Updates(transcript.Item{Body: transcript.ToolResult{CallID: "c1", Outcome: "exploded"}})
+	_, err = m.Updates(transcript.Item{ToolResult: &transcript.ToolResult{CallID: "c1", Outcome: "exploded"}})
 	assert.Error(t, err, "an outcome outside the four is not shown as one of them")
 }
 
@@ -87,17 +87,17 @@ func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 		}
 		return out
 	}
-	assert.Equal(t, []any{"agent_message_chunk"}, kinds(transcript.Item{Body: transcript.Text{Text: "hi"}}))
-	assert.Equal(t, []any{"agent_thought_chunk"}, kinds(transcript.Item{Body: transcript.Thinking{Text: "hm"}}))
-	assert.Empty(t, kinds(transcript.Item{Body: transcript.Thinking{}}), "reasoning only the provider can read has nothing to show")
-	assert.Empty(t, kinds(transcript.Item{Body: transcript.Interrupted{}}))
-	assert.Empty(t, kinds(transcript.Item{Body: transcript.Native{Kind: "compaction"}}))
+	assert.Equal(t, []any{"agent_message_chunk"}, kinds(transcript.Item{Text: &transcript.Text{Text: "hi"}}))
+	assert.Equal(t, []any{"agent_thought_chunk"}, kinds(transcript.Item{Thinking: &transcript.Thinking{Text: "hm"}}))
+	assert.Empty(t, kinds(transcript.Item{Thinking: &transcript.Thinking{}}), "reasoning only the provider can read has nothing to show")
+	assert.Empty(t, kinds(transcript.Item{Interrupted: &transcript.Interrupted{}}))
+	assert.Empty(t, kinds(transcript.Item{Native: &transcript.Native{Kind: "compaction"}}))
 
 	usage := transcript.Usage{
 		Model: "opus", InputTokens: 10, CacheReadTokens: 5000, CacheWriteTokens: 200, OutputTokens: 90,
 		Cost: &transcript.Cost{Amount: 0.25, Currency: "USD"},
 	}
-	updates, err := m.Updates(transcript.Item{Body: usage})
+	updates, err := m.Updates(transcript.Item{Usage: &usage})
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{
 		"sessionUpdate": "usage_update",
@@ -107,7 +107,7 @@ func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 	}}, wire(t, updates))
 
 	usage.Model = "unknown-model"
-	assert.Empty(t, kinds(transcript.Item{Body: usage}), "no context size is made up for a model without one")
+	assert.Empty(t, kinds(transcript.Item{Usage: &usage}), "no context size is made up for a model without one")
 }
 
 func TestAPromptSurvivesTheTripThroughTheTranscript(t *testing.T) {
@@ -126,7 +126,7 @@ func TestAPromptSurvivesTheTripThroughTheTranscript(t *testing.T) {
 	}
 	item, err := loop.UserItem(prompt)
 	require.NoError(t, err)
-	assert.Equal(t, []byte{0, 1, 2}, item.Body.(transcript.User).Parts[5].Resource.Data)
+	assert.Equal(t, []byte{0, 1, 2}, item.User.Parts[5].Resource.Data)
 
 	updates, err := loop.Mapper{}.Updates(item)
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestAPromptSurvivesTheTripThroughTheTranscript(t *testing.T) {
 	empty := acp.ContentBlock{Text: &acp.ContentBlockText{Type: "text", Text: ""}}
 	item, err = loop.UserItem([]acp.ContentBlock{empty, prompt[0], empty})
 	require.NoError(t, err)
-	assert.Equal(t, []transcript.Part{{Text: "look at these"}}, item.Body.(transcript.User).Parts)
+	assert.Equal(t, []transcript.Part{{Text: "look at these"}}, item.User.Parts)
 	_, err = loop.UserItem([]acp.ContentBlock{empty})
 	var refused *acp.RequestError
 	require.ErrorAs(t, err, &refused)

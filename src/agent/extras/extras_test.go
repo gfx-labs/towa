@@ -72,10 +72,10 @@ func TestConversationSearchRunsOnFullStoredHistory(t *testing.T) {
 		m.Updated = now
 		require.NoError(t, st.Create(t.Context(), m))
 		entries := []transcript.Entry{
-			transcript.NewEntry(uuid.UUID{}, now, transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: "the old quokka marker"}}}}),
+			transcript.NewEntry(uuid.UUID{}, now, transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "the old quokka marker"}}}}),
 		}
-		kept := transcript.NewEntry(entries[0].ID, now.Add(time.Second), transcript.Item{Body: transcript.Text{Text: "recent text without the marker"}})
-		entries = append(entries, kept, transcript.NewEntry(kept.ID, now.Add(2*time.Second), transcript.Item{Body: transcript.Compaction{Summary: "A prior exchange", FirstKept: kept.ID, Mode: "summary"}}))
+		kept := transcript.NewEntry(entries[0].ID, now.Add(time.Second), transcript.Item{Text: &transcript.Text{Text: "recent text without the marker"}})
+		entries = append(entries, kept, transcript.NewEntry(kept.ID, now.Add(2*time.Second), transcript.Item{Compaction: &transcript.Compaction{Summary: "A prior exchange", FirstKept: kept.ID, Mode: "summary"}}))
 		require.NoError(t, st.Append(t.Context(), m.ID, entries))
 	}
 	tool, err := extras.ConversationSearch(searchConfig(), st)

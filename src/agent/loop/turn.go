@@ -167,22 +167,22 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 	case e.Item != nil:
 		item := *e.Item
 		r.Items = append(r.Items, item)
-		switch body := item.Body.(type) {
-		case transcript.Text:
+		switch {
+		case item.Text != nil:
 			shown := r.textShown
 			r.textShown = false
-			if !shown && body.Text != "" {
-				return []acp.SessionUpdate{TextChunk(body.Text)}
+			if !shown && item.Text.Text != "" {
+				return []acp.SessionUpdate{TextChunk(item.Text.Text)}
 			}
-		case transcript.Thinking:
+		case item.Thinking != nil:
 			shown := r.thoughtShown
 			r.thoughtShown = false
-			if !shown && body.Text != "" {
-				return []acp.SessionUpdate{ThoughtChunk(body.Text)}
+			if !shown && item.Thinking.Text != "" {
+				return []acp.SessionUpdate{ThoughtChunk(item.Thinking.Text)}
 			}
-		case transcript.ToolCall:
-			call := m.ToolCall(body)
-			i := slices.Index(r.writing, body.ID)
+		case item.ToolCall != nil:
+			call := m.ToolCall(*item.ToolCall)
+			i := slices.Index(r.writing, item.ToolCall.ID)
 			if i < 0 {
 				return []acp.SessionUpdate{{ToolCall: &call}}
 			}
@@ -193,10 +193,8 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 				ToolCallId: call.ToolCallId, Title: &call.Title, Kind: &call.Kind,
 				Locations: call.Locations, RawInput: call.RawInput,
 			}}}
-		case transcript.Native:
+		case item.Native != nil:
 			return HostedSearch(item)
-		default:
-			// A provider's stream yields nothing else that is shown.
 		}
 	case e.Usage != nil:
 		r.Usage = e.Usage
@@ -230,8 +228,8 @@ func (r *Response) Writing() []string {
 func (r *Response) Text() string {
 	var text strings.Builder
 	for _, item := range r.Items {
-		if body, ok := item.Body.(transcript.Text); ok {
-			text.WriteString(body.Text)
+		if item.Text != nil {
+			text.WriteString(item.Text.Text)
 		}
 	}
 	return text.String()
@@ -241,8 +239,8 @@ func (r *Response) Text() string {
 func (r *Response) Calls() []transcript.ToolCall {
 	var calls []transcript.ToolCall
 	for _, item := range r.Items {
-		if call, ok := item.Body.(transcript.ToolCall); ok {
-			calls = append(calls, call)
+		if item.ToolCall != nil {
+			calls = append(calls, *item.ToolCall)
 		}
 	}
 	return calls
@@ -311,9 +309,7 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 		return Result{}, err
 	}
 	hookSession := hooks.Session{ID: string(t.SessionID), Cwd: t.Cwd}
-	// UserItem returns a user message.
-	prompt, _ := user.Body.(transcript.User)
-	decision, hookErr := l.o.Hooks.Prompt(ctx, hookSession, prompt.Parts)
+	decision, hookErr := l.o.Hooks.Prompt(ctx, hookSession, user.User.Parts)
 	logHook(ctx, l.o.Logger, t.SessionID, hookErr)
 	if decision.Action != hooks.Allow {
 		// Nothing is stored: the model never saw the prompt.
@@ -383,7 +379,7 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 			// for another reason are not run. They still get a result.
 			for _, call := range calls {
 				unrun := result(call, transcript.OutcomeCancelled, textNotRun)
-				stored = append(stored, transcript.Item{Body: unrun})
+				stored = append(stored, transcript.Item{ToolResult: &unrun})
 				tn.toolUpdate(ctx, unrun, nil)
 			}
 		}
@@ -398,7 +394,7 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 		}
 		if resp.Usage != nil {
 			tn.add(*resp.Usage)
-			stored = append(stored, transcript.Item{Body: *resp.Usage})
+			stored = append(stored, transcript.Item{Usage: resp.Usage})
 			if update, ok := tn.mapper.Usage(*resp.Usage); ok {
 				tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
 			}
@@ -449,7 +445,7 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 				if len(open) == 0 || int64(sent) >= tn.limits.MaxTodoPokes {
 					return tn.result(reason), nil
 				}
-				poke := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: todo.Poke(open)}}}}
+				poke := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: todo.Poke(open)}}}}
 				if err := tn.append(ctx, poke); err != nil {
 					return Result{}, err
 				}
@@ -460,7 +456,7 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 				return LimitResult(config.KeyMaxStopDenials, tn.snapshot()), nil
 			}
 			tn.stopDenials++
-			denied := transcript.Item{Body: transcript.User{Parts: []transcript.Part{{Text: decision.Reason}}}}
+			denied := transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: decision.Reason}}}}
 			if err := tn.append(ctx, denied); err != nil {
 				return Result{}, err
 			}
@@ -492,7 +488,7 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 		tn.spentMu.Unlock()
 		results := make([]transcript.Item, len(done.Results))
 		for i := range done.Results {
-			results[i] = transcript.Item{Body: done.Results[i]}
+			results[i] = transcript.Item{ToolResult: &done.Results[i]}
 		}
 		if err := tn.append(ctx, results...); err != nil {
 			return Result{}, err
@@ -523,7 +519,7 @@ func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error
 		}
 		// The model is told about the interruption when the next turn's
 		// request is built.
-		if err := tn.append(ctx, transcript.Item{Body: transcript.Interrupted{}}); err != nil {
+		if err := tn.append(ctx, transcript.Item{Interrupted: &transcript.Interrupted{}}); err != nil {
 			return Result{}, true, err
 		}
 		return tn.result(acp.StopReasonCancelled), true, nil
@@ -544,15 +540,15 @@ func (tn *turn) ended(ctx context.Context, streamErr error) (Result, bool, error
 func (tn *turn) closeCalls(ctx context.Context) error {
 	answered := map[string]bool{}
 	for _, entry := range tn.entries {
-		if result, ok := entry.Item.Body.(transcript.ToolResult); ok {
-			answered[result.CallID] = true
+		if entry.Item.ToolResult != nil {
+			answered[entry.Item.ToolResult.CallID] = true
 		}
 	}
 	var unrun []transcript.Item
 	for _, entry := range tn.entries {
-		if call, ok := entry.Item.Body.(transcript.ToolCall); ok && !answered[call.ID] {
-			cancelled := result(call, transcript.OutcomeCancelled, textInterrupted)
-			unrun = append(unrun, transcript.Item{Body: cancelled})
+		if call := entry.Item.ToolCall; call != nil && !answered[call.ID] {
+			cancelled := result(*call, transcript.OutcomeCancelled, textInterrupted)
+			unrun = append(unrun, transcript.Item{ToolResult: &cancelled})
 			tn.toolUpdate(ctx, cancelled, nil)
 		}
 	}
@@ -644,7 +640,7 @@ func (tn *turn) load(ctx context.Context) error {
 			return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
 		}
 		tn.entries = append(tn.entries, entry)
-		if !transcript.Is[transcript.Compaction](entry.Item) {
+		if entry.Item.Compaction == nil {
 			history = append(history, entry.Item)
 		}
 		tn.parent = entry.ID

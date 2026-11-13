@@ -220,14 +220,14 @@ func (s *streamState) item(b *block) (*transcript.Item, *provider.Error) {
 		if b.text.Len() == 0 {
 			return nil, nil
 		}
-		return &transcript.Item{Body: transcript.Text{Text: b.text.String()}, Provider: s.provider}, nil
+		return &transcript.Item{Text: &transcript.Text{Text: b.text.String()}, Provider: s.provider}, nil
 	case "thinking":
 		return s.thinkingItem(b.text.String(), thinkingOpaque{Signature: b.signature.String()})
 	case "redacted_thinking":
 		return s.thinkingItem("", thinkingOpaque{RedactedData: b.head.Data})
 	case "tool_use":
 		return &transcript.Item{
-			Body:     transcript.ToolCall{ID: b.head.ID, Name: b.head.Name, Input: argument(b.input.String())},
+			ToolCall: &transcript.ToolCall{ID: b.head.ID, Name: b.head.Name, Input: argument(b.input.String())},
 			Provider: s.provider,
 		}, nil
 	default:
@@ -237,12 +237,12 @@ func (s *streamState) item(b *block) (*transcript.Item, *provider.Error) {
 		if perr != nil {
 			return nil, perr
 		}
-		return &transcript.Item{Body: transcript.Native{Kind: b.head.Type}, Provider: s.provider, Opaque: raw}, nil
+		return &transcript.Item{Native: &transcript.Native{Kind: b.head.Type}, Provider: s.provider, Opaque: raw}, nil
 	}
 }
 
 func (s *streamState) thinkingItem(text string, opaque thinkingOpaque) (*transcript.Item, *provider.Error) {
-	item := &transcript.Item{Body: transcript.Thinking{Text: text}, Provider: s.provider}
+	item := &transcript.Item{Thinking: &transcript.Thinking{Text: text}, Provider: s.provider}
 	// Thinking without a signature cannot go back to the API. It is still
 	// an item, for the client to show, and has no Opaque.
 	if opaque == (thinkingOpaque{}) {

@@ -74,20 +74,18 @@ func TopicShift(embeddings [][]float32, threshold float64) bool {
 func messageText(entries []transcript.Entry, maxChars int) string {
 	var b strings.Builder
 	for _, e := range entries {
-		switch body := e.Item.Body.(type) {
-		case transcript.User:
-			for _, p := range body.Parts {
+		switch {
+		case e.Item.User != nil:
+			for _, p := range e.Item.User.Parts {
 				if p.Stored != nil {
 					continue
 				}
 				b.WriteString(p.Text)
 				b.WriteByte('\n')
 			}
-		case transcript.Text:
-			b.WriteString(body.Text)
+		case e.Item.Text != nil:
+			b.WriteString(e.Item.Text.Text)
 			b.WriteByte('\n')
-		default:
-			// Only what the user and the model wrote is embedded.
 		}
 	}
 	text := strings.TrimSpace(b.String())
