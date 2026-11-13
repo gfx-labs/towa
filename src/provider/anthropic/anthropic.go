@@ -106,7 +106,7 @@ type Thinking struct {
 
 // Config configures a Client.
 type Config struct {
-	// HTTPClient sends every request. It comes from src/httpclient.
+	// HTTPClient sends every request. It comes from src/support/httpclient.
 	HTTPClient *http.Client
 	// Version is the towa version. The user agent is
 	// towa/<Version>.

@@ -19,15 +19,15 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/agent/loop"
+	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/cli/hosts"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/hosts"
-	"github.com/gfx-labs/towa/src/loop"
-	"github.com/gfx-labs/towa/src/models"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/models"
 	"github.com/gfx-labs/towa/src/provider/openai"
-	"github.com/gfx-labs/towa/src/session"
-	"github.com/gfx-labs/towa/src/telemetry"
+	"github.com/gfx-labs/towa/src/support/telemetry"
 )
 
 // Host is what the program takes from the machine it runs on.

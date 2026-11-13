@@ -21,7 +21,7 @@ const (
 )
 
 // Jev configures the decisions endpoint behind the jev_decision tool. An
-// empty Route means there is none. src/jev reads it and holds each route's
+// empty Route means there is none. src/sidecar/jev reads it and holds each route's
 // endpoint and default model.
 //
 // The limits are jcode's. docs/notes/2026-11-11-webfetch-and-jev.md gives

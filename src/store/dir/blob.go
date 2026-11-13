@@ -15,8 +15,8 @@ import (
 	"strings"
 	"uuid"
 
-	"github.com/gfx-labs/towa/src/filelock"
 	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/support/filelock"
 	"github.com/gfx-labs/towa/src/transcript"
 )
 

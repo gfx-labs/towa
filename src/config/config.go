@@ -34,7 +34,7 @@ type Config struct {
 	// that an entry cannot take falls back to the entries listed after it.
 	Models []string `name:"models" group:"models" placeholder:"MODEL" help:"Models a session can select, in order: provider:account/model, optionally with #effort (claude:work/claude-opus-5-5#medium). Comma separated as a flag, a list in a file. A session starts with the first, and a request an entry cannot take falls back to the entries after it. Without #effort none is sent and the provider's default applies."`
 	// ModelContextWindow and ModelMaxOutputTokens are the figures of a model the
-	// built-in table in src/models does not have and no provider's models
+	// built-in table in src/provider/models does not have and no provider's models
 	// entry gives. Zero is not set: the figure is then taken from the
 	// provider's model list, then guessed from the model's name, and a model
 	// neither says anything about is refused when it is selected.

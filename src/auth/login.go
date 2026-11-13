@@ -25,7 +25,7 @@ type LoginOptions struct {
 	// Device shows a code to type into the provider's page and waits for
 	// its approval. It needs no browser on this host and reads nothing.
 	Device bool
-	// HTTPClient sends the token request. It comes from src/httpclient.
+	// HTTPClient sends the token request. It comes from src/support/httpclient.
 	HTTPClient *http.Client
 	// Manual asks for the code to be pasted and starts no callback server.
 	// It is the login for a host without a browser.

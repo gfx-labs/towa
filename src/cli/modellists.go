@@ -10,8 +10,8 @@ import (
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/models"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/models"
 )
 
 // modelListsPath is the file the providers' model lists are kept in, beside

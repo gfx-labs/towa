@@ -10,7 +10,7 @@ import (
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
 // loginEnv is what the account commands take from outside the configuration.

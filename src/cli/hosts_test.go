@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/auth"
-	"github.com/gfx-labs/towa/src/hosts"
+	"github.com/gfx-labs/towa/src/cli/hosts"
 )
 
 // The hosts command from the argument list to its two streams: the list on

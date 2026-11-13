@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/httpclient"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
 type usageCmd struct {

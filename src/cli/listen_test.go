@@ -18,9 +18,9 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/gfx-labs/towa/src/agent/loop"
+	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/loop"
-	"github.com/gfx-labs/towa/src/session"
 )
 
 const transportTestTimeout = 10 * time.Second

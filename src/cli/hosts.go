@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/gfx-labs/towa/src/auth"
+	"github.com/gfx-labs/towa/src/cli/hosts"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/hosts"
-	"github.com/gfx-labs/towa/src/jev"
+	"github.com/gfx-labs/towa/src/sidecar/jev"
 )
 
 // hostsEnv is what the hosts command takes from the packages that own a
@@ -60,7 +60,7 @@ func (hostsCmd) Run(loaded *config.Loaded, h Host, env hostsEnv) error {
 	return nil
 }
 
-// jevEndpoint returns the route endpoint owned by src/jev, or "" when disabled.
+// jevEndpoint returns the route endpoint owned by src/sidecar/jev, or "" when disabled.
 func jevEndpoint(cfg config.Jev) (string, error) {
 	endpoint, err := jev.Endpoint(cfg)
 	if errors.Is(err, jev.ErrDisabled) {

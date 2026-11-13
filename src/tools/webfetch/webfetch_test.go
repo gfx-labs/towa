@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/tools/webfetch"
 )
 

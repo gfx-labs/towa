@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/httpclient"
-	"github.com/gfx-labs/towa/src/mcp"
+	"github.com/gfx-labs/towa/src/support/httpclient"
+	"github.com/gfx-labs/towa/src/tools/mcp"
 )
 
 // errMCPServer is a server name the mcp commands cannot act on: it is not

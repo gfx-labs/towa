@@ -4,7 +4,7 @@
 // parsing and its error handling are all exercised against what the provider
 // sent.
 //
-// To record, wrap the transport of a client from src/httpclient:
+// To record, wrap the transport of a client from src/support/httpclient:
 //
 //	client := httpclient.New()
 //	client.Transport = &providertest.Recorder{Next: client.Transport, Path: path, Secrets: []string{key}}
@@ -12,7 +12,7 @@
 // To replay, point the client at the server Replay returns:
 //
 //	server := providertest.Replay(t, path)
-//	// send the same request to server.URL with a client from src/httpclient
+//	// send the same request to server.URL with a client from src/support/httpclient
 package providertest
 
 import (

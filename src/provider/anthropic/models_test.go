@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/auth"
-	"github.com/gfx-labs/towa/src/httpclient"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
 // The model list of a subscription login, recorded on 2026-11-12.

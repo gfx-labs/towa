@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"uuid"
 
-	"github.com/gfx-labs/towa/src/filelock"
 	"github.com/gfx-labs/towa/src/store"
+	"github.com/gfx-labs/towa/src/support/filelock"
 )
 
 // Fork creates the session meta describes with source's history and stored

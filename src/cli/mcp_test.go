@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/auth"
-	"github.com/gfx-labs/towa/src/httpclient"
-	"github.com/gfx-labs/towa/src/mcp/mcptest"
+	"github.com/gfx-labs/towa/src/support/httpclient"
+	"github.com/gfx-labs/towa/src/tools/mcp/mcptest"
 )
 
 // The mcp commands from the command line to the token file, against an MCP

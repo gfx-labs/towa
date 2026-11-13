@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/auth"
-	"github.com/gfx-labs/towa/src/httpclient"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/openai"
 	"github.com/gfx-labs/towa/src/provider/providertest"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
 // The usage of a ChatGPT login, recorded on 2026-11-12: one weekly window.

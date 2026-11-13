@@ -8,11 +8,11 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/loop"
-	"github.com/gfx-labs/towa/src/mcp"
 	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/mcp"
 )
 
 // mcpRuntimeOptions holds process dependencies. Session setup takes a copy

@@ -2,7 +2,7 @@ package config
 
 // Context configures what is loaded into a session's system prompt: agent
 // instruction files, skills, configured sections and the prompt itself.
-// src/agentctx reads it. A path may start with "~/", which stands for the
+// src/prompt/agentctx reads it. A path may start with "~/", which stands for the
 // home directory. Any other relative path is taken from the session's
 // working directory.
 //

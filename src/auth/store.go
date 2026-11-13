@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gfx-labs/towa/src/filelock"
+	"github.com/gfx-labs/towa/src/support/filelock"
 )
 
 // ErrNotLoggedIn says the store holds no login for an OAuth account.

@@ -18,7 +18,7 @@ const (
 	HookStop = "stop"
 )
 
-// Hook attaches a command to an event. src/hooks runs it and documents what
+// Hook attaches a command to an event. src/agent/hooks runs it and documents what
 // the command is sent and what it may answer.
 type Hook struct {
 	// Event is pre_tool, post_tool, prompt or stop.

@@ -4,7 +4,7 @@ A Go coding agent that speaks ACP. Go 1.27.3, module `github.com/gfx-labs/towa`.
 
 - Check: `go build ./... && go vet ./... && go test -race ./... && golangci-lint run ./...` (golangci-lint v2.15.0, config `.golangci.yml`). `mise install` provides both tools.
 - Linux is the platform. macOS is a headless build target: `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./...` must pass, and code that only one of them can run goes in a `_linux.go` or `_darwin.go` file. `CGO_ENABLED=0 go build ./...` must pass.
-- Packages live in `src/`. No `internal/`. A package moves to `pkg/` when an outside caller needs it. `pkg/acp` is there because ACP clients import it.
+- Packages live in `src/`, in eleven groups: `config`, `transcript`, `support`, `auth`, `provider`, `sidecar`, `store`, `prompt`, `tools`, `agent`, `cli`. A group imports only the groups before it in that list. `src/layers_test.go` holds which group may import which and fails on a new edge, or on a package outside a group. Put a new package in the group it belongs to, not at the top of `src/`. No `internal/`. A package moves to `pkg/` when an outside caller needs it. `pkg/acp` is there because ACP clients import it.
 - `cmd/towa/main.go` only calls `src/cli`. The binary is `towa`. Commands, flags and wiring go in `src/cli`.
 - `pkg/acp/*_gen.go` are generated from `pkg/acp/schema` by `tools/acpgen`. Change the generator or the schema files, then run `go generate ./pkg/acp`. Never edit a generated file. `tools/acpgen` is its own module: check it with `go vet ./... && go test ./...` in that directory.
 - Keep the dependency list short. Record why each dependency was added in `docs/notes/`.
@@ -31,4 +31,4 @@ Use `github.com/valyala/bytebufferpool` for a buffer that lives for one message:
 
 ## HTTP
 
-Every HTTP client comes from `src/httpclient`, which takes the proxy from the environment and trusts the system certificate pool. towa runs in places where a proxy is the only way out and holds the credentials. Lint rejects `http.Transport`, `http.DefaultTransport`, `http.DefaultClient` and `http.Get` and its siblings elsewhere. Lint sees only this repo's code: a dependency that makes its own client is covered by the test that runs a turn through a proxy.
+Every HTTP client comes from `src/support/httpclient`, which takes the proxy from the environment and trusts the system certificate pool. towa runs in places where a proxy is the only way out and holds the credentials. Lint rejects `http.Transport`, `http.DefaultTransport`, `http.DefaultClient` and `http.Get` and its siblings elsewhere. Lint sees only this repo's code: a dependency that makes its own client is covered by the test that runs a turn through a proxy.

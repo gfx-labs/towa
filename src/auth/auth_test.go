@@ -24,7 +24,7 @@ import (
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
 // The variables that make the test binary act as one towa process

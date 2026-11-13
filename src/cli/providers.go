@@ -9,10 +9,10 @@ import (
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/models"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/chat"
+	"github.com/gfx-labs/towa/src/provider/models"
 	"github.com/gfx-labs/towa/src/provider/openai"
 )
 

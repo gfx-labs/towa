@@ -26,7 +26,7 @@ import (
 	"uuid"
 
 	"github.com/gfx-labs/towa/pkg/acp"
-	"github.com/gfx-labs/towa/src/loop/looptest"
+	"github.com/gfx-labs/towa/src/agent/loop/looptest"
 	"github.com/gfx-labs/towa/src/provider/providertest"
 	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/transcript"

@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/models"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
+	"github.com/gfx-labs/towa/src/provider/models"
 )
 
 // claude-haiku-4-5 answers the adaptive thinking parameter with an HTTP 400

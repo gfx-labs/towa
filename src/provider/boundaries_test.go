@@ -13,11 +13,11 @@ import (
 
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/httpclient"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/anthropic"
 	"github.com/gfx-labs/towa/src/provider/chat"
 	"github.com/gfx-labs/towa/src/provider/openai"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/transcript"
 )
 

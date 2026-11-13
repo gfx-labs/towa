@@ -15,12 +15,12 @@ import (
 	"uuid"
 
 	"github.com/gfx-labs/towa/pkg/acp"
+	"github.com/gfx-labs/towa/src/agent/loop/looptest"
 	"github.com/gfx-labs/towa/src/config"
-	"github.com/gfx-labs/towa/src/embed"
-	"github.com/gfx-labs/towa/src/httpclient"
-	"github.com/gfx-labs/towa/src/loop/looptest"
 	"github.com/gfx-labs/towa/src/provider/providertest"
-	"github.com/gfx-labs/towa/src/telemetry"
+	"github.com/gfx-labs/towa/src/sidecar/embed"
+	"github.com/gfx-labs/towa/src/support/httpclient"
+	"github.com/gfx-labs/towa/src/support/telemetry"
 	"github.com/stretchr/testify/require"
 )
 

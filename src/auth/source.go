@@ -99,7 +99,7 @@ func PlaceholderToken(account string) string { return "towa-proxied-" + account 
 type Options struct {
 	Accounts []config.Account
 	Store    *Store
-	// HTTPClient sends the refresh requests. It comes from src/httpclient.
+	// HTTPClient sends the refresh requests. It comes from src/support/httpclient.
 	HTTPClient *http.Client
 	// Getenv reads the environment variable of an api_key account.
 	Getenv func(name string) string

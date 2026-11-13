@@ -25,7 +25,7 @@ import (
 
 // Config is what a Client is built from.
 type Config struct {
-	// HTTPClient sends the requests. It comes from src/httpclient.
+	// HTTPClient sends the requests. It comes from src/support/httpclient.
 	HTTPClient *http.Client
 	// Provider is the endpoint's configuration. Its ID tags the items the
 	// client produces, so that only this provider reads their Opaque.

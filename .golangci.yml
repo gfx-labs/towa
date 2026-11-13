@@ -26,7 +26,7 @@ linters:
         # assign its Transport field.
         - pattern: ^http\.(Transport|DefaultTransport|DefaultClient|Get|Head|Post|PostForm)$
           pkg: ^net/http$
-          msg: build HTTP clients with src/httpclient, which sets the proxy and trust settings
+          msg: build HTTP clients with src/support/httpclient, which sets the proxy and trust settings
     revive:
       # Setting rules replaces the defaults unless this is on.
       enable-default-rules: true
@@ -37,7 +37,7 @@ linters:
 
   exclusions:
     rules:
-      - path: src/httpclient/
+      - path: src/support/httpclient/
         linters:
           - forbidigo
 

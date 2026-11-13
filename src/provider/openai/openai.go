@@ -61,7 +61,7 @@ const (
 // Config configures a Client.
 type Config struct {
 	// HTTPClient sends every request, including the WebSocket handshake. It
-	// comes from src/httpclient.
+	// comes from src/support/httpclient.
 	HTTPClient *http.Client
 	// BaseURL is the root of the API key endpoint, without /responses.
 	// Empty means DefaultBaseURL.

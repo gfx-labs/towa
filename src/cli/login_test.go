@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gfx-labs/towa/src/auth"
-	"github.com/gfx-labs/towa/src/httpclient"
+	"github.com/gfx-labs/towa/src/support/httpclient"
 )
 
 // The account commands from the command line to the files: a login through

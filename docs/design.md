@@ -49,22 +49,41 @@ Packages:
 | `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
 | `pkg/acp/harness` | what towa adds to ACP messages under `_meta.towa`, as types a client imports |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
-| `src/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
+| `src/support/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
 | `src/config` | the typed config, its flags, and the loader for files, environment and flags |
 | `pkg/acp` | our ACP layer: JSON-RPC connection, types generated from the pinned schema, transports, update mapping |
-| `src/session` | session lifecycle, modes, model switching, cancel |
-| `src/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
+| `src/agent/session` | session lifecycle, modes, model switching, cancel |
+| `src/agent/loop` | one prompt turn: stream, tool dispatch, limits, hooks |
 | `src/provider` | provider interface, router, fallback, retry |
 | `src/provider/{anthropic,openai,chat}` | wire clients |
 | `src/auth` | account store, OAuth login and refresh, file locking |
 | `src/tools` | registry, output gating |
-| `src/tools/{core,extras}` | tool sets |
+| `src/tools/core` | the core tool set |
+| `src/agent/extras` | the extra tools, which run the loop and child agents |
 | `src/tools/patch` | the apply_patch format: parser and applier |
-| `src/mcp` | MCP client: stdio, streamable HTTP, legacy SSE, OAuth |
-| `src/compact` | reactive, proactive, semantic, OpenAI native |
-| `src/agentctx` | AGENTS.md, skills, extra files and directories |
+| `src/tools/mcp` | MCP client: stdio, streamable HTTP, legacy SSE, OAuth |
+| `src/prompt/compact` | reactive, proactive, semantic, OpenAI native |
+| `src/prompt/agentctx` | AGENTS.md, skills, extra files and directories |
 | `src/store` | store interface and backends |
-| `src/telemetry` | OTel traces and metrics, slog handlers |
+| `src/support/telemetry` | OTel traces and metrics, slog handlers |
+
+`src/` is eleven groups, and a group imports only the groups above it:
+
+| group | holds | may import |
+|---|---|---|
+| `config` | the configuration | nothing of ours |
+| `transcript` | the conversation format | nothing of ours |
+| `support` | `filelock`, `httpclient`, `telemetry` | `config` |
+| `auth` | logins, tokens, credentials | `config`, `support` |
+| `provider` | the provider interface, the wire clients, `router`, `models`, `providertest` | the four above |
+| `sidecar` | `embed`, `jev`: the optional services beside the model | `config`, `support`, `auth`, `provider` (tests only) |
+| `store` | the session store and its backends | `transcript`, `support` |
+| `prompt` | `agentctx`, `compact`: what goes into a request | `config`, `transcript`, `support`, `auth`, `provider` |
+| `tools` | the tool contract, one package per tool, `toolset`, `mcp` | the above except `sidecar` |
+| `agent` | `loop`, `hooks`, `subagent`, `session`, `extras` | every group above |
+| `cli` | commands and wiring, `listen`, `hosts` | every group above |
+
+`src/layers_test.go` holds this table and fails when a package imports a group its own may not, in code or in a test, or sits outside a group (`docs/notes/2026-11-12-src-layout.md`).
 
 `src/` holds packages while APIs settle. Packages move to `pkg/` when a real external caller needs them. `pkg/acp` moved on 2026-11-11: protocol7's worker imports it as the client side, so both ends share schema 1.31.0.
 
@@ -229,7 +248,7 @@ Model metadata (context window, max output) comes from a pinned table plus provi
 - Logins live in one file, `$XDG_STATE_HOME/towa/auth/auth.json`, mode 0600, apart from the configuration. It holds every OAuth account by id with its provider and tokens. An account in it needs no `accounts` entry: a login creates it. A model chain may name an account of a built-in provider before its first login, and a turn that reaches it then reports that the account is not logged in and gives the command. `accounts` in the configuration is for what has no stored login: API keys read from the environment and proxy-held accounts. `logout` removes the account's entry.
 - Accounts without a credential (`none`): for a configured endpoint that takes no key, such as a model server on the local network. No `Authorization` header is sent, on the chat and the responses client and for embeddings. The built-in `claude` and `codex` providers refuse the kind, since both always take a credential. A refusal from such an endpoint is an auth stop, as there is nothing to refresh (`docs/notes/2026-11-12-keyless-accounts.md`).
 - Proxy-held accounts (`proxied_oauth`, `proxied_api_key`): the harness never holds or refreshes the token. It sends a placeholder that names the account and builds the rest of the request exactly as for a token it held, including the Claude OAuth billing block and beta headers, because the proxy only swaps the authorization. Such an account has no entry in `auth.json`, `login` refuses it, and a rejected credential is reported as an auth stop, since there is nothing to refresh.
-- Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
+- Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/support/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
 - `towa hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
 - `towa usage` asks each subscription account's provider how much of its limits is used and when they reset, and prints one line per limit (`--account <id>` for one account, `--json` for a JSON array). Claude is read from `/api/oauth/usage` and a ChatGPT login from `/backend-api/wham/usage`, on the hosts the providers already use. An API key account has no subscription and is not listed.
 - `towa login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
