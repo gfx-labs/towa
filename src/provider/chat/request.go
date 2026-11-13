@@ -234,178 +234,217 @@ func jsonString(s string) jsontext.Value {
 	return v
 }
 
-// messages turns the conversation into wire messages. Thinking, text and
-// tool calls that follow one another are one assistant message, as the
-// model wrote them in one response.
-func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]wireMessage, *provider.Error) {
-	var out []wireMessage
-	var cur *wireMessage // the assistant message being built
-	var text strings.Builder
-	flush := func() {
-		if cur == nil {
-			return
-		}
-		if text.Len() > 0 {
-			cur.Content = jsonString(text.String())
-		}
-		// Reasoning alone is not a message an endpoint accepts.
-		if cur.Content != nil || len(cur.ToolCalls) > 0 {
-			out = append(out, *cur)
-		}
-		cur = nil
-		text.Reset()
-	}
+// messageBuilder turns items into wire messages. Thinking, text and tool
+// calls that follow one another are one assistant message, as the model
+// wrote them in one response.
+type messageBuilder struct {
+	client *Client
+	origin transcript.Origin
+	out    []wireMessage
+	cur    *wireMessage // the assistant message being built
+	text   strings.Builder
 	// attached holds what the tool results of the current run returned that
 	// a tool message cannot carry.
-	var attached []wirePart
-	attach := func(i int) *provider.Error {
-		if len(attached) == 0 {
-			return nil
-		}
-		content, err := json.Marshal(attached)
-		if err != nil {
-			return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
-		}
-		out = append(out, wireMessage{Role: "user", Content: content})
-		attached = nil
-		return nil
-	}
-	assistant := func() *wireMessage {
-		if cur == nil {
-			cur = &wireMessage{Role: "assistant"}
-		}
-		return cur
-	}
+	attached []wirePart
+}
 
+// messages turns the conversation into wire messages.
+func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]wireMessage, *provider.Error) {
+	b := &messageBuilder{client: c, origin: origin}
 	for i, item := range items {
-		if err := item.Validate(); err != nil {
-			return nil, invalid("items[%d]: %v", i, err)
-		}
-		if item.ToolResult == nil {
-			if perr := attach(i); perr != nil {
-				return nil, perr
-			}
-		}
-		mine := item.OpaqueCompatible(c.cfg.ID, origin)
-		switch {
-		case item.User != nil:
-			role := item.User.Role
-			if role == "" {
-				role = "user"
-			}
-			flush()
-			content, perr := userContent(i, item.User.Parts)
-			if perr != nil {
-				return nil, perr
-			}
-			if content != nil {
-				out = append(out, wireMessage{Role: role, Content: content})
-			}
-		case item.Text != nil:
-			text.WriteString(item.Text.Text)
-			assistant()
-		case item.Thinking != nil:
-			// Incompatible reasoning has no plain form here.
-			if !mine || item.Opaque == nil {
-				continue
-			}
-			var op thinkingOpaque
-			if err := json.Unmarshal(item.Opaque, &op); err != nil {
-				return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
-			}
-			m := assistant()
-			switch {
-			case len(op.Details) > 0:
-				m.ReasoningDetails = append(m.ReasoningDetails, op.Details...)
-			case op.Field == fieldReasoningContent:
-				m.ReasoningContent += item.Thinking.Text
-			case op.Field == fieldReasoning:
-				m.Reasoning += item.Thinking.Text
-			default:
-				return nil, invalid("items[%d]: thinking opaque names the field %q", i, op.Field)
-			}
-		case item.ToolCall != nil:
-			// Another provider's call goes without its extensions. Text input
-			// has no plain form to fall back to.
-			if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
-				return nil, invalid("items[%d]: tool call with text input has opaque provenance that does not match provider, model and account", i)
-			}
-			tc := item.ToolCall
-			if tc.ID == "" || tc.Name == "" {
-				return nil, invalid("items[%d]: tool call has no id or no name", i)
-			}
-			args, perr := arguments(i, tc.Input)
-			if perr != nil {
-				return nil, perr
-			}
-			call := wireToolCall{ID: tc.ID, Type: "function", Function: wireFunction{Name: tc.Name, Arguments: args}}
-			if mine && item.Opaque != nil {
-				var op toolCallOpaque
-				if err := json.Unmarshal(item.Opaque, &op); err != nil {
-					return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
-				}
-				call.ExtraContent = op.ExtraContent
-			}
-			m := assistant()
-			m.ToolCalls = append(m.ToolCalls, call)
-		case item.ToolResult != nil:
-			flush()
-			tr := item.ToolResult
-			if tr.CallID == "" {
-				return nil, invalid("items[%d]: tool result has no call id", i)
-			}
-			var b strings.Builder
-			var binary []wirePart
-			var notes []string
-			for j, p := range tr.Parts {
-				switch {
-				case p.Stored != nil:
-				case p.Text != "":
-					b.WriteString(p.Text)
-				case p.Resource != nil && p.Resource.Data == nil:
-					b.WriteString(p.Resource.Text)
-				case p.Link != nil:
-					b.WriteString(linkText(p.Link))
-				case p.Image != nil, p.Audio != nil, p.Resource != nil:
-					// A part this API has no form for becomes text that
-					// says so: the result is stored already, so an error
-					// here would fail every later turn of the session.
-					if part, perr := binaryPart(i, j, p); perr != nil {
-						notes = append(notes, provider.LeftOut(p, "Chat Completions"))
-					} else {
-						binary = append(binary, part)
-					}
-				default:
-					return nil, invalid("items[%d].parts[%d]: part has nothing set", i, j)
-				}
-			}
-			if len(binary) > 0 {
-				// A tool message is text, and an endpoint refuses a user
-				// message between the results of one response's calls.
-				// The content goes in a user message after the last of
-				// them, and each says here and there whose it is.
-				notes = append(notes, textAttachedBelow)
-				attached = append(attached, wirePart{Type: "text", Text: fmt.Sprintf(textAttachment, tr.CallID)})
-				attached = append(attached, binary...)
-			}
-			for _, note := range notes {
-				if b.Len() > 0 {
-					b.WriteString("\n\n")
-				}
-				b.WriteString(note)
-			}
-			out = append(out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(b.String())})
-		case item.Native != nil:
-			return nil, invalid("items[%d]: Chat Completions cannot replay native item of kind %q", i, item.Native.Kind)
-		default:
-			return nil, invalid("items[%d]: not an item a request can hold", i)
+		if perr := b.add(i, item); perr != nil {
+			return nil, perr
 		}
 	}
-	flush()
-	if perr := attach(len(items)); perr != nil {
+	b.flush()
+	if perr := b.attach(len(items)); perr != nil {
 		return nil, perr
 	}
-	return out, nil
+	return b.out, nil
+}
+
+// add appends the message or the part of one that item makes.
+func (b *messageBuilder) add(i int, item transcript.Item) *provider.Error {
+	if err := item.Validate(); err != nil {
+		return invalid("items[%d]: %v", i, err)
+	}
+	if item.ToolResult == nil {
+		if perr := b.attach(i); perr != nil {
+			return perr
+		}
+	}
+	mine := item.OpaqueCompatible(b.client.cfg.ID, b.origin)
+	switch {
+	case item.User != nil:
+		return b.addUser(i, item.User)
+	case item.Text != nil:
+		b.text.WriteString(item.Text.Text)
+		b.assistant()
+		return nil
+	case item.Thinking != nil:
+		// Incompatible reasoning has no plain form here.
+		if !mine || item.Opaque == nil {
+			return nil
+		}
+		return b.addThinking(i, item)
+	case item.ToolCall != nil:
+		return b.addToolCall(i, item, mine)
+	case item.ToolResult != nil:
+		return b.addToolResult(i, item.ToolResult)
+	case item.Native != nil:
+		return invalid("items[%d]: Chat Completions cannot replay native item of kind %q", i, item.Native.Kind)
+	default:
+		return invalid("items[%d]: not an item a request can hold", i)
+	}
+}
+
+// flush ends the assistant message being built.
+func (b *messageBuilder) flush() {
+	if b.cur == nil {
+		return
+	}
+	if b.text.Len() > 0 {
+		b.cur.Content = jsonString(b.text.String())
+	}
+	// Reasoning alone is not a message an endpoint accepts.
+	if b.cur.Content != nil || len(b.cur.ToolCalls) > 0 {
+		b.out = append(b.out, *b.cur)
+	}
+	b.cur = nil
+	b.text.Reset()
+}
+
+// attach writes the content tool results could not carry as one user
+// message.
+func (b *messageBuilder) attach(i int) *provider.Error {
+	if len(b.attached) == 0 {
+		return nil
+	}
+	content, err := json.Marshal(b.attached)
+	if err != nil {
+		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
+	}
+	b.out = append(b.out, wireMessage{Role: "user", Content: content})
+	b.attached = nil
+	return nil
+}
+
+func (b *messageBuilder) assistant() *wireMessage {
+	if b.cur == nil {
+		b.cur = &wireMessage{Role: "assistant"}
+	}
+	return b.cur
+}
+
+func (b *messageBuilder) addUser(i int, u *transcript.User) *provider.Error {
+	role := u.Role
+	if role == "" {
+		role = "user"
+	}
+	b.flush()
+	content, perr := userContent(i, u.Parts)
+	if perr != nil {
+		return perr
+	}
+	if content != nil {
+		b.out = append(b.out, wireMessage{Role: role, Content: content})
+	}
+	return nil
+}
+
+func (b *messageBuilder) addThinking(i int, item transcript.Item) *provider.Error {
+	var op thinkingOpaque
+	if err := json.Unmarshal(item.Opaque, &op); err != nil {
+		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
+	}
+	m := b.assistant()
+	switch {
+	case len(op.Details) > 0:
+		m.ReasoningDetails = append(m.ReasoningDetails, op.Details...)
+	case op.Field == fieldReasoningContent:
+		m.ReasoningContent += item.Thinking.Text
+	case op.Field == fieldReasoning:
+		m.Reasoning += item.Thinking.Text
+	default:
+		return invalid("items[%d]: thinking opaque names the field %q", i, op.Field)
+	}
+	return nil
+}
+
+func (b *messageBuilder) addToolCall(i int, item transcript.Item, mine bool) *provider.Error {
+	// Another provider's call goes without its extensions. Text input has no
+	// plain form to fall back to.
+	if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
+		return invalid("items[%d]: tool call with text input has opaque provenance that does not match provider, model and account", i)
+	}
+	tc := item.ToolCall
+	if tc.ID == "" || tc.Name == "" {
+		return invalid("items[%d]: tool call has no id or no name", i)
+	}
+	args, perr := arguments(i, tc.Input)
+	if perr != nil {
+		return perr
+	}
+	call := wireToolCall{ID: tc.ID, Type: "function", Function: wireFunction{Name: tc.Name, Arguments: args}}
+	if mine && item.Opaque != nil {
+		var op toolCallOpaque
+		if err := json.Unmarshal(item.Opaque, &op); err != nil {
+			return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
+		}
+		call.ExtraContent = op.ExtraContent
+	}
+	m := b.assistant()
+	m.ToolCalls = append(m.ToolCalls, call)
+	return nil
+}
+
+func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) *provider.Error {
+	b.flush()
+	if tr.CallID == "" {
+		return invalid("items[%d]: tool result has no call id", i)
+	}
+	var text strings.Builder
+	var binary []wirePart
+	var notes []string
+	for j, p := range tr.Parts {
+		switch {
+		case p.Stored != nil:
+		case p.Text != "":
+			text.WriteString(p.Text)
+		case p.Resource != nil && p.Resource.Data == nil:
+			text.WriteString(p.Resource.Text)
+		case p.Link != nil:
+			text.WriteString(linkText(p.Link))
+		case p.Image != nil, p.Audio != nil, p.Resource != nil:
+			// A part this API has no form for becomes text that says so:
+			// the result is stored already, so an error here would fail
+			// every later turn of the session.
+			if part, perr := binaryPart(i, j, p); perr != nil {
+				notes = append(notes, provider.LeftOut(p, "Chat Completions"))
+			} else {
+				binary = append(binary, part)
+			}
+		default:
+			return invalid("items[%d].parts[%d]: part has nothing set", i, j)
+		}
+	}
+	if len(binary) > 0 {
+		// A tool message is text, and an endpoint refuses a user message
+		// between the results of one response's calls. The content goes in
+		// a user message after the last of them, and each says here and
+		// there whose it is.
+		notes = append(notes, textAttachedBelow)
+		b.attached = append(b.attached, wirePart{Type: "text", Text: fmt.Sprintf(textAttachment, tr.CallID)})
+		b.attached = append(b.attached, binary...)
+	}
+	for _, note := range notes {
+		if text.Len() > 0 {
+			text.WriteString("\n\n")
+		}
+		text.WriteString(note)
+	}
+	b.out = append(b.out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(text.String())})
+	return nil
 }
 
 // What the model reads in place of content a tool message cannot carry, and

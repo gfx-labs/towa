@@ -105,25 +105,9 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	if perr := c.body(body, req); perr != nil {
 		return perr
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body.B))
-	if err != nil {
-		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
-	}
-	h := httpReq.Header
-	// An endpoint that takes no credential gets no header, not an empty one.
-	if req.Credential.Scheme != auth.SchemeNone {
-		h.Set("Authorization", "Bearer "+req.Credential.Token)
-	}
-	h.Set("Content-Type", "application/json")
-	h.Set("Accept", "text/event-stream")
-	h.Set("User-Agent", c.userAgent)
-	if c.cfg.Referer != "" {
-		h.Set("HTTP-Referer", c.cfg.Referer)
-	}
-	if c.cfg.Title != "" {
-		// https://openrouter.ai/docs/app-attribution names this header and
-		// keeps X-Title only for older clients (read 2026-11-11).
-		h.Set("X-OpenRouter-Title", c.cfg.Title)
+	httpReq, perr := c.newRequest(ctx, req.Credential, body.B)
+	if perr != nil {
+		return perr
 	}
 
 	resp, err := c.http.Do(httpReq)
@@ -136,24 +120,59 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if resp.StatusCode != http.StatusOK || mediaType != "text/event-stream" {
-		raw, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return provider.TransportError(ctx, "", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			return c.classifyResponse(resp.StatusCode, resp.Header, raw)
-		}
-		// A provider can answer 200 with a JSON body that holds only an
-		// error, when it fails after it has sent the status.
-		if e, ok := parseErrorBody(raw); ok {
-			return c.classifyError(resp.StatusCode, resp.Header, e)
-		}
-		return &provider.Error{
-			Class: provider.Fail, Reason: provider.ReasonRequest, Status: resp.StatusCode,
-			Message: fmt.Sprintf("response has content type %q, not text/event-stream", resp.Header.Get("Content-Type")),
-		}
+		return c.rejection(ctx, resp)
 	}
+	return c.readEvents(ctx, req, resp, yield)
+}
 
+// newRequest builds the HTTP request that sends body.
+func (c *Client) newRequest(ctx context.Context, cred auth.Credential, body []byte) (*http.Request, *provider.Error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Err: err}
+	}
+	h := httpReq.Header
+	// An endpoint that takes no credential gets no header, not an empty one.
+	if cred.Scheme != auth.SchemeNone {
+		h.Set("Authorization", "Bearer "+cred.Token)
+	}
+	h.Set("Content-Type", "application/json")
+	h.Set("Accept", "text/event-stream")
+	h.Set("User-Agent", c.userAgent)
+	if c.cfg.Referer != "" {
+		h.Set("HTTP-Referer", c.cfg.Referer)
+	}
+	if c.cfg.Title != "" {
+		// https://openrouter.ai/docs/app-attribution names this header and
+		// keeps X-Title only for older clients (read 2026-11-11).
+		h.Set("X-OpenRouter-Title", c.cfg.Title)
+	}
+	return httpReq, nil
+}
+
+// rejection reads a response that is not an event stream and returns the
+// error it stands for.
+func (c *Client) rejection(ctx context.Context, resp *http.Response) *provider.Error {
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return provider.TransportError(ctx, "", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return c.classifyResponse(resp.StatusCode, resp.Header, raw)
+	}
+	// A provider can answer 200 with a JSON body that holds only an error,
+	// when it fails after it has sent the status.
+	if e, ok := parseErrorBody(raw); ok {
+		return c.classifyError(resp.StatusCode, resp.Header, e)
+	}
+	return &provider.Error{
+		Class: provider.Fail, Reason: provider.ReasonRequest, Status: resp.StatusCode,
+		Message: fmt.Sprintf("response has content type %q, not text/event-stream", resp.Header.Get("Content-Type")),
+	}
+}
+
+// readEvents yields the events of an event stream response.
+func (c *Client) readEvents(ctx context.Context, req provider.Request, resp *http.Response, yield func(provider.Event, error) bool) *provider.Error {
 	s := &streamState{client: c, req: req, status: resp.StatusCode, header: resp.Header}
 	dec := sse.NewDecoder(resp.Body)
 	var ev sse.Event
@@ -177,10 +196,8 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 		if perr := s.chunk(ev.Data); perr != nil {
 			return perr
 		}
-		for _, e := range s.out {
-			if !yield(e, nil) {
-				return nil
-			}
+		if !yieldAll(s.out, yield) {
+			return nil
 		}
 	}
 	if !done && s.finish == "" {
@@ -192,12 +209,18 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	if perr := s.end(); perr != nil {
 		return perr
 	}
-	for _, e := range s.out {
+	yieldAll(s.out, yield)
+	return nil
+}
+
+// yieldAll sends events to yield. It reports false when the caller stopped.
+func yieldAll(events []provider.Event, yield func(provider.Event, error) bool) bool {
+	for _, e := range events {
 		if !yield(e, nil) {
-			return nil
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 // cutOff is a response that stopped mid-stream. Nothing of it was yielded as
