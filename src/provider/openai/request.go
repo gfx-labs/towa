@@ -212,93 +212,140 @@ func buildTools(tools []provider.Tool) ([]any, *provider.Error) {
 	return out, nil
 }
 
-// buildInput reads opaque metadata only with exact request provenance.
-func buildInput(own string, origin transcript.Origin, items []transcript.Item) ([]any, *provider.Error) {
-	out := make([]any, 0, len(items))
+// inputBuilder turns items into wire input items.
+type inputBuilder struct {
+	own    string
+	origin transcript.Origin
+	out    []any
 	// customCalls holds the ids of free-text calls, whose results go back
 	// as a different item type.
-	customCalls := map[string]bool{}
+	customCalls map[string]bool
+}
+
+// buildInput reads opaque metadata only with exact request provenance.
+func buildInput(own string, origin transcript.Origin, items []transcript.Item) ([]any, *provider.Error) {
+	b := &inputBuilder{own: own, origin: origin, out: make([]any, 0, len(items)), customCalls: map[string]bool{}}
 	for i, item := range items {
-		if err := item.Validate(); err != nil {
-			return nil, invalidRequest(fmt.Sprintf("item %d: %v", i, err))
-		}
-		var op opaque
-		mine := item.OpaqueCompatible(own, origin)
-		if mine && item.Native == nil {
-			if err := json.Unmarshal(item.Opaque, &op); err != nil {
-				return nil, invalidRequest(fmt.Sprintf("item %d: its opaque data cannot be read: %v", i, err))
-			}
-		}
-		switch {
-		case item.User != nil:
-			role := item.User.Role
-			if role == "" {
-				role = "user"
-			}
-			content, perr := buildContent(item.User.Parts, false)
-			if perr != nil {
-				return nil, at(perr, i)
-			}
-			if len(content) == 0 {
-				return nil, invalidRequest(fmt.Sprintf("item %d: the user message has nothing to send", i))
-			}
-			out = append(out, messageItem{Type: typeMessage, Role: role, Content: content})
-		case item.Text != nil:
-			// The API rejects an empty text part, and an empty message says
-			// nothing.
-			if item.Text.Text == "" {
-				continue
-			}
-			out = append(out, messageItem{
-				Type: typeMessage, ID: op.ID, Role: "assistant", Phase: op.Phase,
-				Content: []contentPart{{Type: "output_text", Text: item.Text.Text}},
-			})
-		case item.Thinking != nil:
-			// Reasoning goes back only as the item this endpoint made. The
-			// API has no input form for another provider's reasoning.
-			if !mine || op.ID == "" {
-				continue
-			}
-			summary := make([]contentPart, 0, len(op.Summary))
-			for _, text := range op.Summary {
-				summary = append(summary, contentPart{Type: "summary_text", Text: text})
-			}
-			out = append(out, reasoningItem{Type: typeReasoning, ID: op.ID, Summary: summary, EncryptedContent: op.EncryptedContent})
-		case item.ToolCall != nil:
-			// Another endpoint's call goes as a plain function call without
-			// its extensions. Text input has no plain form to fall back to.
-			if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
-				return nil, invalidRequest(fmt.Sprintf("item %d: tool call with text input has opaque provenance that does not match provider, model and account", i))
-			}
-			call, custom, perr := buildCall(item.ToolCall, op)
-			if perr != nil {
-				return nil, at(perr, i)
-			}
-			customCalls[item.ToolCall.ID] = custom
-			out = append(out, call)
-		case item.ToolResult != nil:
-			output, perr := buildOutput(item.ToolResult.Parts)
-			if perr != nil {
-				return nil, at(perr, i)
-			}
-			typ := typeFunctionOutput
-			if customCalls[item.ToolResult.CallID] {
-				typ = typeCustomCallOutput
-			}
-			out = append(out, callOutputItem{Type: typ, CallID: item.ToolResult.CallID, Output: output})
-		case item.Native != nil:
-			if !mine {
-				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
-			}
-			if !item.Opaque.IsValid() {
-				return nil, invalidRequest(fmt.Sprintf("item %d: the %s item is not valid JSON", i, item.Native.Kind))
-			}
-			out = append(out, item.Opaque)
-		default:
-			return nil, invalidRequest(fmt.Sprintf("item %d: a request cannot hold this kind of item", i))
+		if perr := b.add(i, item); perr != nil {
+			return nil, perr
 		}
 	}
-	return out, nil
+	return b.out, nil
+}
+
+// add appends the wire item that item makes, when it makes one.
+func (b *inputBuilder) add(i int, item transcript.Item) *provider.Error {
+	if err := item.Validate(); err != nil {
+		return invalidRequest(fmt.Sprintf("item %d: %v", i, err))
+	}
+	var op opaque
+	mine := item.OpaqueCompatible(b.own, b.origin)
+	if mine && item.Native == nil {
+		if err := json.Unmarshal(item.Opaque, &op); err != nil {
+			return invalidRequest(fmt.Sprintf("item %d: its opaque data cannot be read: %v", i, err))
+		}
+	}
+	var perr *provider.Error
+	switch {
+	case item.User != nil:
+		perr = b.addUser(item.User)
+	case item.Text != nil:
+		b.addText(item.Text, op)
+	case item.Thinking != nil:
+		b.addThinking(mine, op)
+	case item.ToolCall != nil:
+		perr = b.addToolCall(item, op, mine)
+	case item.ToolResult != nil:
+		perr = b.addToolResult(item.ToolResult)
+	case item.Native != nil:
+		return b.addNative(i, item, mine)
+	default:
+		return invalidRequest(fmt.Sprintf("item %d: a request cannot hold this kind of item", i))
+	}
+	if perr != nil {
+		return at(perr, i)
+	}
+	return nil
+}
+
+func (b *inputBuilder) addUser(u *transcript.User) *provider.Error {
+	role := u.Role
+	if role == "" {
+		role = "user"
+	}
+	content, perr := buildContent(u.Parts, false)
+	if perr != nil {
+		return perr
+	}
+	if len(content) == 0 {
+		return invalidRequest("the user message has nothing to send")
+	}
+	b.out = append(b.out, messageItem{Type: typeMessage, Role: role, Content: content})
+	return nil
+}
+
+func (b *inputBuilder) addText(t *transcript.Text, op opaque) {
+	// The API rejects an empty text part, and an empty message says
+	// nothing.
+	if t.Text == "" {
+		return
+	}
+	b.out = append(b.out, messageItem{
+		Type: typeMessage, ID: op.ID, Role: "assistant", Phase: op.Phase,
+		Content: []contentPart{{Type: "output_text", Text: t.Text}},
+	})
+}
+
+func (b *inputBuilder) addThinking(mine bool, op opaque) {
+	// Reasoning goes back only as the item this endpoint made. The API has
+	// no input form for another provider's reasoning.
+	if !mine || op.ID == "" {
+		return
+	}
+	summary := make([]contentPart, 0, len(op.Summary))
+	for _, text := range op.Summary {
+		summary = append(summary, contentPart{Type: "summary_text", Text: text})
+	}
+	b.out = append(b.out, reasoningItem{Type: typeReasoning, ID: op.ID, Summary: summary, EncryptedContent: op.EncryptedContent})
+}
+
+func (b *inputBuilder) addToolCall(item transcript.Item, op opaque, mine bool) *provider.Error {
+	// Another endpoint's call goes as a plain function call without its
+	// extensions. Text input has no plain form to fall back to.
+	if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
+		return invalidRequest("tool call with text input has opaque provenance that does not match provider, model and account")
+	}
+	call, custom, perr := buildCall(item.ToolCall, op)
+	if perr != nil {
+		return perr
+	}
+	b.customCalls[item.ToolCall.ID] = custom
+	b.out = append(b.out, call)
+	return nil
+}
+
+func (b *inputBuilder) addToolResult(tr *transcript.ToolResult) *provider.Error {
+	output, perr := buildOutput(tr.Parts)
+	if perr != nil {
+		return perr
+	}
+	typ := typeFunctionOutput
+	if b.customCalls[tr.CallID] {
+		typ = typeCustomCallOutput
+	}
+	b.out = append(b.out, callOutputItem{Type: typ, CallID: tr.CallID, Output: output})
+	return nil
+}
+
+func (b *inputBuilder) addNative(i int, item transcript.Item, mine bool) *provider.Error {
+	if !mine {
+		return invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
+	}
+	if !item.Opaque.IsValid() {
+		return invalidRequest(fmt.Sprintf("item %d: the %s item is not valid JSON", i, item.Native.Kind))
+	}
+	b.out = append(b.out, item.Opaque)
+	return nil
 }
 
 // at names the item an error is about.

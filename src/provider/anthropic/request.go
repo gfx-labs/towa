@@ -246,93 +246,131 @@ func markMessage(m *message, mark func() *cacheControl) {
 	}
 }
 
-// buildMessages turns items into messages. Neighbouring items of one role
+// messageBuilder turns items into messages. Neighbouring items of one role
 // share a message, because the API wants every tool result in the message
 // right after its call.
+type messageBuilder struct {
+	provider string
+	origin   transcript.Origin
+	out      []*message
+}
+
+// buildMessages turns items into messages.
 func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item) ([]*message, *provider.Error) {
-	var out []*message
-	add := func(role string, blocks ...any) {
-		if len(blocks) == 0 {
-			return
-		}
-		if n := len(out); n > 0 && out[n-1].Role == role {
-			out[n-1].Content = append(out[n-1].Content, blocks...)
-			return
-		}
-		out = append(out, &message{Role: role, Content: blocks})
-	}
+	b := &messageBuilder{provider: c.cfg.Provider, origin: origin}
 	for i, item := range items {
-		if err := item.Validate(); err != nil {
-			return nil, invalidRequest(fmt.Sprintf("item %d: %v", i, err))
-		}
-		// Opaque replay requires exact request provenance.
-		own := item.OpaqueCompatible(c.cfg.Provider, origin)
-		switch {
-		case item.User != nil:
-			if item.User.Role != "" && item.User.Role != "user" {
-				return nil, invalidRequest(fmt.Sprintf("item %d: Messages does not support role %q", i, item.User.Role))
-			}
-			blocks, perr := buildContent(item.User.Parts, false)
-			if perr != nil {
-				return nil, perr
-			}
-			add("user", blocks...)
-		case item.Text != nil:
-			// The API rejects an empty text block.
-			if item.Text.Text != "" {
-				add("assistant", &textBlock{Type: "text", Text: item.Text.Text})
-			}
-		case item.Thinking != nil:
-			// The API takes thinking only with the signature it issued.
-			// Thinking from another provider has none and is left out.
-			if !own {
-				continue
-			}
-			var opaque thinkingOpaque
-			if err := json.Unmarshal(item.Opaque, &opaque); err != nil {
-				return nil, invalidRequest(fmt.Sprintf("item %d: read thinking signature: %v", i, err))
-			}
-			switch {
-			case opaque.RedactedData != "":
-				add("assistant", &redactedThinkingBlock{Type: "redacted_thinking", Data: opaque.RedactedData})
-			case opaque.Signature != "":
-				add("assistant", &thinkingBlock{Type: "thinking", Thinking: item.Thinking.Text, Signature: opaque.Signature})
-			default:
-				return nil, invalidRequest(fmt.Sprintf("item %d: thinking has neither a signature nor redacted data", i))
-			}
-		case item.ToolCall != nil:
-			// No call from this API has extensions, so these are another
-			// provider's and the call goes without them. Text input has no
-			// plain form to fall back to.
-			if len(item.Opaque) > 0 && item.ToolCall.Input.Kind() == '"' {
-				return nil, invalidRequest(fmt.Sprintf("item %d: tool call with text input carries another provider's opaque data", i))
-			}
-			input, perr := toolInput(item.ToolCall)
-			if perr != nil {
-				return nil, perr
-			}
-			add("assistant", &toolUseBlock{Type: "tool_use", ID: item.ToolCall.ID, Name: item.ToolCall.Name, Input: input})
-		case item.ToolResult != nil:
-			blocks, perr := buildContent(item.ToolResult.Parts, true)
-			if perr != nil {
-				return nil, perr
-			}
-			add("user", &toolResultBlock{
-				Type: "tool_result", ToolUseID: item.ToolResult.CallID, Content: blocks,
-				IsError: item.ToolResult.Outcome != transcript.OutcomeCompleted,
-			})
-		case item.Native != nil:
-			// Every native item of this API is a block of the assistant's
-			// message, such as a server tool's use and its result.
-			if !own {
-				return nil, invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
-			}
-			add("assistant", item.Opaque)
-		default:
-			return nil, invalidRequest(fmt.Sprintf("item %d is not one a model request can hold", i))
+		if perr := b.addItem(i, item); perr != nil {
+			return nil, perr
 		}
 	}
-	return out, nil
+	return b.out, nil
+}
+
+// add appends blocks to the last message when it has the role, and starts a
+// message otherwise.
+func (b *messageBuilder) add(role string, blocks ...any) {
+	if len(blocks) == 0 {
+		return
+	}
+	if n := len(b.out); n > 0 && b.out[n-1].Role == role {
+		b.out[n-1].Content = append(b.out[n-1].Content, blocks...)
+		return
+	}
+	b.out = append(b.out, &message{Role: role, Content: blocks})
+}
+
+func (b *messageBuilder) addItem(i int, item transcript.Item) *provider.Error {
+	if err := item.Validate(); err != nil {
+		return invalidRequest(fmt.Sprintf("item %d: %v", i, err))
+	}
+	// Opaque replay requires exact request provenance.
+	own := item.OpaqueCompatible(b.provider, b.origin)
+	switch {
+	case item.User != nil:
+		return b.addUser(i, item.User)
+	case item.Text != nil:
+		// The API rejects an empty text block.
+		if item.Text.Text != "" {
+			b.add("assistant", &textBlock{Type: "text", Text: item.Text.Text})
+		}
+		return nil
+	case item.Thinking != nil:
+		// The API takes thinking only with the signature it issued.
+		// Thinking from another provider has none and is left out.
+		if !own {
+			return nil
+		}
+		return b.addThinking(i, item)
+	case item.ToolCall != nil:
+		return b.addToolCall(i, item)
+	case item.ToolResult != nil:
+		return b.addToolResult(item.ToolResult)
+	case item.Native != nil:
+		// Every native item of this API is a block of the assistant's
+		// message, such as a server tool's use and its result.
+		if !own {
+			return invalidRequest(fmt.Sprintf("item %d: native %q requires matching provider, model and account provenance", i, item.Native.Kind))
+		}
+		b.add("assistant", item.Opaque)
+		return nil
+	default:
+		return invalidRequest(fmt.Sprintf("item %d is not one a model request can hold", i))
+	}
+}
+
+func (b *messageBuilder) addUser(i int, u *transcript.User) *provider.Error {
+	if u.Role != "" && u.Role != "user" {
+		return invalidRequest(fmt.Sprintf("item %d: Messages does not support role %q", i, u.Role))
+	}
+	blocks, perr := buildContent(u.Parts, false)
+	if perr != nil {
+		return perr
+	}
+	b.add("user", blocks...)
+	return nil
+}
+
+func (b *messageBuilder) addThinking(i int, item transcript.Item) *provider.Error {
+	var opaque thinkingOpaque
+	if err := json.Unmarshal(item.Opaque, &opaque); err != nil {
+		return invalidRequest(fmt.Sprintf("item %d: read thinking signature: %v", i, err))
+	}
+	switch {
+	case opaque.RedactedData != "":
+		b.add("assistant", &redactedThinkingBlock{Type: "redacted_thinking", Data: opaque.RedactedData})
+	case opaque.Signature != "":
+		b.add("assistant", &thinkingBlock{Type: "thinking", Thinking: item.Thinking.Text, Signature: opaque.Signature})
+	default:
+		return invalidRequest(fmt.Sprintf("item %d: thinking has neither a signature nor redacted data", i))
+	}
+	return nil
+}
+
+func (b *messageBuilder) addToolCall(i int, item transcript.Item) *provider.Error {
+	// No call from this API has extensions, so these are another provider's
+	// and the call goes without them. Text input has no plain form to fall
+	// back to.
+	if len(item.Opaque) > 0 && item.ToolCall.Input.Kind() == '"' {
+		return invalidRequest(fmt.Sprintf("item %d: tool call with text input carries another provider's opaque data", i))
+	}
+	input, perr := toolInput(item.ToolCall)
+	if perr != nil {
+		return perr
+	}
+	b.add("assistant", &toolUseBlock{Type: "tool_use", ID: item.ToolCall.ID, Name: item.ToolCall.Name, Input: input})
+	return nil
+}
+
+func (b *messageBuilder) addToolResult(tr *transcript.ToolResult) *provider.Error {
+	blocks, perr := buildContent(tr.Parts, true)
+	if perr != nil {
+		return perr
+	}
+	b.add("user", &toolResultBlock{
+		Type: "tool_result", ToolUseID: tr.CallID, Content: blocks,
+		IsError: tr.Outcome != transcript.OutcomeCompleted,
+	})
+	return nil
 }
 
 // toolInput returns the input of a tool_use block, which has to be an
