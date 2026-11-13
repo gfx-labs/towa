@@ -12,7 +12,7 @@ there are a large amount of configuration keys, everything configurable through 
 
 these are meant to be set per run by a caller, another llm/program/scheduler/whatever.
 
-for instance, ask your llm to setup a provider with you, and then run a turn using acphost or another light weight acp cli client.
+for instance, ask your llm to setup a provider with you, and then run a turn using acpc or acpx or another light weight acp cli client.
 
 ## install
 
