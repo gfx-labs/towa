@@ -1,12 +1,10 @@
 package config
 
 // ConversationSearch bounds reads of the full stored conversation.
-// docs/design.md gives a search descendants as the default scope. The tool
-// is off by default: its definition is sent with every request, and it only
-// has something to find after a compaction. The four sizes are jcode's at
-// 8e11eb23e, conversation_search.rs:135,306,310,189,201.
+// docs/design.md gives a search descendants as the default scope. The four
+// sizes are jcode's at 8e11eb23e, conversation_search.rs:135,306,310,189,201.
 type ConversationSearch struct {
-	Enabled             bool   `name:"enabled" help:"Give the model the tool that searches the stored conversation."`
+	Enabled             bool   `name:"enabled" default:"true" help:"Give the model the tool that searches the stored conversation. On by default."`
 	Scope               string `name:"scope" default:"descendants" validate:"oneof=self descendants store" help:"Sessions a search covers: self, descendants or store."`
 	MaxHits             int    `name:"max_hits" default:"10" validate:"gt=0" help:"Most hits one search returns."`
 	SnippetContextBytes int    `name:"snippet_context_bytes" default:"50" validate:"gt=0" help:"Bytes shown on each side of a hit."`
