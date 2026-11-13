@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: talos-metal-gfx
+    runs-on: talos-metal-gfx-public
     # The App key is a secret of the release environment, which only
     # master may deploy to.
     environment: release

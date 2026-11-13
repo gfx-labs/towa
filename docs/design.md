@@ -522,7 +522,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Workflow
 
 - Commits go straight to master, with conventional commit subjects. A PR is squash-merged with its title as the subject, and `pr-title.yml` checks the title.
-- CI runs on the `talos-metal-gfx` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
+- CI runs on the `talos-metal-gfx-public` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
 - `release.yml` runs release-please on each master push, as acpc and acphost do. It keeps a release PR open with the next 0.x version (`bump-minor-pre-major`: a `feat` or breaking change bumps the minor) and `CHANGELOG.md`. Merging it tags `vX.Y.Z` and creates the GitHub release. The job runs in the `release` environment, which only master may deploy to, and opens the PR with a token of the `gfx-releaser` App (`RELEASE_APP_ID`, `RELEASE_APP_KEY`), since a PR opened with `GITHUB_TOKEN` gets no CI runs. A note named `docs/notes/<date>-release-vX.Y.Z.md` is linked from the release. The same job then builds static binaries for linux amd64, linux arm64 and darwin arm64 with the tag as `buildVersion`, and attaches each as `towa_<version>_<os>_<arch>.tar.gz` (the binary, `LICENSE`, `README.md`) with `checksums.txt` of their sha256 sums.
 
 ## Release
