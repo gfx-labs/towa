@@ -14,6 +14,22 @@ these are meant to be set per run by a caller, another llm/program/scheduler/wha
 
 for instance, ask your llm to setup a provider with you, and then run a turn using acphost or another light weight acp cli client.
 
+## install
+
+with nix, from this repository. it is private, so nix needs access to it: an ssh key that can read it, or a github token in `access-tokens` of `nix.conf`.
+
+```sh
+nix profile install git+ssh://git@github.com/gfx-labs/towa   # over ssh
+nix profile install github:gfx-labs/towa                     # with a token
+nix run git+ssh://git@github.com/gfx-labs/towa -- --help     # without installing
+```
+
+or in a flake: `inputs.towa.url = "git+ssh://git@github.com/gfx-labs/towa";`, then `towa.packages.${system}.default`.
+
+the package is one static binary for x86_64-linux, aarch64-linux and aarch64-darwin. it brings no tools with it: the model runs `bash`, `rg` and `find` from the `PATH` towa is started with.
+
+with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`, with `GOPRIVATE=github.com/gfx-labs`.
+
 ## key features
 
 - like jcode, built to run many sessions per host. one process can serve many connections over stdio, a unix socket or tcp with mtls. an idle session wakes no goroutine.

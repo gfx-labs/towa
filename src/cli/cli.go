@@ -281,8 +281,17 @@ func lookup(environ []string, name string) string {
 	return value
 }
 
-// version is the module version the binary was built from.
+// buildVersion is set by the linker in a build that has no module version
+// to read, which is the Nix package: it builds from a source tree, not from a
+// module, and would report "(devel)".
+var buildVersion string
+
+// version is the version the binary was built from: the one the build set,
+// or else the module version.
 func version() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info.Main.Version == "" {
 		return "unknown"

@@ -1,2 +1,5 @@
 # Output of go build ./cmd/towa.
 /towa
+
+# Output of nix build.
+/result
