@@ -444,7 +444,7 @@ At 10000 sessions, unfiltered `List` took 258 ms warm / 316 ms file-data-cold be
 |---|---|
 | text delta | `agent_message_chunk` |
 | thinking delta | `agent_thought_chunk` |
-| tool call | `tool_call` with kind, title, locations, raw input; `tool_call_update` with status, content, diffs |
+| tool call | `tool_call` with the tool's name as soon as the model starts writing the call, then `tool_call_update` with kind, title, locations and raw input once the argument is whole (a provider that reports no start sends all of it in the `tool_call`); `tool_call_update` with status, content, diffs. The pieces of the argument are not sent: ACP has no update for them. A call that was announced and never finished gets a failed `tool_call_update` |
 | todo | `plan` |
 | commands | `available_commands_update` |
 | mode | `current_mode_update` |

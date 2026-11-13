@@ -268,6 +268,8 @@ func TestResponseShowsEachPieceOnce(t *testing.T) {
 				shown = append(shown, "thought:"+u.AgentThoughtChunk.Content.Text.Text)
 			case u.ToolCall != nil:
 				shown = append(shown, "call:"+string(u.ToolCall.ToolCallId))
+			case u.ToolCallUpdate != nil:
+				shown = append(shown, "update:"+string(u.ToolCallUpdate.ToolCallId))
 			}
 		}
 	}
@@ -279,13 +281,25 @@ func TestResponseShowsEachPieceOnce(t *testing.T) {
 	// A provider that sends a finished text without deltas.
 	add(provider.Event{Item: &transcript.Item{Text: &transcript.Text{Text: "whole"}}})
 	add(provider.Event{Item: &transcript.Item{ToolCall: &transcript.ToolCall{ID: "c1", Name: "read"}}})
+	// A call the model is seen writing: a start without an id is not shown,
+	// and the finished call updates the one already announced.
+	add(provider.Event{ToolCall: &provider.ToolCallProgress{Name: "read"}})
+	add(provider.Event{ToolCall: &provider.ToolCallProgress{ID: "c2", Name: "read"}})
+	add(provider.Event{ToolCall: &provider.ToolCallProgress{ID: "c2", Name: "read", InputDelta: `{"a"`}})
+	add(provider.Event{ToolCall: &provider.ToolCallProgress{ID: "c3", Name: "read", InputDelta: `{`}})
+	require.Equal(t, []string{"c2", "c3"}, r.Writing())
+	add(provider.Event{Item: &transcript.Item{ToolCall: &transcript.ToolCall{ID: "c2", Name: "read"}}})
+	require.Equal(t, []string{"c3"}, r.Writing(), "c3 was announced and never finished")
 	add(provider.Event{Usage: &transcript.Usage{OutputTokens: 1}})
 	add(provider.Event{Usage: &transcript.Usage{OutputTokens: 9}})
 	add(provider.Event{Stop: provider.StopToolUse})
 
-	assert.Equal(t, []string{"thought:hm", "text:Hel", "text:lo", "text:whole", "call:c1"}, shown)
-	assert.Len(t, r.Items, 4)
+	assert.Equal(t, []string{
+		"thought:hm", "text:Hel", "text:lo", "text:whole", "call:c1",
+		"call:c2", "call:c3", "update:c2",
+	}, shown)
+	assert.Len(t, r.Items, 5)
 	assert.EqualValues(t, 9, r.Usage.OutputTokens, "the last usage is the request's total")
 	assert.Equal(t, provider.StopToolUse, r.Stop)
-	require.Len(t, r.Calls(), 1)
+	require.Len(t, r.Calls(), 2)
 }

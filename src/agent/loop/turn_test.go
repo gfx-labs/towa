@@ -253,15 +253,20 @@ func TestARecordedTurnThroughTheClientRouterLoopAndStore(t *testing.T) {
 
 	var shown strings.Builder
 	var callUpdate *acp.SessionUpdateToolCall
-	var lastTool *acp.SessionToolCallUpdate
+	var described, lastTool *acp.SessionToolCallUpdate
 	var usages []acp.SessionUsageUpdate
 	for _, u := range c.updates {
 		switch {
 		case u.AgentMessageChunk != nil:
 			shown.WriteString(u.AgentMessageChunk.Content.Text.Text)
 		case u.ToolCall != nil:
+			require.Nil(t, callUpdate, "the call is announced once")
 			callUpdate = u.ToolCall
 		case u.ToolCallUpdate != nil:
+			require.NotNil(t, callUpdate, "the announcement comes first")
+			if u.ToolCallUpdate.Title != nil {
+				described = u.ToolCallUpdate
+			}
 			lastTool = u.ToolCallUpdate
 		case u.UsageUpdate != nil:
 			usages = append(usages, *u.UsageUpdate)
@@ -270,11 +275,18 @@ func TestARecordedTurnThroughTheClientRouterLoopAndStore(t *testing.T) {
 		}
 	}
 	assert.Equal(t, text, shown.String(), "the client saw each text piece once")
+	// The call is announced under its tool's name while the model writes
+	// it, and described once its argument is whole.
 	require.NotNil(t, callUpdate)
 	assert.Equal(t, acp.ToolCallId(call.ID), callUpdate.ToolCallId)
-	assert.Equal(t, "Read notes.txt", callUpdate.Title)
-	assert.Equal(t, acp.ToolKindRead, callUpdate.Kind)
-	assert.Equal(t, []acp.ToolCallLocation{{Path: "notes.txt"}}, callUpdate.Locations)
+	assert.Equal(t, looptest.ReadToolName, callUpdate.Title)
+	assert.Equal(t, acp.ToolCallStatusPending, callUpdate.Status)
+	assert.Nil(t, callUpdate.RawInput)
+	require.NotNil(t, described)
+	assert.Equal(t, "Read notes.txt", *described.Title)
+	assert.Equal(t, acp.ToolKindRead, *described.Kind)
+	assert.Equal(t, []acp.ToolCallLocation{{Path: "notes.txt"}}, described.Locations)
+	assert.Equal(t, map[string]any{"path": "notes.txt"}, described.RawInput)
 	require.NotNil(t, lastTool)
 	assert.Equal(t, acp.ToolCallStatusCompleted, *lastTool.Status)
 	require.Len(t, lastTool.Content, 1)

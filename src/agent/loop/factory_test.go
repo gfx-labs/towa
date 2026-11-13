@@ -267,7 +267,7 @@ telemetry:
 	require.NoError(t, err)
 	require.Equal(t, "factory acceptance 7421", string(body))
 	require.EqualValues(t, 2, requests.Load())
-	var callSeen, resultSeen, textSeen bool
+	var callSeen, describedSeen, resultSeen, textSeen bool
 	for _, notification := range notifications {
 		if notification.Method != "session/update" {
 			continue
@@ -276,7 +276,11 @@ telemetry:
 		require.NoError(t, json.Unmarshal(notification.Params, &params))
 		if params.Update.ToolCall != nil {
 			callSeen = true
-			require.Equal(t, acp.ToolKindEdit, params.Update.ToolCall.Kind)
+		}
+		if update := params.Update.ToolCallUpdate; update != nil && update.Kind != nil {
+			require.True(t, callSeen)
+			require.Equal(t, acp.ToolKindEdit, *update.Kind)
+			describedSeen = true
 		}
 		if params.Update.ToolCallUpdate != nil && params.Update.ToolCallUpdate.Status != nil && *params.Update.ToolCallUpdate.Status == acp.ToolCallStatusCompleted {
 			resultSeen = true
@@ -286,6 +290,7 @@ telemetry:
 		}
 	}
 	require.True(t, callSeen)
+	require.True(t, describedSeen)
 	require.True(t, resultSeen)
 	require.True(t, textSeen)
 	wire.Close()

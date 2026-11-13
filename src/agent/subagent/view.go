@@ -18,6 +18,10 @@ import (
 //   - one line with the title of each tool call the child starts,
 //   - one line for each of them that fails.
 //
+// A call the child's model is still writing is announced under its tool's
+// name and gets its title when its argument is whole. Its line is added
+// then, so that it carries the title.
+//
 // The text of the child's last response is not added: it is the call's
 // result. Thoughts, tool inputs and outputs, diffs, plans, usage and retry
 // reports are not shown. They are in the child's session.
@@ -27,6 +31,9 @@ type view struct {
 	progress func(ctx context.Context, content []acp.ToolCallContent) error
 	text     strings.Builder
 	titles   map[acp.ToolCallId]string
+	// waiting holds the calls announced without their argument, which have
+	// no line yet.
+	waiting map[acp.ToolCallId]bool
 }
 
 func (v *view) update(ctx context.Context, u acp.SessionUpdate) error {
@@ -39,23 +46,44 @@ func (v *view) update(ctx context.Context, u acp.SessionUpdate) error {
 			v.text.WriteString(text.Text)
 		}
 	case u.ToolCall != nil:
-		var content []acp.ToolCallContent
-		if v.text.Len() > 0 {
-			content = append(content, tools.TextContent(v.text.String()))
-			v.text.Reset()
-		}
+		id := u.ToolCall.ToolCallId
 		if v.titles == nil {
 			v.titles = map[acp.ToolCallId]string{}
+			v.waiting = map[acp.ToolCallId]bool{}
 		}
-		v.titles[u.ToolCall.ToolCallId] = u.ToolCall.Title
-		return v.progress(ctx, append(content, tools.TextContent(u.ToolCall.Title)))
+		v.titles[id] = u.ToolCall.Title
+		if u.ToolCall.RawInput == nil {
+			v.waiting[id] = true
+			return nil
+		}
+		return v.started(ctx, id)
 	case u.ToolCallUpdate != nil:
+		id := u.ToolCallUpdate.ToolCallId
+		if title := u.ToolCallUpdate.Title; title != nil {
+			v.titles[id] = *title
+		}
 		status := u.ToolCallUpdate.Status
+		if v.waiting[id] {
+			if err := v.started(ctx, id); err != nil {
+				return err
+			}
+		}
 		if status == nil || *status != acp.ToolCallStatusFailed {
 			return nil
 		}
-		line := "failed: " + v.titles[u.ToolCallUpdate.ToolCallId]
+		line := "failed: " + v.titles[id]
 		return v.progress(ctx, []acp.ToolCallContent{tools.TextContent(line)})
 	}
 	return nil
+}
+
+// started adds the line of a call, after the text the child wrote before it.
+func (v *view) started(ctx context.Context, id acp.ToolCallId) error {
+	delete(v.waiting, id)
+	var content []acp.ToolCallContent
+	if v.text.Len() > 0 {
+		content = append(content, tools.TextContent(v.text.String()))
+		v.text.Reset()
+	}
+	return v.progress(ctx, append(content, tools.TextContent(v.titles[id])))
 }

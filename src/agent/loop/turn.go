@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -145,6 +146,9 @@ type Response struct {
 	// textShown and thoughtShown say a delta was sent since the last
 	// finished item of that kind.
 	textShown, thoughtShown bool
+	// writing holds the ids of the calls announced while the model was
+	// still writing them, in order, until each one finishes.
+	writing []string
 }
 
 // Add takes one event and returns the updates that show it to the client.
@@ -158,6 +162,8 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 	case e.ThinkingDelta != "":
 		r.thoughtShown = true
 		return []acp.SessionUpdate{ThoughtChunk(e.ThinkingDelta)}
+	case e.ToolCall != nil:
+		return r.progress(*e.ToolCall)
 	case e.Item != nil:
 		item := *e.Item
 		r.Items = append(r.Items, item)
@@ -176,7 +182,17 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 			}
 		case item.ToolCall != nil:
 			call := m.ToolCall(*item.ToolCall)
-			return []acp.SessionUpdate{{ToolCall: &call}}
+			i := slices.Index(r.writing, item.ToolCall.ID)
+			if i < 0 {
+				return []acp.SessionUpdate{{ToolCall: &call}}
+			}
+			// The call was announced under its name. Now that its argument
+			// is whole it gets its title, kind, locations and input.
+			r.writing = slices.Delete(r.writing, i, i+1)
+			return []acp.SessionUpdate{{ToolCallUpdate: &acp.SessionToolCallUpdate{
+				ToolCallId: call.ToolCallId, Title: &call.Title, Kind: &call.Kind,
+				Locations: call.Locations, RawInput: call.RawInput,
+			}}}
 		case item.Native != nil:
 			return HostedSearch(item)
 		}
@@ -186,6 +202,26 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 		r.Stop = e.Stop
 	}
 	return nil
+}
+
+// progress announces a call the model has started writing, once, when it
+// has an id and a name. The pieces of its argument are not shown: ACP has
+// no update for part of an argument, and the whole one follows.
+func (r *Response) progress(p provider.ToolCallProgress) []acp.SessionUpdate {
+	if p.ID == "" || p.Name == "" || slices.Contains(r.writing, p.ID) {
+		return nil
+	}
+	r.writing = append(r.writing, p.ID)
+	return []acp.SessionUpdate{{ToolCall: &acp.SessionUpdateToolCall{
+		ToolCallId: acp.ToolCallId(p.ID), Name: &p.Name, Title: p.Name,
+		Kind: acp.ToolKindOther, Status: acp.ToolCallStatusPending,
+	}}}
+}
+
+// Writing returns the ids of the calls that were announced and never
+// finished, in the order they were announced.
+func (r *Response) Writing() []string {
+	return r.writing
 }
 
 // Text returns the response's text items joined.
@@ -346,6 +382,15 @@ func (tn *turn) run(ctx context.Context) (out Result, runErr error) {
 				stored = append(stored, transcript.Item{ToolResult: &unrun})
 				tn.toolUpdate(ctx, unrun, nil)
 			}
+		}
+		// A call the response announced and never finished is not an item
+		// and is not stored. The client is still told that it ended.
+		for _, id := range resp.Writing() {
+			failed := acp.ToolCallStatusFailed
+			tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+				ToolCallId: acp.ToolCallId(id), Status: &failed,
+				Content: []acp.ToolCallContent{tools.TextContent(textNotRun)},
+			}})
 		}
 		if resp.Usage != nil {
 			tn.add(*resp.Usage)
