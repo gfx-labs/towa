@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/gfx-labs/towa/compare/v0.2.0...v0.3.0) (2026-11-14)
+
+
+### Features
+
+* **tools:** run bash commands in the background, and keep the turn open until they end ([f6fd95e](https://github.com/gfx-labs/towa/commit/f6fd95e3aa317e2e4e3068cacf09739d5c588de3))
+* **tools:** take one edit as old_string and new_string beside edits ([5bba92c](https://github.com/gfx-labs/towa/commit/5bba92c7eee5777850e51f69819936b3194a7ce6))
+
+
+### Bug fixes
+
+* **tools:** tell the model the configured bash and read limits ([b092789](https://github.com/gfx-labs/towa/commit/b092789cab38c0a257d56b014221a7f91d6b9c68))
+
+
+### Documentation
+
+* delete the in-repo docs directory ([c0f03ea](https://github.com/gfx-labs/towa/commit/c0f03ea3b55f6c1b8c6e83c7e8feaaa196ce62eb))
+
 ## [0.2.0](https://github.com/gfx-labs/towa/compare/v0.1.2...v0.2.0) (2026-11-14)
 
 
