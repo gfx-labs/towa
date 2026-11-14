@@ -31,6 +31,8 @@ type Runtime struct {
 type Client interface {
 	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
 	RequestPermission(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
+	CreateElicitation(ctx context.Context, params acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error)
+	CompleteElicitation(ctx context.Context, params acp.CompleteElicitationNotification) error
 }
 
 // Supports says which optional parts of a session the turn acts on. The
@@ -54,6 +56,10 @@ type Supports struct {
 	// Prompt names the content types beyond text and resource links that
 	// the provider takes in a prompt.
 	Prompt acp.PromptCapabilities
+	// TerminalAuth are the logins a client can run in a terminal, by
+	// appending a method's args to the command it starts the agent with.
+	// They are advertised to a client that takes terminal auth methods.
+	TerminalAuth []acp.AuthMethodTerminalInline
 }
 
 // Options configures a Host. Every field but Registry, Supports and Store

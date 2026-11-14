@@ -108,6 +108,10 @@ type Options struct {
 	// harness in initialize.
 	ClientName    string
 	ClientVersion string
+	// Elicitation passes the elicitations of the session's own servers on
+	// to its client. Nil means servers are told the harness takes none. A
+	// shared server serves every session, so it is never given one.
+	Elicitation *Elicitation
 }
 
 // Manager holds the connections of one session to its MCP servers. A
@@ -124,6 +128,7 @@ type Manager struct {
 	impl    *sdk.Implementation
 	results int
 	dir     string
+	elicit  *Elicitation
 
 	// These are fields so that a test can use times shorter than a second,
 	// the unit of the config keys.
@@ -166,6 +171,7 @@ func newManager(opts Options, pool bool) (*Manager, error) {
 		impl:           &sdk.Implementation{Name: opts.ClientName, Version: opts.ClientVersion},
 		results:        int(opts.Config.SearchResults),
 		dir:            opts.Dir,
+		elicit:         opts.Elicitation,
 		refreshMargin:  time.Duration(opts.Config.OAuth.RefreshMarginSeconds) * time.Second,
 		idleClose:      time.Duration(opts.Config.IdleCloseSeconds) * time.Second,
 		connectTimeout: time.Duration(opts.Config.ConnectTimeoutSeconds) * time.Second,
@@ -473,9 +479,13 @@ func (m *Manager) connect(ctx context.Context, s Server) (_ *live, err error) {
 	stopFollowing := context.AfterFunc(ctx, cancel)
 
 	l := &live{server: s.Name, cancel: cancel, dead: make(chan struct{})}
-	client := sdk.NewClient(m.impl, &sdk.ClientOptions{
+	options := &sdk.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *sdk.ToolListChangedRequest) { l.toolsChanged() },
-	})
+	}
+	if m.elicit != nil {
+		m.elicit.options(options, m.logger)
+	}
+	client := sdk.NewClient(m.impl, options)
 	var transport sdk.Transport
 	var stdio *stdioTransport
 	switch s.Transport {

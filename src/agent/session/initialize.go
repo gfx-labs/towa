@@ -53,10 +53,24 @@ func (a *Agent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.Init
 		ProtocolVersion:   acp.ProtocolVersionNumber,
 		AgentInfo:         &acp.Implementation{Name: "towa", Version: a.version},
 		AgentCapabilities: capabilities,
+		AuthMethods:       a.authMethods(p.ClientCapabilities.Auth),
 	}, nil
 }
 
-// Authenticate rejects every method: the agent advertises none.
+// authMethods lists the terminal logins for a client that can run them.
+func (a *Agent) authMethods(client acp.AuthCapabilities) []acp.AuthMethod {
+	if !client.Terminal {
+		return nil
+	}
+	methods := make([]acp.AuthMethod, len(a.supports.TerminalAuth))
+	for i := range a.supports.TerminalAuth {
+		methods[i] = acp.AuthMethod{Terminal: &a.supports.TerminalAuth[i]}
+	}
+	return methods
+}
+
+// Authenticate rejects every method: a client runs a terminal method
+// itself and never passes it here.
 func (a *Agent) Authenticate(_ context.Context, p acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
 	return acp.AuthenticateResponse{}, acp.NewInvalidParams(map[string]any{"error": "unknown authentication method", "methodId": p.MethodId})
 }

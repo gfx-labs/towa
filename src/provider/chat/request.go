@@ -412,7 +412,7 @@ func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) *provid
 		case p.Text != "":
 			text.WriteString(p.Text)
 		case p.Resource != nil && p.Resource.Data == nil:
-			text.WriteString(p.Resource.Text)
+			text.WriteString(resourceText(p.Resource))
 		case p.Link != nil:
 			text.WriteString(linkText(p.Link))
 		case p.Image != nil, p.Audio != nil, p.Resource != nil:
@@ -511,7 +511,7 @@ func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Erro
 			plain = false
 			wire = append(wire, part)
 		case p.Resource != nil:
-			wire = append(wire, wirePart{Type: "text", Text: p.Resource.Text})
+			wire = append(wire, wirePart{Type: "text", Text: resourceText(p.Resource)})
 		case p.Link != nil:
 			wire = append(wire, wirePart{Type: "text", Text: linkText(p.Link)})
 		default:
@@ -533,6 +533,12 @@ func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Erro
 		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
 	}
 	return out, nil
+}
+
+// resourceText is a text resource with its URI, so the model can tell
+// which file it is reading, as the other two APIs send it.
+func resourceText(r *transcript.Resource) string {
+	return fmt.Sprintf("<resource uri=%q>\n%s\n</resource>", r.URI, r.Text)
 }
 
 // binaryPart returns the content part of an image, of audio or of a resource

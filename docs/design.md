@@ -6,7 +6,7 @@ Status: draft, 2026-11-11. Decisions come from four Q&A rounds with the user.
 
 ## Goals
 
-- ACP compliant agent: `initialize`, `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_config_option` (model, mode, thought level), `session/set_mode`, `session/request_permission`, `session/update` with plans, tool calls, thoughts, commands and usage. Method names follow the pinned ACP schema, which has no `session/set_model`.
+- ACP compliant agent: `initialize` (with terminal `authMethods`), `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_config_option` (model, mode, thought level), `session/set_mode`, `session/request_permission`, `session/update` with plans, tool calls, thoughts, commands and usage. Method names follow the pinned ACP schema, which has no `session/set_model`.
 - Does real coding tasks locally as well as jcode does in a single session.
 - Low footprint per session: idle sessions use no CPU and little memory.
 - Claude OAuth, Codex OAuth, OpenAI Chat Completions and Responses, OpenRouter.
@@ -47,7 +47,7 @@ Packages:
 |---|---|
 | `cmd/towa` | a shim that calls `src/cli` |
 | `src/cli` | CLI: `serve` (default, stdio), `login`, `logout`, `accounts`, `config`, `models`, `hosts` |
-| `src/agent/harness` | what towa adds to ACP messages under `_meta.towa`: stops and moves |
+| `src/agent/harness` | what towa adds to ACP messages under `_meta.towa`: the typed stop |
 | `src/transcript` | the one conversation format shared by providers, tools and the store |
 | `src/support/httpclient` | the one constructor for HTTP clients: proxy from the environment, system certificate pool |
 | `src/config` | the typed config, its flags, and the loader for files, environment and flags |
@@ -265,6 +265,7 @@ Model metadata (context window, max output) comes from the first of: the built-i
 - Every HTTP client honours `HTTPS_PROXY` and the system certificate pool: providers, the OpenAI WebSocket transport, remote MCP, webfetch, embeddings, Jev and OTLP. They all come from `src/support/httpclient`, lint forbids building a transport anywhere else, and one CI test runs a turn through a test proxy with its own CA.
 - `towa hosts` lists the hosts the resolved config will contact (providers, OAuth endpoints, MCP servers, embeddings, Jev, OTLP), one per line with the config key that names it. It builds an egress allowlist without guessing. webfetch targets are chosen by the model and cannot be listed.
 - `towa usage` asks each subscription account's provider how much of its limits is used and when they reset, and prints one line per limit (`--account <id>` for one account, `--json` for a JSON array). Claude is read from `/api/oauth/usage` and a ChatGPT login from `/backend-api/wham/usage`, on the hosts the providers already use. An API key account has no subscription and is not listed.
+- A client that advertises `auth.terminal` is offered one terminal auth method per OAuth account of a provider with a login flow, with `args` `login <provider> --account <id>`. The client appends them to the command it starts towa with, so that command must not name `serve`: `towa --config x.yaml login ...` parses, `towa serve login ...` does not. `authenticate` is refused, since the spec forbids a client to pass a terminal method to it.
 - `towa login <provider> --account <id>` creates the account when it is new and logs it in. It prints the authorize page and opens a browser, which a local callback ends. A host without an opener still prints the page, and the login waits. `--manual` opens nothing and takes the code the page ends on. `--device` (Codex only, as upstream has no device grant for Claude) prints a one-time code and the page to enter it on, then waits for the approval, with the requests of `codex-rs/login/src/device_code_auth.rs` at the pinned commit.
 - A browser or manual login is recorded under `auth/pending/<provider>.json` before its page is shown. A later run, `towa login <provider> --code '<code or address>'`, finishes it: the record names the account, so that run needs only the provider. There is one record per provider, a new login replaces it, and a finished login removes it. A manual login whose input is empty or closed leaves the record and exits, which is how a script or an agent starts a login that a person finishes.
 - Refresh: take an `flock` on the account's lock file (`account.<id>.lock`, not `auth.json`, since the rename that writes the file would leave a lock on the old inode), re-read the account, refresh only if the token is still expired, write, release. Hundreds of processes share one refresh, and the refresh of one account does not wait for another's token request. Every write of `auth.json` takes `auth.json.lock` for its read and its write, so that two accounts written at once both survive, and replaces the file atomically (temp file and rename). A read takes no lock.
@@ -330,6 +331,7 @@ The tool runs a child agent loop in the same process. Each child opens its own r
 - One `mcp` meta-tool with `list`, `search` (names and descriptions) and `call`. Schemas are returned on search, not loaded into the prompt.
 - Direct tools: a server marked `direct` has its tools put in the prompt under their own names, not behind the meta-tool. A server named in `session/new` `mcpServers` is direct by default, since the client added it for this session and its tools (`submit_result`, `ask_human`) are used every turn. A config server is behind the meta-tool by default. A direct tool whose name collides with another tool is an error at session start. The direct tools are fixed when the session starts: a server that changes its tool list later does not change the prompt.
 - Connections start lazily on first use and close after an idle period from config.
+- Elicitation: when the client advertises `elicitation`, a session's own servers are told the harness takes the modes the client takes (form, URL), and a server's request goes to the client as `elicitation/create` with the session's id. The MCP SDK cannot tie a server request to the tool call that caused it, so `toolCallId` is not set. A shared server's connection serves every session, so it is told the harness takes none. Without the capability a server that asks gets the SDK's "client does not support elicitation" error (`docs/notes/2026-11-14-acp-gaps.md`).
 
 ### Permissions and modes
 
@@ -466,11 +468,14 @@ At 10000 sessions, unfiltered `List` took 258 ms warm / 316 ms file-data-cold be
 | mode | `current_mode_update` |
 | usage and cost | `usage_update` (context used, context size, cost) and `usage` on the prompt response |
 | model, mode, thought level | `config_option_update` |
-| active account, fallback, compaction, limit hit | `_meta.towa` on the relevant update, and the prompt response `_meta` |
+| retry and fallback | `notice` (severity warning) when the client advertises `session.notices`, and nothing otherwise |
+| compaction | `compaction_update` when the client advertises `session.compaction` |
+| limit hit, typed stop | `_meta.towa.stop` on the prompt response or the error `data` |
+| MCP server elicitation | `elicitation/create`, scoped to the session, and `elicitation/complete` |
 
 Stop reasons map to ACP `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 
-`promptCapabilities` advertises `image`, and a prompt may hold image blocks. Every provider carries an image in a user message (Messages `image`, Responses `input_image`, Chat Completions `image_url`), and a model that cannot take one answers with the provider's error. Audio and embedded resources in a prompt are refused, since not every provider takes them in a user message. Images a tool returns, such as `read` of a PNG, reach the client as image content of the `tool_call_update`.
+`promptCapabilities` advertises `image` and `embeddedContext`. Every provider carries an image in a user message (Messages `image`, Responses `input_image`, Chat Completions `image_url`), and a model that cannot take one answers with the provider's error. An embedded text resource reaches every provider as text wrapped in `<resource uri="...">`, which is what claude-agent-acp and codex-acp advertise and do. Audio in a prompt is refused, since not every provider takes it in a user message. Images a tool returns, such as `read` of a PNG, reach the client as image content of the `tool_call_update`.
 
 ACP has no stop reason for a rate limit. A turn that stops for a reason the client can act on carries a typed `stop` under `towa` (`src/agent/harness`): `kind` is one of `rate_limit`, `auth`, `overload`, `context_full`, `limit`, `network`, `request`, `denied`, with `resetAt`, `retryAfterSeconds`, `limit`, `account` and `model` where they apply. It is in the prompt response's `_meta` when the turn has a stop reason (a limit answers `max_turn_requests`) and in the error's `data` when the turn failed. A client never has to parse error text. protocol7 treats `rate_limit` as a deferral. `denied` means a configured prompt hook refused the prompt: the turn did not start, the request answers `-32600`, and `message` is the hook's reason.
 

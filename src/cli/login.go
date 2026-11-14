@@ -9,6 +9,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/support/httpclient"
@@ -302,4 +304,24 @@ func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 		_, err = fmt.Fprintln(h.Stderr, "there are no accounts: create one with \"towa login <provider> --account <id>\"")
 	}
 	return err
+}
+
+// terminalLogins are the logins a client can run for the user: one per
+// account whose token the harness holds, run as "towa login" on the
+// command line the client starts towa with.
+func terminalLogins(accounts []config.Account, flows map[string]auth.Flow) []acp.AuthMethodTerminalInline {
+	var methods []acp.AuthMethodTerminalInline
+	for _, a := range accounts {
+		if _, ok := flows[a.Provider]; !ok || a.Kind != config.AccountOAuth {
+			continue
+		}
+		description := fmt.Sprintf("Log in to %s in the browser and store the login in auth.json.", a.Provider)
+		methods = append(methods, acp.AuthMethodTerminalInline{
+			Id:          acp.AuthMethodId("login-" + a.ID),
+			Name:        fmt.Sprintf("Log in account %s (%s)", a.ID, a.Provider),
+			Description: &description,
+			Args:        []string{"login", a.Provider, "--account", a.ID},
+		})
+	}
+	return methods
 }

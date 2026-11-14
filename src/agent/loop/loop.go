@@ -92,4 +92,9 @@ type Turn struct {
 	// and the call does not run. An error means the turn was cancelled or
 	// the client failed, and stops the turn. A nil Permit allows every call.
 	Permit func(ctx context.Context, tool string, effect tools.Effect, call acp.ToolCallUpdate) (bool, error)
+	// Elicit sends elicitation/create to the client, scoped to the session.
+	// It is nil when the client did not advertise elicitation.
+	Elicit func(ctx context.Context, params acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error)
+	// ElicitationComplete sends elicitation/complete. It is set with Elicit.
+	ElicitationComplete func(ctx context.Context, params acp.CompleteElicitationNotification) error
 }

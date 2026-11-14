@@ -6,7 +6,7 @@ require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/alecthomas/kong v1.17.0
 	github.com/coder/websocket v1.8.15
-	github.com/gfx-labs/go-acp v0.1.1
+	github.com/gfx-labs/go-acp v0.1.2
 	github.com/gfx-labs/sse v0.0.1
 	github.com/go-playground/validator/v10 v10.30.6
 	github.com/goccy/go-yaml v1.19.2

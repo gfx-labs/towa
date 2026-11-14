@@ -74,6 +74,7 @@ func newSessionMCP(ctx context.Context, o mcpRuntimeOptions, pool *mcp.Pool, tur
 		Dir: turn.Cwd, Tokens: o.Tokens, Pool: pool,
 		Logger: o.Logger, Tracer: o.Tracer,
 		ClientName: "towa", ClientVersion: o.Version,
+		Elicitation: elicitation(turn),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -83,4 +84,17 @@ func newSessionMCP(ctx context.Context, o mcpRuntimeOptions, pool *mcp.Pool, tur
 		return nil, nil, errors.Join(err, manager.Close())
 	}
 	return manager, frozen, nil
+}
+
+// elicitation passes the session's MCP elicitations to its client in the
+// modes the client advertised. Nil means the client takes none.
+func elicitation(turn loop.Turn) *mcp.Elicitation {
+	caps := turn.Client.Elicitation
+	if turn.Elicit == nil || caps == nil || (caps.Form == nil && caps.Url == nil) {
+		return nil
+	}
+	return &mcp.Elicitation{
+		Form: caps.Form != nil, URL: caps.Url != nil,
+		Create: turn.Elicit, Complete: turn.ElicitationComplete,
+	}
 }

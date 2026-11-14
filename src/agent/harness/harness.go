@@ -60,39 +60,9 @@ type Stop struct {
 	Message string `json:"message,omitzero"`
 }
 
-// MoveKind says what the harness did about a failed model request.
-type MoveKind string
-
-// Kinds of move.
-const (
-	// MoveRetry: the same request is sent again to the same account.
-	MoveRetry MoveKind = "retry"
-	// MoveFallback: the request goes to the next entry of the model's chain.
-	MoveFallback MoveKind = "fallback"
-)
-
-// Move reports one retry or fallback while a turn runs. It is carried in
-// the _meta of a session_info_update that sets nothing else, which every
-// client accepts.
-type Move struct {
-	Kind MoveKind `json:"kind"`
-	// Reason is why the request failed, from the same list a Stop uses.
-	Reason StopKind `json:"reason"`
-	// FromAccount and FromModel say which chain entry failed.
-	FromAccount string `json:"fromAccount,omitzero"`
-	FromModel   string `json:"fromModel,omitzero"`
-	// ToAccount and ToModel say which entry is tried next. For a retry they
-	// are the same as the From fields.
-	ToAccount string `json:"toAccount,omitzero"`
-	ToModel   string `json:"toModel,omitzero"`
-	// WaitSeconds is how long the harness waits before it sends again.
-	WaitSeconds float64 `json:"waitSeconds,omitzero"`
-}
-
-// Addition is what towa puts under Key. At most one field is set.
+// Addition is what towa puts under Key.
 type Addition struct {
 	Stop *Stop `json:"stop,omitzero"`
-	Move *Move `json:"move,omitzero"`
 }
 
 // Meta returns meta with a under Key. meta may be nil.
