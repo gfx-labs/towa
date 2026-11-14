@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/config"
@@ -31,6 +32,7 @@ import (
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/core"
 	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/mcp"
 	"github.com/gfx-labs/towa/src/transcript"
 )
@@ -160,7 +162,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 		}
 		loaded, err := factory.loadContext(turn)
 		require.NoError(t, err)
-		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, reads: &core.ReadTracker{}, loaded: loaded, prompts: &promptCache{}})
+		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, reads: &core.ReadTracker{}, jobs: jobs.NewSet(), loaded: loaded, prompts: &promptCache{}})
 		require.NoError(t, err)
 		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
@@ -219,7 +221,7 @@ func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
 	}
 	globalInstructions := func(r *sessionRuntime) string {
 		turn := loop.Turn{SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model}
-		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, frozen: r.frozen, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
+		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, frozen: r.frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 		require.NoError(t, err)
 		for _, block := range prepared.system {
 			if block.Name == agentctx.SectionGlobalInstructions {

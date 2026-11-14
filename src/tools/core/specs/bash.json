@@ -1,14 +1,15 @@
 {
   "name": "bash",
   "summary": "Execute bash commands (ls, grep, find, etc.)",
-  "description": "Run a shell command in the session's working directory and wait for it to finish. The command has no terminal and its standard input is empty, so a program that waits for input fails or hangs until the timeout. Standard output and standard error come back together, followed by the exit code when it is not zero. Only the first {shell_output_chars} characters of output are returned. A command that runs past its timeout ({shell_timeout_ms} ms unless the call sets one, at most {shell_max_timeout_ms} ms) is stopped with its process group. Commands run without an operating system sandbox.",
-  "guidance": ["Use bash for file operations like ls, rg, find.", "Commands in bash get no terminal and no input. Use the non-interactive form of a command (such as -y, --no-edit, --no-pager, or a message given with -m), and never start an editor, a pager or a REPL."],
+  "description": "Run a shell command in the session's working directory and wait for it to finish. The command has no terminal and its standard input is empty, so a program that waits for input fails or hangs until the timeout. Standard output and standard error come back together, followed by the exit code when it is not zero. Only the first {shell_output_chars} characters of output are returned. A command that runs past its timeout ({shell_timeout_ms} ms unless the call sets one, at most {shell_max_timeout_ms} ms) is stopped with its process group. Commands run without an operating system sandbox. With run_in_background set, the call returns at once with a job id and the absolute path of a file the output is written to. The command keeps a timeout, {shell_max_timeout_ms} ms unless the call sets one. When it ends, you are told how it ended and given the end of its output. The turn does not end while a background command runs: when you finish your work, you are woken with each command's result as it ends.",
+  "guidance": ["Use bash for file operations like ls, rg, find.", "Commands in bash get no terminal and no input. Use the non-interactive form of a command (such as -y, --no-edit, --no-pager, or a message given with -m), and never start an editor, a pager or a REPL.", "For a long command whose result you do not need right away, such as a build or a test suite, set run_in_background and keep working. Do not add & or nohup, and do not sleep or poll: use bash_output to wait for a job or read its output, and bash_stop to stop one."],
   "input_schema": {
     "type": "object",
     "properties": {
       "command": {"type": "string", "description": "The command to run."},
       "timeout": {"type": "number", "description": "Timeout in milliseconds, more than 0 and at most {shell_max_timeout_ms}. Omit for {shell_timeout_ms}."},
-      "description": {"type": "string", "description": "A few plain words saying what the command does. The user sees this."}
+      "description": {"type": "string", "description": "A few plain words saying what the command does. The user sees this."},
+      "run_in_background": {"type": "boolean", "description": "Run the command in the background and return at once with a job id."}
     },
     "required": ["command"],
     "additionalProperties": false

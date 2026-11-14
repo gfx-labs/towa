@@ -51,6 +51,10 @@ type Input struct {
 	// than the configured tools.max_output_bytes. Zero means the configured
 	// size. More than the configured size is an error.
 	MaxOutputBytes int64
+	// Output, when set, gets all of the output as it is read, beyond what
+	// the Result keeps. The first failed write stops the writes, and is
+	// Result.OutputErr. The command is not stopped for it.
+	Output io.Writer
 }
 
 // End says how a run ended.
@@ -105,6 +109,9 @@ type Result struct {
 	// ProgressErr is the error that stopped output being sent to the
 	// client. The command was not stopped for it.
 	ProgressErr error
+	// OutputErr is the error that stopped output being written to
+	// Input.Output.
+	OutputErr error
 }
 
 // Outcome is what the loop records for the call. A cancelled command that
@@ -211,7 +218,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 		return Result{}, errors.Join(fmt.Errorf("shell: %w", err), procgroup.Kill(cmd.Process.Pid), cmd.Wait(), read.Close())
 	}
 
-	out := &collector{limit: maxOutput, progress: env.Progress}
+	out := &collector{limit: maxOutput, progress: env.Progress, output: in.Output}
 	drained := make(chan error, 1)
 	// The reader keeps sending progress after a cancel, so that the output
 	// up to the kill reaches the client.
@@ -254,6 +261,7 @@ func Run(ctx context.Context, env tools.Env, cfg config.Tools, in Input) (Result
 	}
 	res.Output, res.Tail, res.DroppedBytes = out.result()
 	res.ProgressErr = out.progressErr
+	res.OutputErr = out.outputErr
 
 	if _, exited := errors.AsType[*exec.ExitError](waitErr); waitErr != nil && !exited {
 		return Result{}, fmt.Errorf("shell: wait: %w", waitErr)
@@ -327,6 +335,8 @@ type collector struct {
 	limit       int64
 	progress    func(ctx context.Context, content []acp.ToolCallContent) error
 	progressErr error
+	output      io.Writer
+	outputErr   error
 
 	head  []byte
 	tail  []byte
@@ -341,6 +351,7 @@ func (c *collector) drain(ctx context.Context, r io.Reader) error {
 		n, err := r.Read(buf)
 		if n > 0 {
 			c.keep(buf[:n])
+			c.write(buf[:n])
 			c.send(ctx, buf[:n])
 		}
 		if errors.Is(err, io.EOF) {
@@ -350,6 +361,13 @@ func (c *collector) drain(ctx context.Context, r io.Reader) error {
 			return err
 		}
 	}
+}
+
+func (c *collector) write(p []byte) {
+	if c.output == nil || c.outputErr != nil {
+		return
+	}
+	_, c.outputErr = c.output.Write(p)
 }
 
 // keep stores the first half of the limit and the newest half.

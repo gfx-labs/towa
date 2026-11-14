@@ -24,6 +24,9 @@ const (
 	textBadHookInput = "A hook changed the tool call's input to one that was not accepted: %v"
 	textNested       = "A %s call cannot hold another one."
 	textLimit        = "The tool call was not run: the turn reached %s."
+	// jobsPrefix starts the message that tells the model how background
+	// commands ended. It is the harness speaking, as the todo poke is.
+	jobsPrefix = "[auto] Background commands ended:\n\n"
 )
 
 func result(call transcript.ToolCall, outcome transcript.Outcome, text string) transcript.ToolResult {

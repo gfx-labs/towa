@@ -1,0 +1,16 @@
+{
+  "name": "bash_output",
+  "summary": "Wait for a background command or read its output",
+  "description": "Return the end of a background command's output, at most {shell_output_chars} characters, and whether it is still running. With block set, wait until the command ends or the timeout passes first. The whole output stays in the file named when the command started, which bash can search.",
+  "guidance": [],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "job_id": {"type": "string", "description": "The id the bash call returned."},
+      "block": {"type": "boolean", "description": "Wait for the command to end. Omit to return at once."},
+      "timeout": {"type": "number", "description": "With block, the longest wait in milliseconds, more than 0 and at most {shell_max_timeout_ms}. Omit for {shell_timeout_ms}."}
+    },
+    "required": ["job_id"],
+    "additionalProperties": false
+  }
+}

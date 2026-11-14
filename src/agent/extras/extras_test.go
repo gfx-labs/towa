@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/auth"
@@ -30,6 +31,7 @@ import (
 	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/core"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/repair"
 	"github.com/gfx-labs/towa/src/transcript"
 )
@@ -237,7 +239,7 @@ func TestBatchEntryIsTheToolAndItsOwnArguments(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "a.txt"), []byte("alpha\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "b.txt"), []byte("beta\n"), 0o600))
 	var tracker core.ReadTracker
-	fileTools, err := core.Tools(env, loaded.Config.Tools, core.Deps{Reads: &tracker})
+	fileTools, err := core.Tools(env, loaded.Config.Tools, core.Deps{Reads: &tracker, Jobs: jobs.NewSet()})
 	require.NoError(t, err)
 	bt, err := extras.Batch(config.ToolsBatch{Enabled: true, MaxCalls: 10}, loop.BatchDispatcher)
 	require.NoError(t, err)

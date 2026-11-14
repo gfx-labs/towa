@@ -1,5 +1,5 @@
 // Package core is the tool set every model gets: read, write, edit,
-// apply_patch, bash and todo. Each tool's name, description and schema are
+// apply_patch, bash, bash_output, bash_stop and todo. Each tool's name, description and schema are
 // in specs/, and each runs one capability from a sibling package. There is
 // no tool for finding files or searching them: the model runs rg, find and
 // ls through bash.
@@ -22,12 +22,16 @@ import (
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 )
 
 // Deps holds session-owned state and client operations. Reads must be kept
 // across turns and never shared between sessions.
 type Deps struct {
 	Reads *ReadTracker
+	// Jobs are the session's background commands. Like Reads, they are
+	// kept across turns and never shared between sessions.
+	Jobs *jobs.Set
 	// ShowPlan sends the checked list to the client. Nil omits todo, as
 	// does tools.todo.enabled when it is off.
 	ShowPlan func(context.Context, tools.Env, []acp.PlanEntry) error
@@ -44,6 +48,9 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 	if deps.Reads == nil {
 		return nil, fmt.Errorf("core: session read tracker is required")
 	}
+	if deps.Jobs == nil {
+		return nil, fmt.Errorf("core: session job set is required")
+	}
 	build := []struct {
 		name string
 		tool func(provider.Tool) tools.Tool
@@ -52,7 +59,9 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		{"write", func(spec provider.Tool) tools.Tool { return writeTool(spec, env, cfg, deps.Reads) }},
 		{"edit", func(spec provider.Tool) tools.Tool { return editTool(spec, env, cfg, deps.Reads) }},
 		{"apply_patch", func(spec provider.Tool) tools.Tool { return patchTool(spec, env, cfg, deps.Reads) }},
-		{"bash", func(spec provider.Tool) tools.Tool { return bashTool(spec, cfg) }},
+		{"bash", func(spec provider.Tool) tools.Tool { return bashTool(spec, cfg, deps.Jobs) }},
+		{"bash_output", func(spec provider.Tool) tools.Tool { return jobOutputTool(spec, cfg, deps.Jobs) }},
+		{"bash_stop", func(spec provider.Tool) tools.Tool { return jobStopTool(spec, deps.Jobs) }},
 		{"todo", func(spec provider.Tool) tools.Tool { return planTool(spec, deps) }},
 	}
 	var result []tools.Tool

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/agent/hooks"
 	"github.com/gfx-labs/towa/src/agent/loop"
@@ -33,6 +34,7 @@ import (
 	"github.com/gfx-labs/towa/src/support/telemetry"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/core"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/mcp"
 	"github.com/gfx-labs/towa/src/tools/toolset"
 )
@@ -63,6 +65,7 @@ type sessionRuntime struct {
 	manager *mcp.Manager
 	frozen  []tools.Tool
 	reads   *core.ReadTracker
+	jobs    *jobs.Set
 	// loaded is the context files, the skill listing and the configured
 	// sections as they were when the session opened. Every turn uses them,
 	// so a file edited during the session does not change the prompt, and
@@ -177,7 +180,7 @@ func (f *runtimeFactory) Open(ctx context.Context, base loop.Turn) (session.Runt
 }
 
 func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRuntime, error) {
-	r := &sessionRuntime{factory: f, reads: &core.ReadTracker{}}
+	r := &sessionRuntime{factory: f, reads: &core.ReadTracker{}, jobs: jobs.NewSet()}
 	var taken []string
 	if len(f.cfg.Models) != 0 {
 		loaded, err := f.loadContext(base)
@@ -185,7 +188,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 			return nil, err
 		}
 		r.loaded = loaded
-		prepared, err := f.prepare(ctx, turnSetup{turn: base, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
+		prepared, err := f.prepare(ctx, turnSetup{turn: base, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +202,7 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 	}
 	r.manager, r.frozen = manager, frozen
 	if len(f.cfg.Models) != 0 {
-		prepared, err := f.prepare(ctx, turnSetup{turn: base, frozen: frozen, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
+		prepared, err := f.prepare(ctx, turnSetup{turn: base, frozen: frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 		if err != nil {
 			return nil, errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 		}
@@ -221,7 +224,7 @@ func (r *sessionRuntime) Close(context.Context) error {
 	if r.compactor != nil {
 		r.compactor.Close()
 	}
-	return r.manager.Close()
+	return errors.Join(r.jobs.Close(), r.manager.Close())
 }
 
 func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, error) {
@@ -232,12 +235,12 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 			selected := turn
 			selected.Model = model
 			var err error
-			prepared, err = f.prepare(ctx, turnSetup{turn: selected, frozen: r.frozen, reads: r.reads, loaded: r.loaded, prompts: &r.prompts})
+			prepared, err = f.prepare(ctx, turnSetup{turn: selected, frozen: r.frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 			return prepared.resolved, err
 		},
 		Store: f.store, System: func(context.Context, loop.Turn) ([]provider.SystemBlock, error) { return prepared.system, nil },
 		Limits: f.cfg.Limits, Now: time.Now, Repair: f.cfg.Tools.Repair.Enabled,
-		Gate: f.cfg.Tools.Gate, Hooks: hooks.New(f.cfg.Hooks), Logger: f.tel.Logger,
+		Gate: f.cfg.Tools.Gate, Hooks: hooks.New(f.cfg.Hooks), Logger: f.tel.Logger, Jobs: r.jobs,
 		NewCompactor: func(context.Context, loop.Turn, loop.Resolved) (*compact.Controller, error) {
 			if r.compactor != nil && r.compactorKey == prepared.compactorKey {
 				return r.compactor, nil
@@ -323,6 +326,7 @@ type turnSetup struct {
 	turn    loop.Turn
 	frozen  []tools.Tool
 	reads   *core.ReadTracker
+	jobs    *jobs.Set
 	loaded  *agentctx.Loaded
 	prompts *promptCache
 }
@@ -383,7 +387,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn
 // extras and the session's MCP tools.
 func (f *runtimeFactory) assembleTools(ctx context.Context, s turnSetup) (toolset.Result, error) {
 	env := tools.Env{SessionID: s.turn.SessionID, Cwd: s.turn.Cwd, Dirs: slices.Clone(s.turn.Dirs)}
-	coreTools, err := core.Tools(env, f.cfg.Tools, core.Deps{Reads: s.reads, ShowPlan: showPlan})
+	coreTools, err := core.Tools(env, f.cfg.Tools, core.Deps{Reads: s.reads, Jobs: s.jobs, ShowPlan: showPlan})
 	if err != nil {
 		return toolset.Result{}, err
 	}

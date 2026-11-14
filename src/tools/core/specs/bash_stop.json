@@ -1,0 +1,14 @@
+{
+  "name": "bash_stop",
+  "summary": "Stop a background command",
+  "description": "Stop a background command and its process group, and return how it ended and the end of its output.",
+  "guidance": [],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "job_id": {"type": "string", "description": "The id the bash call returned."}
+    },
+    "required": ["job_id"],
+    "additionalProperties": false
+  }
+}

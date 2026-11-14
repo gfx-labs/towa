@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 	"uuid"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/agent/hooks"
 	"github.com/gfx-labs/towa/src/config"
@@ -78,6 +80,15 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 		tn.limits = *t.Limits
 	}
 	result, err := tn.run(ctx)
+	if l.o.Jobs != nil {
+		// No job outlives its turn. The model learns how the ones it was
+		// not told about ended at the start of the next turn, and the client
+		// before the prompt returns.
+		l.o.Jobs.StopAll()
+		if err == nil {
+			err = tn.reportJobs(ctx)
+		}
+	}
 	result.Final = tn.final
 	if result.Usage == nil {
 		result.Usage = tn.snapshot().Usage()
@@ -280,6 +291,9 @@ func (tn *turn) step(ctx context.Context, session hooks.Session, system []provid
 	if key, over := Exceeded(tn.limits, tn.snapshot()); over {
 		return LimitResult(key, tn.snapshot()), true, nil
 	}
+	if err := tn.reportJobs(ctx); err != nil {
+		return Result{}, true, err
+	}
 
 	resp, streamErr := tn.stream(ctx, system)
 	tn.final = resp.Text()
@@ -351,6 +365,9 @@ func (tn *turn) stopped(ctx context.Context, session hooks.Session, stop provide
 	}
 	logHook(ctx, tn.l.o.Logger, tn.t.SessionID, hookErr)
 	if decision.Action == hooks.Allow {
+		if reason == acp.StopReasonEndTurn && tn.l.o.Jobs != nil {
+			return tn.awaitJobs(ctx, reason)
+		}
 		return tn.pokeTodos(ctx, reason)
 	}
 	// A hook that always denies must not run the turn forever.
@@ -359,6 +376,50 @@ func (tn *turn) stopped(ctx context.Context, session hooks.Session, stop provide
 	}
 	tn.stopDenials++
 	return tn.continueWith(ctx, decision.Reason)
+}
+
+// awaitJobs keeps a turn the model ended going while its background
+// commands run: it waits for the next to end, and the next request tells
+// the model how it ended.
+func (tn *turn) awaitJobs(ctx context.Context, reason acp.StopReason) (Result, bool, error) {
+	if err := tn.l.o.Jobs.Next(ctx); err != nil {
+		if result, done, endErr := tn.ended(ctx, nil); done {
+			return result, true, endErr
+		}
+		return Result{}, true, err
+	}
+	if !tn.l.o.Jobs.Unreported() {
+		return tn.pokeTodos(ctx, reason)
+	}
+	return Result{}, false, nil
+}
+
+// reportJobs tells the model how the background commands it was not told
+// about ended.
+func (tn *turn) reportJobs(ctx context.Context) error {
+	if tn.l.o.Jobs == nil {
+		return nil
+	}
+	ended := tn.l.o.Jobs.Take()
+	if len(ended) == 0 {
+		return nil
+	}
+	reports := make([]string, len(ended))
+	for i, job := range ended {
+		outcome, report := job.Report()
+		reports[i] = report
+		// The call that started the job ended when it started; the client
+		// is shown how the job ended under it.
+		status, err := Status(outcome)
+		if err != nil {
+			return err
+		}
+		tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+			ToolCallId: acp.ToolCallId(job.CallID), Status: &status,
+			Content: []acp.ToolCallContent{tools.TextContent(report)},
+		}})
+	}
+	return tn.append(ctx, userText(jobsPrefix+strings.Join(reports, "\n\n")))
 }
 
 // pokeTodos ends the turn, unless it ended by itself with todo items
