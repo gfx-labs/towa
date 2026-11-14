@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0](https://github.com/gfx-labs/towa/compare/v0.1.2...v0.2.0) (2026-11-14)
+
+
+### Features
+
+* **acp:** embedded context, retry notices, MCP elicitation, terminal auth ([f5a9ae9](https://github.com/gfx-labs/towa/commit/f5a9ae97ebfe19155495237b8e3cd895c9b39369))
+* **anthropic:** sign OAuth requests with Claude Code's cch ([c97012c](https://github.com/gfx-labs/towa/commit/c97012c4bb9fbde08f09ea4d2e87d624f83d5106))
+* **models:** select a model without its account and expand provider:*/model to every account ([cda21d9](https://github.com/gfx-labs/towa/commit/cda21d991c4e918ade157d7040c8020fc5a47515))
+* **session:** reasoning_effort config option ([bf49cc2](https://github.com/gfx-labs/towa/commit/bf49cc20d0df130e66917c6fd304906c27eb48aa))
+
 ## [0.1.2](https://github.com/gfx-labs/towa/compare/v0.1.1...v0.1.2) (2026-11-13)
 
 
