@@ -179,11 +179,14 @@ providers:
     # from where it would without the entry. max_output_tokens is sent to a
     # chat endpoint as max_tokens with every request, and an endpoint counts
     # it against the context window: give a figure that leaves room for the
-    # prompt, not the largest the endpoint allows.
+    # prompt, not the largest the endpoint allows. reasoning_efforts are
+    # the efforts an ACP client may choose for the model in its
+    # reasoning_effort option.
     models:
       - id: anthropic/claude-opus-4.7
         context_window: 1000000
         max_output_tokens: 128000
+        reasoning_efforts: [low, medium, high, xhigh, max]
   - id: zai
     kind: chat
     base_url: https://api.z.ai/api/coding/paas/v4
@@ -272,7 +275,8 @@ Model metadata (context window, max output) comes from the first of: the built-i
 ### Runtime model selection
 
 - `session/new` uses `_meta` or the configured default.
-- `session/set_config_option` with the `model` category switches between turns. The session advertises the entries of `models`, in list order, as a select option. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
+- `session/set_config_option` with the `model` category switches between turns. The session advertises the entries of `models`, in list order, as a select option.
+- Reasoning effort is its own config option, `reasoning_effort` in the `thought_level` category, as codex-acp names it (`docs/notes/2026-11-13-reasoning-effort.md`). The `#effort` suffix is how the CLI and config write an entry's starting effort; an ACP client never needs it. The choices are the efforts the selected entry takes: those its configured provider lists under `models[].reasoning_efforts`, or else those its account's model list gives (Anthropic's `capabilities.effort`, the Codex backend's `supported_reasoning_levels`). The option starts at the entry's `#effort`, or at `default`, which sends none. Changing the model keeps the effort when the new model takes it and moves it to the new entry's start when not. A model nothing gives efforts for has no option, and its entry's `#effort` applies. The effort applies to the selected entry; a fallback entry uses its own. Plain messages and structural tool calls remain portable. Opaque replay requires an exact canonical provider, wire model and configured account match. Incompatible optional thinking is omitted; required signatures and native context fail explicitly or are regenerated from retained source before a request is sent.
 - Subagent spawns may name an entry of `subagents.models`, each of which is an entry of `models`.
 
 ## Tools
@@ -303,13 +307,13 @@ Names, descriptions and schemas are in `src/tools/core/specs`. The instructions 
 - Output gating: results over a configured token budget return a summary with the estimated size; re-running with `accept_large_output` returns the full result.
 - Search: there is no search tool. The model finds files and searches them with `rg`, `find` and `ls` through `bash`, as pi's does, and the prompt says so. `glob` and `grep` were removed on 2026-11-12 (`docs/notes/2026-11-12-no-search-tools.md`).
 - Todo: the `todo` tool maps to ACP `plan` updates. Its input is jcode's: the list, a `plan` (the user's intention and how well it is understood) and `goals` (the feedback loop for each goal, its coverage, relevance and traceability, delivery state and when to stop). The model fills the assessment in and nothing scores it. A turn that ends with unfinished items is sent back to them up to `limits.max_todo_pokes` times. Both are off by default (`tools.todo.enabled`, `limits.max_todo_pokes: 0`).
-- Off by default: `todo`, `webfetch`, `websearch`, `subagent` and `conversation_search`. A tool's definition is sent with every request, and `todo`, `webfetch` and `subagent` were about 2,000 tokens of each one (`docs/notes/2026-11-12-token-use.md`). `tools.todo.enabled`, `webfetch.enabled`, `websearch.enabled`, `subagents.max_depth: 1` and `conversation_search.enabled` turn them on.
+- Off by default: `todo`, `webfetch`, `websearch` and `subagent`. A tool's definition is sent with every request, and `todo`, `webfetch` and `subagent` were about 2,000 tokens of each one (`docs/notes/2026-11-12-token-use.md`). `tools.todo.enabled`, `webfetch.enabled`, `websearch.enabled` and `subagents.max_depth: 1` turn them on.
 - A tool result with nothing in it, such as a command that printed nothing, reaches the model as "The tool call returned no output." A provider refuses an empty part.
 - A text block with no text is left out of a prompt for the same reason. A prompt with nothing left is refused as invalid params and nothing is stored (`docs/notes/2026-11-12-empty-prompt-part.md`).
 - Web: webfetch with HTML to Markdown, off by default. Web search is off by default too (`websearch.enabled`). Turned on, it has two forms, chosen per chain entry (`docs/notes/2026-11-12-hosted-websearch.md`):
   - Hosted (`websearch.hosted`, on by default): an entry on the built-in `claude` or `codex` provider is sent the provider's own `web_search` tool in place of ours, and the provider runs the search. Its items are stored whole and go back only to the provider, model and account that made them. Any other request gets them as text. The client is shown each search as a tool call.
   - Local: every other entry gets `websearch`, where this process posts the query to DuckDuckGo's HTML page (`websearch.endpoint`) and returns titles, URLs and snippets. A bot challenge from the endpoint is reported to the model as a failed search (`docs/notes/2026-11-11-websearch.md`).
-- Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`), off by default (`conversation_search.enabled`, `docs/notes/2026-11-12-slim-instructions.md`). It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. It can also read other sessions by id, so a parent can read the sessions of the subagents it spawned. Scope is a config setting: `self`, `descendants` (the session and every subagent session below it, the default) or `store` (every session in the store, opt-in because a shared store holds other workers' sessions). Keyword matching first. Result and snippet limits come from config.
+- Conversation search: a `conversation_search` tool with jcode's shape (`query`, `turns` range, `stats`), on by default; `conversation_search.enabled: false` removes it. It was off from `397bf56` (`docs/notes/2026-11-12-slim-instructions.md`) and is on again since 2026-11-13. It reads the session's full stored history, including entries from before any compaction, not the compacted context the model currently sees. It can also read other sessions by id, so a parent can read the sessions of the subagents it spawned. Scope is a config setting: `self`, `descendants` (the session and every subagent session below it, the default) or `store` (every session in the store, opt-in because a shared store holds other workers' sessions). Keyword matching first. Result and snippet limits come from config.
 - Argument repair: before validation, a tool input is repaired when a list or object argument arrives as a JSON string, a single object arrives where a list is declared, or a number or boolean arrives as a string. Each repair is counted in telemetry and logged, never silent. Anything else that fails the schema is returned to the model as an error.
 - Subagent: see below.
 
@@ -523,7 +527,7 @@ Later, undecided: MCP exposure levels per tool, virtual models, cache warming, p
 ## Workflow
 
 - Commits go straight to master, with conventional commit subjects. A PR is squash-merged with its title as the subject, and `pr-title.yml` checks the title.
-- CI runs on the `talos-metal-gfx` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
+- CI runs on the `talos-metal-gfx-public` runner with acphost's steps: build, a `CGO_ENABLED=0` build, vet, race tests, golangci-lint v2.15.0, and a check that generated code is current.
 - `release.yml` runs release-please on each master push, as acpc and acphost do. It keeps a release PR open with the next 0.x version (`bump-minor-pre-major`: a `feat` or breaking change bumps the minor) and `CHANGELOG.md`. Merging it tags `vX.Y.Z` and creates the GitHub release. The job runs in the `release` environment, which only master may deploy to, and opens the PR with a token of the `gfx-releaser` App (`RELEASE_APP_ID`, `RELEASE_APP_KEY`), since a PR opened with `GITHUB_TOKEN` gets no CI runs. A note named `docs/notes/<date>-release-vX.Y.Z.md` is linked from the release. The same job then builds static binaries for linux amd64, linux arm64 and darwin arm64 with the tag as `buildVersion`, and attaches each as `towa_<version>_<os>_<arch>.tar.gz` (the binary, `LICENSE`, `README.md`) with `checksums.txt` of their sha256 sums.
 
 ## Release

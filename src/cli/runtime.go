@@ -69,10 +69,10 @@ type sessionRuntime struct {
 	// with it the provider's cached prefix, until a new session.
 	loaded *agentctx.Loaded
 	// prompts keeps the system prompt built from loaded between turns.
-	prompts        promptCache
-	mapper         loop.Mapper
-	compactor      *compact.Controller
-	compactorModel string
+	prompts      promptCache
+	mapper       loop.Mapper
+	compactor    *compact.Controller
+	compactorKey string
 }
 
 type preparedTurn struct {
@@ -80,7 +80,7 @@ type preparedTurn struct {
 	mapper        loop.Mapper
 	system        []provider.SystemBlock
 	native        map[string]compact.Native
-	modelName     string
+	compactorKey  string
 	summaryWindow int64
 	summaryOutput int64
 }
@@ -239,7 +239,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 		Limits: f.cfg.Limits, Now: time.Now, Repair: f.cfg.Tools.Repair.Enabled,
 		Gate: f.cfg.Tools.Gate, Hooks: hooks.New(f.cfg.Hooks), Logger: f.tel.Logger,
 		NewCompactor: func(context.Context, loop.Turn, loop.Resolved) (*compact.Controller, error) {
-			if r.compactor != nil && r.compactorModel == prepared.modelName {
+			if r.compactor != nil && r.compactorKey == prepared.compactorKey {
 				return r.compactor, nil
 			}
 			if r.compactor != nil {
@@ -262,7 +262,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 			if err != nil {
 				return nil, err
 			}
-			r.compactor, r.compactorModel = controller, prepared.modelName
+			r.compactor, r.compactorKey = controller, prepared.compactorKey
 			return controller, nil
 		},
 	})
@@ -335,6 +335,9 @@ func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn
 	if err != nil {
 		return preparedTurn{}, err
 	}
+	if s.turn.Effort != "" {
+		selected.Entries[0].Effort = s.turn.Effort
+	}
 	chain, err := selected.Chain(f.providers.Client)
 	if err != nil {
 		return preparedTurn{}, err
@@ -348,7 +351,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn
 	}
 	first := selected.Entries[0]
 	result := preparedTurn{
-		native: make(map[string]compact.Native), modelName: selected.Name,
+		native: make(map[string]compact.Native), compactorKey: selected.Name + "#" + first.Effort,
 		summaryWindow: first.Metadata.ContextWindow,
 		summaryOutput: first.Metadata.MaxOutputTokens,
 	}

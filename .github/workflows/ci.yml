@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   go:
-    runs-on: talos-metal-gfx
+    runs-on: talos-metal-gfx-public
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
