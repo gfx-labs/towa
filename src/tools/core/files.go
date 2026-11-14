@@ -142,7 +142,9 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 				return tools.TextResult(transcript.OutcomeFailed, "File does not exist. Use write to create a file."), nil
 			}
 			var change fsops.Change
-			err = tracker.Edit(ctx, path, func() error {
+			// An edit needs no read first: ApplyEdits reads the file as it is
+			// now and refuses an old_string that is not in it exactly once.
+			err = tracker.Write(ctx, path, func() error {
 				edited, editErr := fsops.ApplyEdits(ctx, roots, cfg.Files, fsops.EditInput{Path: path, Edits: edits})
 				change = edited.Change
 				return editErr
