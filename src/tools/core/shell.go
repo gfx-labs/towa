@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -82,7 +84,9 @@ func bashTool(spec provider.Tool, cfg config.Tools) tools.Tool {
 			if args.Timeout != nil {
 				ms := *args.Timeout
 				if math.IsNaN(ms) || math.IsInf(ms, 0) || ms <= 0 || ms > float64(cfg.Shell.MaxTimeout)/float64(time.Millisecond) {
-					return tools.TextResult(transcript.OutcomeFailed, "timeout must be positive and within the configured maximum."), nil
+					return tools.TextResult(transcript.OutcomeFailed, fmt.Sprintf(
+						"The command did not run: timeout %s ms is not allowed. It must be more than 0 and at most %d ms. Omit timeout for the default of %d ms.",
+						strconv.FormatFloat(ms, 'f', -1, 64), cfg.Shell.MaxTimeout.Milliseconds(), cfg.Shell.Timeout.Milliseconds())), nil
 				}
 				ns := ms * float64(time.Millisecond)
 				if ns < 1 || ns >= float64(math.MaxInt64) {

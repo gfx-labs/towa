@@ -12,6 +12,9 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -61,7 +64,11 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		if def.err != nil {
 			return nil, def.err
 		}
-		t := b.tool(def.spec)
+		spec, err := fill(def.spec, limits(cfg))
+		if err != nil {
+			return nil, err
+		}
+		t := b.tool(spec)
 		t.Summary, t.Guidance = def.summary, def.guidance
 		result = append(result, t)
 	}
@@ -111,3 +118,35 @@ func decodeSpec(name string) parsedSpec {
 		summary: spec.Summary, guidance: spec.Guidance,
 	}
 }
+
+// limits are the configured values a spec names as {key} in its
+// description and schema, so the model is told the numbers it is held to.
+func limits(cfg config.Tools) map[string]string {
+	return map[string]string{
+		"{shell_timeout_ms}":     strconv.FormatInt(cfg.Shell.Timeout.Milliseconds(), 10),
+		"{shell_max_timeout_ms}": strconv.FormatInt(cfg.Shell.MaxTimeout.Milliseconds(), 10),
+		"{shell_output_chars}":   strconv.Itoa(bashOutputCharacters),
+		"{read_default_lines}":   strconv.Itoa(cfg.Files.ReadDefaultLines),
+	}
+}
+
+// fill puts the values in place of their keys in a spec's description and
+// schema. A key left in braces that has no value is an error, so a spec
+// never reaches a model with a placeholder in it.
+func fill(spec provider.Tool, values map[string]string) (provider.Tool, error) {
+	pairs := make([]string, 0, 2*len(values))
+	for key, value := range values {
+		pairs = append(pairs, key, value)
+	}
+	r := strings.NewReplacer(pairs...)
+	spec.Description = r.Replace(spec.Description)
+	spec.InputSchema = jsontext.Value(r.Replace(string(spec.InputSchema)))
+	for _, text := range []string{spec.Description, string(spec.InputSchema)} {
+		if key := unfilled.FindString(text); key != "" {
+			return provider.Tool{}, fmt.Errorf("core: spec of %s names %s, which has no value", spec.Name, key)
+		}
+	}
+	return spec, nil
+}
+
+var unfilled = regexp.MustCompile(`\{[a-z_]+\}`)

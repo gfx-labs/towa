@@ -8,7 +8,7 @@
     "properties": {
       "file_path": {"type": "string", "description": "Path of the file, absolute or from the working directory."},
       "offset": {"type": "integer", "minimum": 0, "description": "Line to start from, counted from 1. Omit to start at the first line."},
-      "limit": {"type": "integer", "exclusiveMinimum": 0, "description": "Number of lines to read. Omit for the configured default."}
+      "limit": {"type": "integer", "exclusiveMinimum": 0, "description": "Number of lines to read. Omit for {read_default_lines}."}
     },
     "required": ["file_path"],
     "additionalProperties": false
