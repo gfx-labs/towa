@@ -102,6 +102,7 @@ func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{
 		"sessionUpdate": "usage_update",
+		"_meta":         map[string]any{"towa": map[string]any{"model": "opus"}},
 		"size":          float64(200000),
 		"used":          float64(5300),
 		"cost":          map[string]any{"amount": 0.25, "currency": "USD"},
