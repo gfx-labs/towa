@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1](https://github.com/gfx-labs/towa/compare/v0.3.0...v0.3.1) (2026-11-14)
+
+
+### Bug fixes
+
+* **loop:** send a request again when the provider cuts its response off mid-stream ([6949c9e](https://github.com/gfx-labs/towa/commit/6949c9e2d38dc85d20e5eeb9222993f6e89c21db))
+* **loop:** send the session's cumulative cost in usage_update ([d0c2c16](https://github.com/gfx-labs/towa/commit/d0c2c16d8f531d2fa2709f0040356cf38e4a287a))
+* **tools:** tell the model to wait for a background job with bash_output block ([708a6c4](https://github.com/gfx-labs/towa/commit/708a6c4d318fc3bc68ab25e10dadeddde3d60801))
+
 ## [0.3.0](https://github.com/gfx-labs/towa/compare/v0.2.0...v0.3.0) (2026-11-14)
 
 
