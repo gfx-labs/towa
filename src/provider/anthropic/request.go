@@ -253,6 +253,15 @@ type messageBuilder struct {
 	provider string
 	origin   transcript.Origin
 	out      []*message
+	// pendingMedia is media taken out of error results, waiting for the
+	// run of tool results it came from to end.
+	pendingMedia []mediaGroup
+}
+
+// mediaGroup is the media of one tool call.
+type mediaGroup struct {
+	callID string
+	media  []*mediaBlock
 }
 
 // buildMessages turns items into messages.
@@ -263,7 +272,20 @@ func (c *Client) buildMessages(origin transcript.Origin, items []transcript.Item
 			return nil, perr
 		}
 	}
+	b.flushMedia()
 	return b.out, nil
+}
+
+// flushMedia sends the pending media, each group after a text block that
+// names its tool call.
+func (b *messageBuilder) flushMedia() {
+	for _, group := range b.pendingMedia {
+		b.add("user", &textBlock{Type: "text", Text: fmt.Sprintf("Media from tool call %s:", group.callID)})
+		for _, block := range group.media {
+			b.add("user", block)
+		}
+	}
+	b.pendingMedia = nil
 }
 
 // add appends blocks to the last message when it has the role, and starts a
@@ -282,6 +304,9 @@ func (b *messageBuilder) add(role string, blocks ...any) {
 func (b *messageBuilder) addItem(i int, item transcript.Item) *provider.Error {
 	if err := item.Validate(); err != nil {
 		return invalidRequest(fmt.Sprintf("item %d: %v", i, err))
+	}
+	if item.ToolResult == nil {
+		b.flushMedia()
 	}
 	// Opaque replay requires exact request provenance.
 	own := item.OpaqueCompatible(b.provider, b.origin)
@@ -366,9 +391,27 @@ func (b *messageBuilder) addToolResult(tr *transcript.ToolResult) *provider.Erro
 	if perr != nil {
 		return perr
 	}
+	failed := tr.Outcome != transcript.OutcomeCompleted
+	if failed {
+		// Error results accept only text. Media must follow all adjacent
+		// tool results in the same user message.
+		group := mediaGroup{callID: tr.CallID}
+		kept := blocks[:0]
+		for _, block := range blocks {
+			if m, ok := block.(*mediaBlock); ok {
+				group.media = append(group.media, m)
+			} else {
+				kept = append(kept, block)
+			}
+		}
+		blocks = kept
+		if len(group.media) > 0 {
+			b.pendingMedia = append(b.pendingMedia, group)
+		}
+	}
 	b.add("user", &toolResultBlock{
 		Type: "tool_result", ToolUseID: tr.CallID, Content: blocks,
-		IsError: tr.Outcome != transcript.OutcomeCompleted,
+		IsError: failed,
 	})
 	return nil
 }
