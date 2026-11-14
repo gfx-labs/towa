@@ -39,12 +39,15 @@ type Response struct {
 	// writing holds the ids of the calls announced while the model was
 	// still writing them, in order, until each one finishes.
 	writing []string
+	// arrived says an event came. Before one does, the router owns retrying.
+	arrived bool
 }
 
 // Add takes one event and returns the updates that show it to the client.
 // A finished text or thinking item is shown only when no delta came for it,
 // since its deltas already showed it.
 func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
+	r.arrived = true
 	switch {
 	case e.TextDelta != "":
 		r.textShown = true

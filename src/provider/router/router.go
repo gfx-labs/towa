@@ -164,7 +164,8 @@ func New(o Options) (*Router, error) {
 //
 // A request is sent again only while its response has yielded nothing. Once
 // an event has reached the caller the client may have been shown it, so a
-// failure after that is returned as it is.
+// failure after that is returned as it is, and the caller decides whether
+// to send the request again.
 func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[provider.Event, error] {
 	return func(yield func(provider.Event, error) bool) {
 		report, _ := ctx.Value(reportKey{}).(func(Move))
