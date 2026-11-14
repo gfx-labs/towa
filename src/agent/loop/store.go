@@ -38,6 +38,9 @@ func (tn *turn) load(ctx context.Context) error {
 			return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
 		}
 		tn.entries = append(tn.entries, entry)
+		if entry.Item.Usage != nil {
+			tn.cost.Add(*entry.Item.Usage)
+		}
 		if entry.Item.Compaction == nil {
 			history = append(history, entry.Item)
 		}

@@ -26,8 +26,9 @@ type Mapper struct {
 
 // Updates returns the updates for one item, in order. Items a client is not
 // shown give none: ModelSwitch, Compaction, Interrupted, and a Native item
-// that is not a provider's web search.
-func (m Mapper) Updates(item transcript.Item) ([]acp.SessionUpdate, error) {
+// that is not a provider's web search. cost is the session's running cost,
+// which a Usage item adds to.
+func (m Mapper) Updates(item transcript.Item, cost *Cost) ([]acp.SessionUpdate, error) {
 	if err := item.Validate(); err != nil {
 		return nil, err
 	}
@@ -64,7 +65,7 @@ func (m Mapper) Updates(item transcript.Item) ([]acp.SessionUpdate, error) {
 	case item.Native != nil:
 		return HostedSearch(item), nil
 	case item.Usage != nil:
-		if update, ok := m.Usage(*item.Usage); ok {
+		if update, ok := m.Usage(*item.Usage, cost.Add(*item.Usage)); ok {
 			return []acp.SessionUpdate{{UsageUpdate: &update}}, nil
 		}
 	}
@@ -177,8 +178,9 @@ func ToolResult(result transcript.ToolResult, content []acp.ToolCallContent) (ac
 }
 
 // Usage is the update for one model request's usage: how much of the
-// model's context the request filled, and its cost when the price is known.
-func (m Mapper) Usage(u transcript.Usage) (acp.SessionUsageUpdate, bool) {
+// model's context the request filled, and total, the session's cost so far,
+// when it is known.
+func (m Mapper) Usage(u transcript.Usage, total *acp.Cost) (acp.SessionUsageUpdate, bool) {
 	if m.ContextSize == nil {
 		return acp.SessionUsageUpdate{}, false
 	}
@@ -186,16 +188,39 @@ func (m Mapper) Usage(u transcript.Usage) (acp.SessionUsageUpdate, bool) {
 	if !ok {
 		return acp.SessionUsageUpdate{}, false
 	}
-	out := acp.SessionUsageUpdate{
+	return acp.SessionUsageUpdate{
 		Size: size,
 		// What the request read and what it wrote are both in the context
 		// of the next request.
 		Used: int(u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens + u.OutputTokens),
+		Cost: total,
+	}, true
+}
+
+// Cost sums what a session's model requests cost, for the cumulative cost
+// a usage update carries. The sum is known only while every request had a
+// price, all in one currency: a request without one makes it unknown.
+type Cost struct {
+	total   acp.Cost
+	unknown bool
+}
+
+// Add counts one request and returns the session's cost so far, or nil when
+// it is not known.
+func (c *Cost) Add(u transcript.Usage) *acp.Cost {
+	switch {
+	case c.unknown:
+	case u.Cost == nil, c.total.Currency != "" && c.total.Currency != u.Cost.Currency:
+		c.unknown = true
+	default:
+		c.total.Amount += u.Cost.Amount
+		c.total.Currency = u.Cost.Currency
 	}
-	if u.Cost != nil {
-		out.Cost = &acp.Cost{Amount: u.Cost.Amount, Currency: u.Cost.Currency}
+	if c.unknown {
+		return nil
 	}
-	return out, true
+	total := c.total
+	return &total
 }
 
 // Block returns a part as ACP content. It reports false for a part a client

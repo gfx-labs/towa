@@ -62,6 +62,8 @@ type turn struct {
 	compactionInput *compact.BeforeInput
 	mapper          Mapper
 	schemas         map[string]*repair.Schema
+	// cost is the session's running cost, from its stored usage on.
+	cost Cost
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -365,10 +367,7 @@ func (tn *turn) discard(ctx context.Context, resp *Response) error {
 		tn.notRun(ctx, id)
 	}
 	if resp.Usage != nil {
-		tn.add(*resp.Usage)
-		if update, ok := tn.mapper.Usage(*resp.Usage); ok {
-			tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
-		}
+		tn.usage(ctx, *resp.Usage)
 		if err := tn.append(ctx, transcript.Item{Usage: resp.Usage}); err != nil {
 			return err
 		}
@@ -415,11 +414,8 @@ func (tn *turn) record(ctx context.Context, resp *Response, streamErr error) err
 		tn.notRun(ctx, id)
 	}
 	if resp.Usage != nil {
-		tn.add(*resp.Usage)
+		tn.usage(ctx, *resp.Usage)
 		stored = append(stored, transcript.Item{Usage: resp.Usage})
-		if update, ok := tn.mapper.Usage(*resp.Usage); ok {
-			tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
-		}
 	}
 	// The calls are durable before any of them is dispatched, so a
 	// process that dies here leaves a call without a result, which the

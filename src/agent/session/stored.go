@@ -215,11 +215,12 @@ func (a *Agent) replayHistory(ctx context.Context, s *session) error {
 	if err != nil {
 		return storeError(s.id, err)
 	}
+	var cost loop.Cost
 	for entry, err := range entries {
 		if err != nil {
 			return storeError(s.id, err)
 		}
-		updates, err := mapper.Updates(entry.Item)
+		updates, err := mapper.Updates(entry.Item, &cost)
 		if err != nil {
 			return fmt.Errorf("session: replaying entry %s of session %s: %w", entry.ID, s.id, err)
 		}

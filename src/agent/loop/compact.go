@@ -131,7 +131,7 @@ func (tn *turn) applyCompaction(ctx context.Context, effects []transcript.Item) 
 	}
 	for i, effect := range effects {
 		if effect.Usage != nil {
-			if update, ok := tn.mapper.Usage(*effect.Usage); ok {
+			if update, ok := tn.mapper.Usage(*effect.Usage, tn.cost.Add(*effect.Usage)); ok {
 				tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
 			}
 		}

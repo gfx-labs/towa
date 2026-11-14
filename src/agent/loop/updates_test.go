@@ -34,7 +34,7 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 	path := b.path("notes.txt")
 	input := jsontext.Value(`{"path":"` + path + `"}`)
 
-	updates, err := m.Updates(transcript.Item{ToolCall: &transcript.ToolCall{ID: "c1", Name: "read", Input: input}})
+	updates, err := m.Updates(transcript.Item{ToolCall: &transcript.ToolCall{ID: "c1", Name: "read", Input: input}}, &loop.Cost{})
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{
 		"sessionUpdate": "tool_call",
@@ -48,7 +48,7 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 	}}, wire(t, updates))
 
 	// A tool the set does not have is still shown.
-	updates, err = m.Updates(transcript.Item{ToolCall: &transcript.ToolCall{ID: "c2", Name: "gone", Input: jsontext.Value(`{}`)}})
+	updates, err = m.Updates(transcript.Item{ToolCall: &transcript.ToolCall{ID: "c2", Name: "gone", Input: jsontext.Value(`{}`)}}, &loop.Cost{})
 	require.NoError(t, err)
 	shown := wire(t, updates)[0]
 	assert.Equal(t, "gone", shown["title"])
@@ -61,7 +61,7 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 			// A reference to stored content is not content for a client.
 			{Stored: &transcript.Stored{Hash: "sha256:00", Size: 4096}},
 		},
-	}})
+	}}, &loop.Cost{})
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{
 		"sessionUpdate": "tool_call_update",
@@ -72,14 +72,14 @@ func TestUpdatesForAToolCallAndItsResult(t *testing.T) {
 		}},
 	}}, wire(t, updates))
 
-	_, err = m.Updates(transcript.Item{ToolResult: &transcript.ToolResult{CallID: "c1", Outcome: "exploded"}})
+	_, err = m.Updates(transcript.Item{ToolResult: &transcript.ToolResult{CallID: "c1", Outcome: "exploded"}}, &loop.Cost{})
 	assert.Error(t, err, "an outcome outside the four is not shown as one of them")
 }
 
 func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 	m := loop.Mapper{ContextSize: func(model string) (int, bool) { return 200000, model == "opus" }}
 	kinds := func(item transcript.Item) []any {
-		updates, err := m.Updates(item)
+		updates, err := m.Updates(item, &loop.Cost{})
 		require.NoError(t, err)
 		var out []any
 		for _, u := range wire(t, updates) {
@@ -97,7 +97,8 @@ func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 		Model: "opus", InputTokens: 10, CacheReadTokens: 5000, CacheWriteTokens: 200, OutputTokens: 90,
 		Cost: &transcript.Cost{Amount: 0.25, Currency: "USD"},
 	}
-	updates, err := m.Updates(transcript.Item{Usage: &usage})
+	var cost loop.Cost
+	updates, err := m.Updates(transcript.Item{Usage: &usage}, &cost)
 	require.NoError(t, err)
 	assert.Equal(t, []map[string]any{{
 		"sessionUpdate": "usage_update",
@@ -105,6 +106,20 @@ func TestUpdatesForTextThoughtsAndUsage(t *testing.T) {
 		"used":          float64(5300),
 		"cost":          map[string]any{"amount": 0.25, "currency": "USD"},
 	}}, wire(t, updates))
+
+	// ACP's cost is the session's cumulative cost, not the request's.
+	updates, err = m.Updates(transcript.Item{Usage: &usage}, &cost)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"amount": 0.5, "currency": "USD"}, wire(t, updates)[0]["cost"])
+
+	// One request without a price makes the session's cost unknown from then on.
+	unpriced := usage
+	unpriced.Cost = nil
+	for _, item := range []transcript.Usage{unpriced, usage} {
+		updates, err = m.Updates(transcript.Item{Usage: &item}, &cost)
+		require.NoError(t, err)
+		assert.NotContains(t, wire(t, updates)[0], "cost")
+	}
 
 	usage.Model = "unknown-model"
 	assert.Empty(t, kinds(transcript.Item{Usage: &usage}), "no context size is made up for a model without one")
@@ -128,7 +143,7 @@ func TestAPromptSurvivesTheTripThroughTheTranscript(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte{0, 1, 2}, item.User.Parts[5].Resource.Data)
 
-	updates, err := loop.Mapper{}.Updates(item)
+	updates, err := loop.Mapper{}.Updates(item, &loop.Cost{})
 	require.NoError(t, err)
 	require.Len(t, updates, len(prompt))
 	for i, u := range updates {

@@ -114,8 +114,9 @@ func storedTurn(st store.Store) session.TurnFunc {
 		if err := st.Append(ctx, id, entries); err != nil {
 			return loop.Result{}, err
 		}
+		var cost loop.Cost
 		for _, item := range answer {
-			updates, err := loop.Mapper{}.Updates(item)
+			updates, err := loop.Mapper{}.Updates(item, &cost)
 			if err != nil {
 				return loop.Result{}, err
 			}

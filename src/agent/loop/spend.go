@@ -3,6 +3,8 @@ package loop
 import (
 	"context"
 
+	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
@@ -26,6 +28,15 @@ func (tn *turn) add(u transcript.Usage) {
 	tn.spentMu.Lock()
 	defer tn.spentMu.Unlock()
 	tn.spent.Add(u)
+}
+
+// usage counts one model request of the turn and shows the client its usage
+// with the session's cost so far.
+func (tn *turn) usage(ctx context.Context, u transcript.Usage) {
+	tn.add(u)
+	if update, ok := tn.mapper.Usage(u, tn.cost.Add(u)); ok {
+		tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
+	}
 }
 
 func (tn *turn) snapshot() Spent {
