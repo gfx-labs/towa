@@ -1,10 +1,10 @@
 {
   "name": "edit",
   "summary": "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
-  "description": "Replace exact text in a file with one or more edits. Read the file in this session first. The edits are applied in order, each to the result of the ones before it, and nothing is written unless every edit applies. Each old_string must occur once unless replace_all is true. The file must exist: use write to create one.",
+  "description": "Replace exact text in a file with one or more edits. For one replacement, give old_string and new_string (and replace_all) directly. For several, give them in edits instead. Read the file in this session first. The edits are applied in order, each to the result of the ones before it, and nothing is written unless every edit applies. Each old_string must occur once unless replace_all is true. The file must exist: use write to create one.",
   "guidance": [
-    "Use edit for precise changes (edits[].old_string must match exactly).",
-    "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls.",
+    "Use edit for precise changes (old_string must match exactly).",
+    "For one replacement, pass old_string and new_string as parameters. When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls.",
     "Each edits[].old_string is matched against the file as the earlier edits of the call left it. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
     "Keep edits[].old_string as small as possible while still being unique in the file. Do not pad with large unchanged regions. If it occurs more than once, add surrounding lines or set replace_all.",
     "Read a file with read before the first edit to it. Output of cat or sed in bash does not count as a read.",
@@ -18,7 +18,7 @@
       "edits": {
         "type": "array",
         "minItems": 1,
-        "description": "Replacements to make, in order. Each is applied to the result of the ones before it. If one fails, the file is left as it was.",
+        "description": "Replacements to make, in order. Each is applied to the result of the ones before it. If one fails, the file is left as it was. Omit it when old_string and new_string are given.",
         "items": {
           "type": "object",
           "properties": {
@@ -29,9 +29,12 @@
           "required": ["old_string", "new_string"],
           "additionalProperties": false
         }
-      }
+      },
+      "old_string": {"type": "string", "description": "One edit without edits: text to replace, exactly as it is in the file."},
+      "new_string": {"type": "string", "description": "One edit without edits: replacement text. It must differ from old_string."},
+      "replace_all": {"type": "boolean", "default": false, "description": "One edit without edits: replace every occurrence."}
     },
-    "required": ["file_path", "edits"],
+    "required": ["file_path"],
     "additionalProperties": false
   }
 }
