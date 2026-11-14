@@ -11,11 +11,11 @@ const (
 // Subagents configures the child turns a session's model may start.
 //
 // max_depth is 0 by default, so the model is not given the tool: its
-// definition is sent with every request and most sessions start no child
-// (docs/notes/2026-11-12-token-use.md). The other defaults are what jcode
-// does at 8e11eb23e. Its direct subagent tool is gone
-// (crates/jcode-app-core/src/tool/tests.rs:342). The in-process child that
-// is left is run_swarm_task in crates/jcode-app-core/src/server/swarm.rs:
+// definition is sent with every request and most sessions start no child.
+// The other defaults are what jcode does at 8e11eb23e. Its direct subagent
+// tool is gone (crates/jcode-app-core/src/tool/tests.rs:342). The
+// in-process child that is left is run_swarm_task in
+// crates/jcode-app-core/src/server/swarm.rs:
 //   - jcode's depth is 1: the child's tool set has "subagent" and "task"
 //     removed (swarm.rs:1990-1993), so a child starts no child.
 //   - max_concurrent 32: default_swarm_max_concurrent_agents

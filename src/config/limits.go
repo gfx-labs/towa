@@ -13,9 +13,8 @@ const (
 )
 
 // Limits configures what one prompt turn may use, and how a failed model
-// request is retried. Zero means no limit. The turn limits default to off,
-// as in the sketch in docs/design.md: a limit is a choice of whoever runs
-// the harness.
+// request is retried. Zero means no limit. The turn limits default to off:
+// a limit is a choice of whoever runs the harness.
 type Limits struct {
 	// MaxToolCalls is how many tool calls one turn may run.
 	MaxToolCalls int64 `name:"max_tool_calls" default:"0" validate:"gte=0" help:"Tool calls one turn may run. 0 is no limit."`

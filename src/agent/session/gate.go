@@ -9,7 +9,7 @@ import acp "github.com/gfx-labs/go-acp"
 // only when the client advertised it. A client that predates the type does
 // not reject it: acp-go-sdk v0.13.5 decodes a notice as a session info
 // update and a compaction summary chunk as a user message chunk, without an
-// error (docs/design.md, "ACP layer").
+// error.
 type Gate struct {
 	client acp.ClientCapabilities
 }

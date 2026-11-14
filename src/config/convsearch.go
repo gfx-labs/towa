@@ -1,8 +1,8 @@
 package config
 
-// ConversationSearch bounds reads of the full stored conversation.
-// docs/design.md gives a search descendants as the default scope. The four
-// sizes are jcode's at 8e11eb23e, conversation_search.rs:135,306,310,189,201.
+// ConversationSearch bounds reads of the full stored conversation. A search
+// covers descendants by default. The four sizes are jcode's at 8e11eb23e,
+// conversation_search.rs:135,306,310,189,201.
 type ConversationSearch struct {
 	Enabled             bool   `name:"enabled" default:"true" help:"Give the model the tool that searches the stored conversation. On by default."`
 	Scope               string `name:"scope" default:"descendants" validate:"oneof=self descendants store" help:"Sessions a search covers: self, descendants or store."`

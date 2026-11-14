@@ -11,8 +11,8 @@ import (
 	"github.com/gfx-labs/towa/src/provider/models"
 )
 
-// claude-haiku-4-5 answers the adaptive thinking parameter with an HTTP 400
-// (docs/notes/2026-11-12-claude-thinking.md), so the default must not reach it.
+// claude-haiku-4-5 answers the adaptive thinking parameter with an HTTP 400,
+// so the default must not reach it.
 func TestClaudeThinkingIsLeftOffAModelThatRefusesIt(t *testing.T) {
 	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)

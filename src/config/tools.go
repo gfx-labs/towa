@@ -9,7 +9,7 @@ import "time"
 // 2026-11-11. A Claude Code figure cites a module of the unpacked 2.1.280
 // bundle, its line and the text to search for, since the bundle is minified
 // and its identifiers change with every version. The jcode figure is
-// unchecked. See docs/notes/2026-11-11-tools.md for what differs.
+// unchecked.
 type Tools struct {
 	// MaxOutputBytes is the most output one shell call keeps in memory.
 	// What is over it is dropped and the result says how much.
@@ -117,8 +117,7 @@ type ToolsBatch struct {
 // ToolsTodo configures the todo tool.
 type ToolsTodo struct {
 	// Enabled gives the model the todo tool. It is off by default: the
-	// tool's definition is about 1,100 tokens of every request
-	// (docs/notes/2026-11-12-token-use.md).
+	// tool's definition is about 1,100 tokens of every request.
 	Enabled bool `name:"enabled" help:"Give the model the todo tool, whose list the client shows as the plan."`
 }
 

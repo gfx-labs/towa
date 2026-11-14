@@ -24,8 +24,7 @@ const (
 // empty Route means there is none. src/sidecar/jev reads it and holds each route's
 // endpoint and default model.
 //
-// The limits are jcode's. docs/notes/2026-11-11-webfetch-and-jev.md gives
-// the ref, file and line of each.
+// The limits are jcode's.
 type Jev struct {
 	// Route is openrouter, typesafe, aimlapi or custom.
 	Route string `name:"route" validate:"omitempty,oneof=openrouter typesafe aimlapi custom" help:"Route to a decisions endpoint: openrouter, typesafe, aimlapi or custom. Empty means there is none."`

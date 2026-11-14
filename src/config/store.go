@@ -13,13 +13,11 @@ type Store struct {
 	// absolute path. Empty means the XDG state directory: Dir resolves it.
 	Root string `name:"root" placeholder:"DIR" help:"Absolute directory that holds one directory per session. Empty means towa/sessions in the XDG state directory."`
 	// Compression is how the log of a new session is stored. A session
-	// that exists keeps the format it was created with. The measurements
-	// behind the default are in docs/notes/2026-11-11-store.md.
+	// that exists keeps the format it was created with.
 	Compression string `name:"compression" default:"zstd" validate:"oneof=none zstd" help:"How the log of a new session is stored: none or zstd."`
 	// Fsync flushes every write of a session to the disk before the write
 	// is acknowledged. Off, a crash of the machine can lose or tear the
-	// last writes, and the next open drops a torn record. The cost is in
-	// docs/notes/2026-11-12-turn-cost.md.
+	// last writes, and the next open drops a torn record.
 	Fsync bool `name:"fsync" default:"true" help:"Flush every write of a session to the disk before it is acknowledged. On by default. Off is faster, and a crash of the machine can lose the last writes."`
 }
 

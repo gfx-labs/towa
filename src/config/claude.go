@@ -3,8 +3,7 @@ package config
 // Claude configures the Messages API client.
 type Claude struct {
 	// Thinking is the thinking parameter of a request. Measured on
-	// 2026-11-12 with a subscription login
-	// (docs/notes/2026-11-12-claude-thinking.md): a request with no
+	// 2026-11-12 with a subscription login: a request with no
 	// thinking parameter still gets thinking blocks from Opus 5.5, but their
 	// text is empty, so a client is shown nothing. "adaptive" alone is the
 	// same. The text comes only when a display is asked for.
