@@ -63,6 +63,8 @@ type Stop struct {
 // Addition is what towa puts under Key.
 type Addition struct {
 	Stop *Stop `json:"stop,omitzero"`
+	// Model names the model that served the request in a usage update.
+	Model string `json:"model,omitzero"`
 }
 
 // Meta returns meta with a under Key. meta may be nil.

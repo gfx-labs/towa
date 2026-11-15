@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -189,6 +190,7 @@ func (m Mapper) Usage(u transcript.Usage, total *acp.Cost) (acp.SessionUsageUpda
 		return acp.SessionUsageUpdate{}, false
 	}
 	return acp.SessionUsageUpdate{
+		Meta: harness.Meta(nil, harness.Addition{Model: u.Model}),
 		Size: size,
 		// What the request read and what it wrote are both in the context
 		// of the next request.
