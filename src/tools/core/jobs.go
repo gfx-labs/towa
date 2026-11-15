@@ -85,10 +85,12 @@ func renderJob(job *jobs.Job, run shell.Result, err error) (transcript.Outcome, 
 }
 
 // outputTail is the end of an output of size bytes, cut to what the model
-// is given, saying how much came before it.
+// is given, saying how much came before it. Trailing whitespace is left out
+// and not counted: it came after what is shown.
 func outputTail(tail string, size int64) string {
-	kept := lastUnits(strings.TrimRight(tail, " \t\r\n"), bashOutputCharacters)
-	if skipped := size - int64(len(kept)); skipped > 0 {
+	trimmed := strings.TrimRight(tail, " \t\r\n")
+	kept := lastUnits(trimmed, bashOutputCharacters)
+	if skipped := size - int64(len(tail)) + int64(len(trimmed)-len(kept)); skipped > 0 {
 		return fmt.Sprintf("[%d earlier bytes not shown]\n%s", skipped, kept)
 	}
 	return kept
