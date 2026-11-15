@@ -28,7 +28,8 @@ type Render func(job *Job, run shell.Result, err error) (transcript.Outcome, str
 type Job struct {
 	// ID is the name the model uses for the job.
 	ID string
-	// CallID is the tool call that started it.
+	// CallID is the tool call the client was sent for the call that
+	// started it. Its end is reported under this id.
 	CallID string
 	// Label is the call's description, or its command when it has none.
 	Label string

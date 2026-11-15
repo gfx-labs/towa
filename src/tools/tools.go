@@ -67,6 +67,9 @@ type Description struct {
 type Call struct {
 	// ID is the model's id for the call.
 	ID string
+	// ClientID is the id of the tool call the client was sent for this
+	// call: ID, or for a call inside a batch the batch's id.
+	ClientID string
 	// Input is the argument after repair and validation against the schema.
 	Input jsontext.Value
 	Env   Env

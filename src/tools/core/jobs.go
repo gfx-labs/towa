@@ -34,7 +34,7 @@ func startJob(ctx context.Context, call tools.Call, cfg config.Tools, jobSet *jo
 	if in.Timeout == 0 {
 		in.Timeout = cfg.Shell.MaxTimeout
 	}
-	job, err := jobSet.Start(ctx, call.Env, cfg, call.ID, label, in, renderJob)
+	job, err := jobSet.Start(ctx, call.Env, cfg, call.ClientID, label, in, renderJob)
 	if err != nil {
 		return tools.TextResult(transcript.OutcomeFailed, "The command did not run: "+err.Error())
 	}
