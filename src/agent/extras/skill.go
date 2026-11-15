@@ -31,7 +31,7 @@ func Skill(cfg config.Context, skills []agentctx.Skill) (tools.Tool, error) {
 		return tools.Tool{}, errors.New("skill_manage: negative file limit")
 	}
 	skills = slices.Clone(skills)
-	t := newTool(NameSkill, "Load a skill listed in the system prompt, by name. Returns the skill's full instructions and the directory its files are in. Load a skill before starting a task that its description matches.", acp.ToolKindRead, []byte(`{"type":"object","required":["name"],"properties":{"intent":{"type":"string"},"action":{"type":"string","enum":["load"]},"name":{"type":"string","description":"The skill's name as the system prompt lists it."}}}`))
+	t := newTool(NameSkill, "Load a skill listed in the system prompt, by name. Returns the skill's full instructions and the directory its files are in. Load one only when the task needs what it covers and your other instructions do not already give it. Do not load it again while its instructions are still in the conversation.", acp.ToolKindRead, []byte(`{"type":"object","required":["name"],"properties":{"intent":{"type":"string"},"action":{"type":"string","enum":["load"]},"name":{"type":"string","description":"The skill's name as the system prompt lists it."}}}`))
 	t.Summary = "Load a skill's instructions by name"
 	t.Run = skillTool{skills: skills, maxBytes: maxBytes}.run
 	return t, nil

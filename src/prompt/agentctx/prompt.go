@@ -255,9 +255,9 @@ func skillsText(skills []Skill, tool string) string {
 	}
 	var b strings.Builder
 	if tool != "" {
-		fmt.Fprintf(&b, "Skills hold instructions for particular kinds of task. When a task matches a skill's description, load the skill with the %s tool before starting.\n", tool)
+		fmt.Fprintf(&b, "Skills hold instructions for particular kinds of task. Load a skill with the %s tool when the task needs something it covers that your other instructions do not already give you. Do not load a skill again while its instructions are still in the conversation.\n", tool)
 	} else {
-		b.WriteString("Skills hold instructions for particular kinds of task. When a task matches a skill's description, read the skill's file before starting.\n")
+		b.WriteString("Skills hold instructions for particular kinds of task. Read a skill's file when the task needs something it covers that your other instructions do not already give you. Do not read it again while its contents are still in the conversation.\n")
 	}
 	for _, s := range skills {
 		// A description may span lines in its front matter. One line
