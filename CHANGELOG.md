@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/gfx-labs/towa/compare/v0.4.0...v0.5.0) (2026-11-15)
+
+
+### Features
+
+* **acp:** name the model in usage updates ([#8](https://github.com/gfx-labs/towa/issues/8)) ([61bab58](https://github.com/gfx-labs/towa/commit/61bab58116e11f7a38436fae924154c97d476a5d))
+
+
+### Bug fixes
+
+* **batch:** accept a sub-call tool named in the functions namespace ([ab95343](https://github.com/gfx-labs/towa/commit/ab95343763b59ef8b60c36b706140ea732d1042b)), closes [#11](https://github.com/gfx-labs/towa/issues/11)
+* **loop:** report a job started inside a batch under the batch's tool call ([502d2cf](https://github.com/gfx-labs/towa/commit/502d2cf514d1cdd1fa70413f420cb0bf0b206a53)), closes [#13](https://github.com/gfx-labs/towa/issues/13)
+* **tools:** do not count trimmed trailing whitespace as output left out ([cccadc9](https://github.com/gfx-labs/towa/commit/cccadc9fae44c69096bcfc18e0c7cbaa4d7d6fa1)), closes [#12](https://github.com/gfx-labs/towa/issues/12)
+
 ## [0.4.0](https://github.com/gfx-labs/towa/compare/v0.3.1...v0.4.0) (2026-11-15)
 
 
