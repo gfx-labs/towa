@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gfx-labs/towa/compare/v0.3.1...v0.4.0) (2026-11-15)
+
+
+### Features
+
+* **mcp:** serve a client-provided MCP server over the ACP connection ([2b391a0](https://github.com/gfx-labs/towa/commit/2b391a06170decbda54fc01c1a305f7e6daf4c51))
+
 ## [0.3.1](https://github.com/gfx-labs/towa/compare/v0.3.0...v0.3.1) (2026-11-14)
 
 
