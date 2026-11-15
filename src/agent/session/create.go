@@ -65,7 +65,7 @@ func (a *Agent) checkMCP(servers []acp.McpServer) error {
 			return invalid("mcpServers[%d]: the http transport is not supported", i)
 		case server.Sse != nil && !mcp.Sse:
 			return invalid("mcpServers[%d]: the sse transport is not supported", i)
-		case server.Acp != nil:
+		case server.Acp != nil && !mcp.Acp:
 			return invalid("mcpServers[%d]: the acp transport is not supported", i)
 		}
 	}

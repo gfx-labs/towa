@@ -43,9 +43,7 @@ func (a *Agent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.Init
 		capabilities.SessionCapabilities.Archive = &acp.SessionArchiveCapabilities{}
 	}
 	if mcp := a.supports.MCP; mcp != nil {
-		// The ACP transport for MCP is not implemented, whatever the
-		// wiring says.
-		capabilities.McpCapabilities = acp.McpCapabilities{Http: mcp.Http, Sse: mcp.Sse}
+		capabilities.McpCapabilities = acp.McpCapabilities{Http: mcp.Http, Sse: mcp.Sse, Acp: mcp.Acp}
 	}
 	return acp.InitializeResponse{
 		// The only version there is to offer: the client's own when it asked

@@ -10,12 +10,17 @@ import (
 	"github.com/gfx-labs/towa/src/config"
 )
 
+// TransportACP is a server the ACP client provides, reached over the
+// session's own ACP connection with mcp/message. Only a session names one:
+// configuration cannot, since it has no connection to name it on.
+const TransportACP = "acp"
+
 // Server is one MCP server a session can use, resolved from configuration
 // or from the session's mcpServers.
 type Server struct {
 	Name string
-	// Transport is config.MCPTransportStdio, MCPTransportStreamableHTTP or
-	// MCPTransportSSE.
+	// Transport is config.MCPTransportStdio, MCPTransportStreamableHTTP,
+	// MCPTransportSSE or TransportACP.
 	Transport string
 	// Command and Args start a stdio server. Env holds "NAME=value" entries
 	// added to the harness's own environment.
@@ -26,6 +31,9 @@ type Server struct {
 	// sent to the URL's host.
 	URL     string
 	Headers map[string]string
+	// ACPServerID names a server the ACP client provides over the session's
+	// ACP connection, for TransportACP.
+	ACPServerID acp.UnstableMcpServerAcpId
 	// Direct puts the server's tools in front of the model under their own
 	// names. Otherwise they are reached through the mcp tool.
 	Direct bool
@@ -140,14 +148,17 @@ func fromACP(a acp.McpServer) (Server, error) {
 		s = Server{Name: a.Sse.Name, Transport: config.MCPTransportSSE, URL: a.Sse.Url}
 		s.Headers = acpHeaders(a.Sse.Headers)
 	case a.Acp != nil:
-		return Server{}, fmt.Errorf("server %q uses the acp transport, which is not supported", a.Acp.Name)
+		s = Server{Name: a.Acp.Name, Transport: TransportACP, ACPServerID: acp.UnstableMcpServerAcpId(a.Acp.ServerId)}
+		if s.ACPServerID == "" {
+			return Server{}, fmt.Errorf("acp server %q has no serverId", s.Name)
+		}
 	default:
 		return Server{}, fmt.Errorf("server has no transport")
 	}
 	if s.Name == "" {
 		return Server{}, fmt.Errorf("server has no name")
 	}
-	if s.Transport != config.MCPTransportStdio {
+	if s.Transport != config.MCPTransportStdio && s.Transport != TransportACP {
 		u, err := url.Parse(s.URL)
 		if err != nil {
 			return Server{}, fmt.Errorf("server %q: %w", s.Name, err)

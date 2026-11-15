@@ -97,4 +97,7 @@ type Turn struct {
 	Elicit func(ctx context.Context, params acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error)
 	// ElicitationComplete sends elicitation/complete. It is set with Elicit.
 	ElicitationComplete func(ctx context.Context, params acp.CompleteElicitationNotification) error
+	// MessageMcp sends an MCP request to a server the client provides on
+	// the session's connection, for the acp servers in McpServers.
+	MessageMcp func(ctx context.Context, params acp.UnstableMessageMcpRequest) (acp.UnstableMessageMcpResponse, error)
 }

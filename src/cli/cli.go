@@ -240,7 +240,7 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 			AdditionalDirectories: true,
 			SystemPrompt:          true,
 			ContextOverrides:      true,
-			MCP:                   &acp.McpCapabilities{Http: true, Sse: true},
+			MCP:                   &acp.McpCapabilities{Http: true, Sse: true, Acp: true},
 			Prompt:                acp.PromptCapabilities{Image: true, EmbeddedContext: true},
 			TerminalAuth:          terminalLogins(loaded.Config.Accounts, auth.Flows()),
 		},

@@ -75,6 +75,7 @@ func newSessionMCP(ctx context.Context, o mcpRuntimeOptions, pool *mcp.Pool, tur
 		Logger: o.Logger, Tracer: o.Tracer,
 		ClientName: "towa", ClientVersion: o.Version,
 		Elicitation: elicitation(turn),
+		ACP:         turn.MessageMcp,
 	})
 	if err != nil {
 		return nil, nil, err

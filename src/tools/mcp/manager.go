@@ -112,6 +112,9 @@ type Options struct {
 	// to its client. Nil means servers are told the harness takes none. A
 	// shared server serves every session, so it is never given one.
 	Elicitation *Elicitation
+	// ACP sends the messages of the session's acp servers on its ACP
+	// connection. It is required when Servers has one.
+	ACP ACPMessenger
 }
 
 // Manager holds the connections of one session to its MCP servers. A
@@ -129,6 +132,7 @@ type Manager struct {
 	results int
 	dir     string
 	elicit  *Elicitation
+	acp     ACPMessenger
 
 	// These are fields so that a test can use times shorter than a second,
 	// the unit of the config keys.
@@ -172,6 +176,7 @@ func newManager(opts Options, pool bool) (*Manager, error) {
 		results:        int(opts.Config.SearchResults),
 		dir:            opts.Dir,
 		elicit:         opts.Elicitation,
+		acp:            opts.ACP,
 		refreshMargin:  time.Duration(opts.Config.OAuth.RefreshMarginSeconds) * time.Second,
 		idleClose:      time.Duration(opts.Config.IdleCloseSeconds) * time.Second,
 		connectTimeout: time.Duration(opts.Config.ConnectTimeoutSeconds) * time.Second,
@@ -183,6 +188,10 @@ func newManager(opts Options, pool bool) (*Manager, error) {
 		}
 		switch s.Transport {
 		case config.MCPTransportStdio:
+		case TransportACP:
+			if opts.ACP == nil {
+				return nil, fmt.Errorf("mcp: server %q uses the acp transport and Options.ACP is not set", s.Name)
+			}
 		case config.MCPTransportStreamableHTTP, config.MCPTransportSSE:
 			if opts.HTTPClient == nil {
 				return nil, fmt.Errorf("mcp: server %q is remote and Options.HTTPClient is not set", s.Name)
@@ -488,7 +497,12 @@ func (m *Manager) connect(ctx context.Context, s Server) (_ *live, err error) {
 	client := sdk.NewClient(m.impl, options)
 	var transport sdk.Transport
 	var stdio *stdioTransport
+	var sessionOptions *sdk.ClientSessionOptions
 	switch s.Transport {
+	case TransportACP:
+		transport = &acpTransport{serverID: s.ACPServerID, send: m.acp}
+		// The binding carries only this revision, with no initialize.
+		sessionOptions = &sdk.ClientSessionOptions{ProtocolVersion: acpProtocolVersion}
 	case config.MCPTransportStdio:
 		stdio = &stdioTransport{server: s, dir: m.dir, grace: m.terminateGrace, logger: m.logger}
 		transport = stdio
@@ -505,7 +519,7 @@ func (m *Manager) connect(ctx context.Context, s Server) (_ *live, err error) {
 			transport = &sdk.StreamableClientTransport{Endpoint: s.URL, HTTPClient: httpClient}
 		}
 	}
-	session, err := client.Connect(connCtx, transport, nil)
+	session, err := client.Connect(connCtx, transport, sessionOptions)
 	timer.Stop()
 	stopFollowing()
 	if err != nil {

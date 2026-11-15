@@ -48,7 +48,7 @@ releases are tagged `vX.Y.Z` by release-please. pin one with `/vX.Y.Z` on the fl
 - a proxy can hold the credentials. the harness sends a placeholder and never sees the token, every http client honours `HTTPS_PROXY`, and `towa hosts` prints each host the config will contact, for an egress allowlist.
 - an session log is append-only, with reactive compression which compaction adds a summary and deletes nothing, so `conversation_search` can still read what was compacted away, and a parent can read its subagents' sessions.
 - a tool result over the token budget comes back as a summary with its size. the model asks again to get all of it.
-- mcp servers sit behind one `mcp` tool with list, search and call, so their schemas stay out of the prompt. a server the client adds for the session gets its tools by name.
+- mcp servers sit behind one `mcp` tool with list, search and call, so their schemas stay out of the prompt. a server the client adds for the session gets its tools by name. the client can also serve one itself over the acp connection (`"type": "acp"`, `mcp/message`), with no second process or endpoint.
 - every config key is a flag in `--help`, and can be set in a yaml file or the environment. an invalid value is an error, never a silent fallback.
 - a large amount of levers for selecting custom injected context for the run from different paths.
 - hooks, per-turn limits and opentelemetry traces, metrics and logs, are all config

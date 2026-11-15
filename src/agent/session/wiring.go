@@ -33,6 +33,9 @@ type Client interface {
 	RequestPermission(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
 	CreateElicitation(ctx context.Context, params acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error)
 	CompleteElicitation(ctx context.Context, params acp.CompleteElicitationNotification) error
+	// UnstableMessageMcp sends one MCP request to a server the client
+	// provides over this connection (mcp/message).
+	UnstableMessageMcp(ctx context.Context, params acp.UnstableMessageMcpRequest) (acp.UnstableMessageMcpResponse, error)
 }
 
 // Supports says which optional parts of a session the turn acts on. The
@@ -51,7 +54,9 @@ type Supports struct {
 	// _meta.towa on session/new.
 	ContextOverrides bool
 	// MCP: the turn connects to loop.Turn.McpServers over stdio, and over
-	// the transports named here. Nil means it connects to none.
+	// the transports named here. The acp transport is carried on the
+	// session's own connection, through loop.Turn.MessageMcp. Nil means it
+	// connects to none.
 	MCP *acp.McpCapabilities
 	// Prompt names the content types beyond text and resource links that
 	// the provider takes in a prompt.
