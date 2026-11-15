@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"strings"
 
 	acp "github.com/gfx-labs/go-acp"
 
@@ -93,6 +94,9 @@ func decodeBatchCalls(input jsontext.Value) ([]batch.Call, error) {
 		if err := json.Unmarshal(raw["tool"], &name); err != nil {
 			return nil, err
 		}
+		// OpenAI models name tools in their functions namespace. A tool name
+		// cannot hold a dot, so the prefix is never part of a real one.
+		name = strings.TrimPrefix(name, "functions.")
 		if name == NameBatch {
 			return nil, errNestedBatch
 		}
