@@ -584,3 +584,47 @@ func TestDeniedPromptAnswersWithATypedStop(t *testing.T) {
 		})
 	}
 }
+
+// A client that takes terminal auth, by auth.terminal or by the older
+// "terminal-auth" in _meta, is offered the logins. authenticate with one
+// succeeds once its account is logged in.
+func TestTerminalAuth(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		loggedIn := map[string]bool{}
+		w := serveWith(t, endsTurn, func(o *session.Options) {
+			o.Supports.TerminalAuth = []session.TerminalLogin{{
+				Account: "claude",
+				Method:  acp.AuthMethodTerminalInline{Id: "login-claude", Name: "Log in", Args: []string{"login", "claude", "--account", "claude"}},
+			}}
+			o.Supports.LoggedIn = func(account string) (bool, error) { return loggedIn[account], nil }
+		})
+		for id, capabilities := range map[string]string{
+			`1`: `{}`,
+			`2`: `{"auth":{"terminal":true}}`,
+			`3`: `{"_meta":{"terminal-auth":true}}`,
+		} {
+			w.Send(request(id, "initialize", `{"protocolVersion":1,"clientCapabilities":`+capabilities+`}`))
+			got, _ := w.Await(id)
+			var init struct {
+				AuthMethods []map[string]any `json:"authMethods"`
+			}
+			require.NoError(t, json.Unmarshal(got[id].Result, &init))
+			if id == `1` {
+				require.Empty(t, init.AuthMethods)
+				continue
+			}
+			require.Len(t, init.AuthMethods, 1, capabilities)
+			require.Equal(t, "terminal", init.AuthMethods[0]["type"])
+			require.Equal(t, []any{"login", "claude", "--account", "claude"}, init.AuthMethods[0]["args"])
+		}
+
+		w.Send(request(`4`, "authenticate", `{"methodId":"login-claude"}`), request(`5`, "authenticate", `{"methodId":"nope"}`))
+		got, _ := w.Await(`4`, `5`)
+		require.Equal(t, acp.NewAuthRequired(nil).Code, got[`4`].Error.Code)
+		require.Equal(t, acp.NewInvalidParams(nil).Code, got[`5`].Error.Code)
+		loggedIn["claude"] = true
+		w.Send(request(`6`, "authenticate", `{"methodId":"login-claude"}`))
+		got, _ = w.Await(`6`)
+		require.Nil(t, got[`6`].Error)
+	})
+}
