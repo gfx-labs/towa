@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/gfx-labs/towa/compare/v0.5.0...v0.5.1) (2026-11-15)
+
+
+### Bug fixes
+
+* **prompt:** load a skill only when the task needs it, and not again while it is in the conversation ([3be9af5](https://github.com/gfx-labs/towa/commit/3be9af5720dfba489d6dd16e8ef2950055a83206))
+
 ## [0.5.0](https://github.com/gfx-labs/towa/compare/v0.4.0...v0.5.0) (2026-11-15)
 
 
