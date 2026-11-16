@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"text/tabwriter"
@@ -11,6 +12,7 @@ import (
 
 	acp "github.com/gfx-labs/go-acp"
 
+	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/support/httpclient"
@@ -306,22 +308,38 @@ func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 	return err
 }
 
-// terminalLogins are the logins a client can run for the user: one per
-// account whose token the harness holds, run as "towa login" on the
-// command line the client starts towa with.
-func terminalLogins(accounts []config.Account, flows map[string]auth.Flow) []acp.AuthMethodTerminalInline {
-	var methods []acp.AuthMethodTerminalInline
+// terminalLogins are the logins a client can run for the user, run as
+// "towa login" on the command line the client starts towa with: one per
+// account whose token the harness holds, and one per provider with no such
+// account, which creates an account named after the provider.
+func terminalLogins(accounts []config.Account, flows map[string]auth.Flow) []session.TerminalLogin {
+	var logins []session.TerminalLogin
+	add := func(id, provider string) {
+		description := fmt.Sprintf("Log in to %s in the browser and store the login in auth.json.", provider)
+		logins = append(logins, session.TerminalLogin{
+			Account: id,
+			Method: acp.AuthMethodTerminalInline{
+				Id:          acp.AuthMethodId("login-" + id),
+				Name:        fmt.Sprintf("Log in account %s (%s)", id, provider),
+				Description: &description,
+				Args:        []string{"login", provider, "--account", id},
+			},
+		})
+	}
+	has := map[string]bool{}
+	taken := map[string]bool{}
 	for _, a := range accounts {
+		taken[a.ID] = true
 		if _, ok := flows[a.Provider]; !ok || a.Kind != config.AccountOAuth {
 			continue
 		}
-		description := fmt.Sprintf("Log in to %s in the browser and store the login in auth.json.", a.Provider)
-		methods = append(methods, acp.AuthMethodTerminalInline{
-			Id:          acp.AuthMethodId("login-" + a.ID),
-			Name:        fmt.Sprintf("Log in account %s (%s)", a.ID, a.Provider),
-			Description: &description,
-			Args:        []string{"login", a.Provider, "--account", a.ID},
-		})
+		has[a.Provider] = true
+		add(a.ID, a.Provider)
 	}
-	return methods
+	for _, provider := range slices.Sorted(maps.Keys(flows)) {
+		if !has[provider] && !taken[provider] {
+			add(provider, provider)
+		}
+	}
+	return logins
 }

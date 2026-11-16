@@ -64,7 +64,16 @@ type Supports struct {
 	// TerminalAuth are the logins a client can run in a terminal, by
 	// appending a method's args to the command it starts the agent with.
 	// They are advertised to a client that takes terminal auth methods.
-	TerminalAuth []acp.AuthMethodTerminalInline
+	TerminalAuth []TerminalLogin
+	// LoggedIn reports whether an account has a stored login, so that
+	// authenticate with a terminal method says whether its login was run.
+	LoggedIn func(account string) (bool, error)
+}
+
+// TerminalLogin is a terminal auth method and the account its login stores.
+type TerminalLogin struct {
+	Account string
+	Method  acp.AuthMethodTerminalInline
 }
 
 // Options configures a Host. Every field but Registry, Supports and Store
