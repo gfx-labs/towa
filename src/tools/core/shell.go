@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -37,6 +38,7 @@ func readTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 			}
 			path, err := fsops.RootsOf(env, cfg.Files).Resolve(args.Path)
 			if err == nil {
+				desc.Title = "Read " + displayPath(env.Cwd, path) + readRange(args.Offset, args.Limit)
 				desc.Locations = []acp.ToolCallLocation{{Path: path}}
 			}
 			return desc, nil
@@ -53,6 +55,30 @@ func readTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 			return readResult(result), nil
 		},
 	}
+}
+
+// readRange is the lines a read asks for, for its title: nothing when it
+// reads from the start with the default limit. offset counts from 1.
+func readRange(offset, limit int) string {
+	start := max(offset, 1)
+	switch {
+	case limit > 0:
+		return fmt.Sprintf(" (%d - %d)", start, start+limit-1)
+	case offset > 1:
+		return fmt.Sprintf(" (from line %d)", offset)
+	}
+	return ""
+}
+
+// commandTitle is a command's title when the call gave no description: its
+// first line, marked when there is more.
+func commandTitle(command string) string {
+	command = strings.TrimSpace(command)
+	first, rest, more := strings.Cut(command, "\n")
+	if more && strings.TrimSpace(rest) != "" {
+		return strings.TrimSpace(first) + " …"
+	}
+	return first
 }
 
 type bashArgs struct {
@@ -72,8 +98,14 @@ func bashTool(spec provider.Tool, cfg config.Tools, jobSet *jobs.Set) tools.Tool
 		Describe: func(input jsontext.Value) (tools.Description, error) {
 			desc := tools.Description{Title: "Run command", Kind: acp.ToolKindExecute}
 			var args bashArgs
-			if err := json.Unmarshal(input, &args); err == nil && args.Description != "" {
+			if err := json.Unmarshal(input, &args); err != nil {
+				return desc, nil
+			}
+			switch {
+			case strings.TrimSpace(args.Description) != "":
 				desc.Title = args.Description
+			case strings.TrimSpace(args.Command) != "":
+				desc.Title = commandTitle(args.Command)
 			}
 			return desc, nil
 		},

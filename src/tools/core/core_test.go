@@ -290,3 +290,37 @@ func TestBackgroundCommandsWriteUnderTMPDIRAndAreWaitedForAndStopped(t *testing.
 	result = run(t, set, env, "bash", map[string]any{"command": "true", "run_in_background": true})
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
 }
+
+// A client shows a call by its title, so the title names what the call acts
+// on: the file, relative to the working directory, or the command.
+func TestTitlesNameTheFileOrCommand(t *testing.T) {
+	loaded, err := configtest.Load(config.Sources{})
+	require.NoError(t, err)
+	env := tools.Env{Cwd: t.TempDir()}
+	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker), Jobs: jobs.NewSet()})
+	title := func(name string, input any) string {
+		t.Helper()
+		tool, ok := set.Set.Lookup(name)
+		require.True(t, ok)
+		raw, err := json.Marshal(input)
+		require.NoError(t, err)
+		desc, err := tool.Describe(raw)
+		require.NoError(t, err)
+		return desc.Title
+	}
+	inside := filepath.Join(env.Cwd, "src", "main.go")
+	for _, name := range []string{"read", "edit", "write"} {
+		got := title(name, map[string]any{"file_path": inside})
+		require.Contains(t, got, filepath.Join("src", "main.go"), name)
+		require.NotContains(t, got, env.Cwd, name)
+	}
+	outside := filepath.Join(t.TempDir(), "other.go")
+	require.Contains(t, title("read", map[string]any{"file_path": outside}), outside)
+	require.Contains(t, title("read", map[string]any{"file_path": inside, "offset": 10, "limit": 5}), "14")
+	patchText := "*** Begin Patch\n*** Add File: a.go\n+x\n*** Update File: b.go\n@@\n-y\n+z\n*** End Patch"
+	got := title("apply_patch", map[string]any{"patch_text": patchText})
+	require.Contains(t, got, "a.go")
+	require.Contains(t, got, "b.go")
+	require.Contains(t, title("bash", map[string]any{"command": "go test ./...\necho done"}), "go test ./...")
+	require.Equal(t, "Run the tests", title("bash", map[string]any{"command": "go test ./...", "description": "Run the tests"}))
+}

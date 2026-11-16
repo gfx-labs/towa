@@ -58,9 +58,9 @@ type writeArgs struct {
 	Content string `json:"content"`
 }
 
-func fileDescription(env tools.Env, cfg config.ToolsFiles, title string) func(jsontext.Value) (tools.Description, error) {
+func fileDescription(env tools.Env, cfg config.ToolsFiles, verb string) func(jsontext.Value) (tools.Description, error) {
 	return func(input jsontext.Value) (tools.Description, error) {
-		desc := tools.Description{Title: title, Kind: acp.ToolKindEdit}
+		desc := tools.Description{Title: verb + " file", Kind: acp.ToolKindEdit}
 		var args struct {
 			Path string `json:"file_path"`
 		}
@@ -71,6 +71,7 @@ func fileDescription(env tools.Env, cfg config.ToolsFiles, title string) func(js
 		if err != nil {
 			return desc, nil
 		}
+		desc.Title = verb + " " + displayPath(env.Cwd, path)
 		desc.Locations = []acp.ToolCallLocation{{Path: path}}
 		desc.WritePaths = []string{path}
 		return desc, nil
@@ -80,7 +81,7 @@ func fileDescription(env tools.Env, cfg config.ToolsFiles, title string) func(js
 func writeTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *ReadTracker) tools.Tool {
 	return tools.Tool{
 		Spec: spec, Effect: tools.Writes,
-		Describe: fileDescription(env, cfg.Files, "Write file"),
+		Describe: fileDescription(env, cfg.Files, "Write"),
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args writeArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
@@ -123,7 +124,7 @@ func writeTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *ReadTracker) tools.Tool {
 	return tools.Tool{
 		Spec: spec, Effect: tools.Writes,
-		Describe: fileDescription(env, cfg.Files, "Edit file"),
+		Describe: fileDescription(env, cfg.Files, "Edit"),
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args editArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {

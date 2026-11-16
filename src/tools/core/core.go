@@ -159,3 +159,12 @@ func fill(spec provider.Tool, values map[string]string) (provider.Tool, error) {
 }
 
 var unfilled = regexp.MustCompile(`\{[a-z_]+\}`)
+
+// displayPath is how a title names an absolute path: relative to the
+// working directory when it is inside it, as the user thinks of it.
+func displayPath(cwd, path string) string {
+	if rel, err := filepath.Rel(cwd, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return rel
+	}
+	return path
+}
