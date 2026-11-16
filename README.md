@@ -29,7 +29,7 @@ the package is one static binary for x86_64-linux, aarch64-linux and aarch64-dar
 
 with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`.
 
-or download a static binary from the [latest release](https://github.com/gfx-labs/towa/releases/latest), built for linux amd64, linux arm64 and darwin arm64, with `checksums.txt`:
+or download a static binary from the [latest release](https://github.com/gfx-labs/towa/releases/latest), built for linux amd64, linux arm64, darwin arm64 and darwin amd64, with `checksums.txt`:
 
 ```sh
 curl -fsSLO https://github.com/gfx-labs/towa/releases/latest/download/checksums.txt
