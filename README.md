@@ -2,7 +2,7 @@
 
 towa ([insp.](https://boogiepop.fandom.com/wiki/Towa_Organization)) is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode, https://github.com/vercel-labs/fx, and https://github.com/earendil-works/pi
 
-it is designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
+it is designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings. its low-memory footprint makes it ideal for a one-session-per-sandbox type workload
 
 there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
@@ -57,5 +57,6 @@ releases are tagged `vX.Y.Z` by release-please. pin one with `/vX.Y.Z` on the fl
 ## funny numbers
 
 as a result of doing very little, towa is rather lightweight.
-- one process with one empty session measured about <50 MB, with new empty sessions costing <64kb. know that this is purely synthetic.
+- one process with one empty session measured <40 MB, with new empty sessions costing <64kb.
+- 20 sessions each doing 5 turns is benchmarked consumes ~25mb
 - idle sessions not in turn use almost no measurable cycles
