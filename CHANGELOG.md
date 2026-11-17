@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.0](https://github.com/gfx-labs/towa/compare/v0.6.0...v0.7.0) (2026-11-17)
+
+
+### Features
+
+* **anthropic:** send cc_entrypoint=towa in the billing block ([ce4eacf](https://github.com/gfx-labs/towa/commit/ce4eacf5a9c615b0e2ce1cefd729aae8448066ca))
+
+
+### Bug fixes
+
+* **auth:** offer only logins a model uses, and report a missing API key as a request error ([717acb1](https://github.com/gfx-labs/towa/commit/717acb13e7a482caea83bd358960ba087c4ad326))
+
+
+### Performance
+
+* **agentctx:** intern context file text and system prompt blocks ([925a6ee](https://github.com/gfx-labs/towa/commit/925a6eebd9824207c5235b0f892797672375b3ee))
+* **anthropic:** sign the billing token in place without copying the body ([56b0616](https://github.com/gfx-labs/towa/commit/56b0616ac034a320fcd8af428bd163e473338b01))
+* **loop:** build a request's conversation in one pass over its own list ([ac2a1ba](https://github.com/gfx-labs/towa/commit/ac2a1ba012d30083163e072cd41319d2e9fa59a0))
+* **shell:** pool the 64 KB read buffer of a command's output ([7b75230](https://github.com/gfx-labs/towa/commit/7b75230f6d418e5c846f9de8d2acab53f9e27ff2))
+
 ## [0.6.0](https://github.com/gfx-labs/towa/compare/v0.5.1...v0.6.0) (2026-11-16)
 
 
