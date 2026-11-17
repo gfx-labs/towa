@@ -51,11 +51,9 @@ const (
 // answer an OAuth request with HTTP 429.
 const (
 	// BillingEntrypoint is the cc_entrypoint value of the billing block.
-	// jcode's branches differ: "jcode" on 037163c7b, which is used here,
-	// and "sdk-cli" on origin/master 8e11eb23e, which is what the probe
-	// ran with. Both are accepted: the OAuth recordings of 2026-11-13 were
-	// made with this value.
-	BillingEntrypoint = "jcode"
+	// Anthropic accepts any name here, so it names this harness. The OAuth
+	// recordings of 2026-11-17 were made with it.
+	BillingEntrypoint = "towa"
 	// billingVersion is the cc_version value of the billing block. Anthropic
 	// reads it as a version, and the cch token is expected from 2.1.172 on.
 	billingVersion = "2.1.325"
