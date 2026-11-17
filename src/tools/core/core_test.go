@@ -5,15 +5,19 @@ import (
 	"encoding/json/v2"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/core"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/toolset"
 	"github.com/gfx-labs/towa/src/transcript"
 )
@@ -53,7 +57,7 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	var tracker core.ReadTracker
 	var shown []acp.PlanEntry
 	var shownMeta map[string]any
-	set := assemble(t, env, cfg, core.Deps{Reads: &tracker, ShowPlan: func(_ context.Context, _ tools.Env, plan *acp.SessionUpdatePlan) error {
+	set := assemble(t, env, cfg, core.Deps{Reads: &tracker, Jobs: jobs.NewSet(), ShowPlan: func(_ context.Context, _ tools.Env, plan *acp.SessionUpdatePlan) error {
 		shown, shownMeta = plan.Entries, plan.Meta
 		return nil
 	}})
@@ -76,7 +80,7 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 
 	// Another session has read nothing, so it may not overwrite the file.
 	var other core.ReadTracker
-	foreign := assemble(t, env, cfg, core.Deps{Reads: &other})
+	foreign := assemble(t, env, cfg, core.Deps{Reads: &other, Jobs: jobs.NewSet()})
 	result = run(t, foreign, env, "write", write)
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
 
@@ -181,7 +185,7 @@ func TestApplyPatchChangesFilesAndKeepsWhatWasAppliedBeforeAFailure(t *testing.T
 	require.NoError(t, err)
 	cfg := loaded.Config.Tools
 	env := tools.Env{Cwd: t.TempDir()}
-	set := assemble(t, env, cfg, core.Deps{Reads: new(core.ReadTracker)})
+	set := assemble(t, env, cfg, core.Deps{Reads: new(core.ReadTracker), Jobs: jobs.NewSet()})
 	existing := filepath.Join(env.Cwd, "existing.txt")
 	require.NoError(t, os.WriteFile(existing, []byte("keep\nold\n"), 0o600))
 	doomed := filepath.Join(env.Cwd, "doomed.txt")
@@ -241,7 +245,7 @@ func TestBashRunsACommandAndRefusesABadTimeout(t *testing.T) {
 	loaded, err := configtest.Load(config.Sources{})
 	require.NoError(t, err)
 	env := tools.Env{Cwd: t.TempDir()}
-	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker)})
+	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker), Jobs: jobs.NewSet()})
 	result := run(t, set, env, "bash", map[string]any{"command": "printf 'real command output'; printf saved > created.txt", "timeout": 2000.5})
 	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
 	require.Contains(t, result.Parts[0].Text, "real command output")
@@ -259,4 +263,80 @@ func TestBashRunsACommandAndRefusesABadTimeout(t *testing.T) {
 	result = run(t, set, env, "bash", map[string]any{"command": "sleep 30", "timeout": 20})
 	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
 	require.Contains(t, result.Parts[0].Text, "timed out")
+}
+
+func TestBackgroundCommandsWriteUnderTMPDIRAndAreWaitedForAndStopped(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	loaded, err := configtest.Load(config.Sources{})
+	require.NoError(t, err)
+	env := tools.Env{SessionID: "s1", Cwd: t.TempDir()}
+	jobSet := jobs.NewSet()
+	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker), Jobs: jobSet})
+
+	result := run(t, set, env, "bash", map[string]any{"command": "echo started; sleep 0.2; echo done; exit 3", "run_in_background": true})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	paths := regexp.MustCompile(`(/\S+\.out)`).FindStringSubmatch(result.Parts[0].Text)
+	require.Len(t, paths, 2, result.Parts[0].Text)
+	require.True(t, strings.HasPrefix(paths[1], tmp+string(filepath.Separator)), paths[1])
+
+	result = run(t, set, env, "bash_output", map[string]any{"job_id": "bg1", "block": true})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "exited with code 3")
+	require.Contains(t, result.Parts[0].Text, "started\ndone")
+	data, err := os.ReadFile(paths[1])
+	require.NoError(t, err)
+	require.Equal(t, "started\ndone\n", string(data))
+	require.Empty(t, jobSet.Take(), "a job the model waited for is not reported again")
+
+	result = run(t, set, env, "bash", map[string]any{"command": "echo waiting; sleep 30", "run_in_background": true})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	result = run(t, set, env, "bash_output", map[string]any{"job_id": "bg2"})
+	require.Contains(t, result.Parts[0].Text, "still running")
+	result = run(t, set, env, "bash_stop", map[string]any{"job_id": "bg2"})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "was stopped")
+
+	result = run(t, set, env, "bash_output", map[string]any{"job_id": "bg9"})
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+	require.Contains(t, result.Parts[0].Text, "bg1, bg2")
+
+	require.NoError(t, jobSet.Close())
+	require.NoDirExists(t, filepath.Dir(paths[1]))
+	result = run(t, set, env, "bash", map[string]any{"command": "true", "run_in_background": true})
+	require.Equal(t, transcript.OutcomeFailed, result.Outcome)
+}
+
+// A client shows a call by its title, so the title names what the call acts
+// on: the file, relative to the working directory, or the command.
+func TestTitlesNameTheFileOrCommand(t *testing.T) {
+	loaded, err := configtest.Load(config.Sources{})
+	require.NoError(t, err)
+	env := tools.Env{Cwd: t.TempDir()}
+	set := assemble(t, env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker), Jobs: jobs.NewSet()})
+	title := func(name string, input any) string {
+		t.Helper()
+		tool, ok := set.Set.Lookup(name)
+		require.True(t, ok)
+		raw, err := json.Marshal(input)
+		require.NoError(t, err)
+		desc, err := tool.Describe(raw)
+		require.NoError(t, err)
+		return desc.Title
+	}
+	inside := filepath.Join(env.Cwd, "src", "main.go")
+	for _, name := range []string{"read", "edit", "write"} {
+		got := title(name, map[string]any{"file_path": inside})
+		require.Contains(t, got, filepath.Join("src", "main.go"), name)
+		require.NotContains(t, got, env.Cwd, name)
+	}
+	outside := filepath.Join(t.TempDir(), "other.go")
+	require.Contains(t, title("read", map[string]any{"file_path": outside}), outside)
+	require.Contains(t, title("read", map[string]any{"file_path": inside, "offset": 10, "limit": 5}), "14")
+	patchText := "*** Begin Patch\n*** Add File: a.go\n+x\n*** Update File: b.go\n@@\n-y\n+z\n*** End Patch"
+	got := title("apply_patch", map[string]any{"patch_text": patchText})
+	require.Contains(t, got, "a.go")
+	require.Contains(t, got, "b.go")
+	require.Contains(t, title("bash", map[string]any{"command": "go test ./...\necho done"}), "go test ./...")
+	require.Equal(t, "Run the tests", title("bash", map[string]any{"command": "go test ./...", "description": "Run the tests"}))
 }

@@ -19,6 +19,9 @@ type ModelInfo struct {
 	// NoAdaptiveThinking says the list marks adaptive thinking as not
 	// supported.
 	NoAdaptiveThinking bool
+	// Efforts are the reasoning efforts the list says the model takes, in
+	// the provider's own words and order. Nil means the list does not say.
+	Efforts []string
 }
 
 // ErrNoModelList is what Models returns for a credential whose endpoint has

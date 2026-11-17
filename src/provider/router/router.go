@@ -164,7 +164,8 @@ func New(o Options) (*Router, error) {
 //
 // A request is sent again only while its response has yielded nothing. Once
 // an event has reached the caller the client may have been shown it, so a
-// failure after that is returned as it is.
+// failure after that is returned as it is, and the caller decides whether
+// to send the request again.
 func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[provider.Event, error] {
 	return func(yield func(provider.Event, error) bool) {
 		report, _ := ctx.Value(reportKey{}).(func(Move))
@@ -175,8 +176,13 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 			entry := r.chain[i]
 			cred, err := r.source.Credential(ctx, entry.Account)
 			if err != nil {
-				// No credential is the same to the caller as a refused one.
+				// No credential is the same to the caller as a refused one,
+				// except a key the configuration does not supply: no login
+				// fixes that, so it is not an auth failure.
 				failure := &provider.Error{Class: provider.Fallback, Reason: provider.ReasonAuth, Err: err}
+				if errors.Is(err, auth.ErrNoKey) {
+					failure.Reason, failure.Message = provider.ReasonRequest, err.Error()
+				}
 				if i < len(r.chain)-1 && ctx.Err() == nil {
 					report(Move{Kind: MoveFallback, From: entry, To: r.chain[i+1], Err: failure})
 					continue

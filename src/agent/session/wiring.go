@@ -31,6 +31,11 @@ type Runtime struct {
 type Client interface {
 	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
 	RequestPermission(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
+	CreateElicitation(ctx context.Context, params acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error)
+	CompleteElicitation(ctx context.Context, params acp.CompleteElicitationNotification) error
+	// UnstableMessageMcp sends one MCP request to a server the client
+	// provides over this connection (mcp/message).
+	UnstableMessageMcp(ctx context.Context, params acp.UnstableMessageMcpRequest) (acp.UnstableMessageMcpResponse, error)
 }
 
 // Supports says which optional parts of a session the turn acts on. The
@@ -49,11 +54,26 @@ type Supports struct {
 	// _meta.towa on session/new.
 	ContextOverrides bool
 	// MCP: the turn connects to loop.Turn.McpServers over stdio, and over
-	// the transports named here. Nil means it connects to none.
+	// the transports named here. The acp transport is carried on the
+	// session's own connection, through loop.Turn.MessageMcp. Nil means it
+	// connects to none.
 	MCP *acp.McpCapabilities
 	// Prompt names the content types beyond text and resource links that
 	// the provider takes in a prompt.
 	Prompt acp.PromptCapabilities
+	// TerminalAuth are the logins a client can run in a terminal, by
+	// appending a method's args to the command it starts the agent with.
+	// They are advertised to a client that takes terminal auth methods.
+	TerminalAuth []TerminalLogin
+	// LoggedIn reports whether an account has a stored login, so that
+	// authenticate with a terminal method says whether its login was run.
+	LoggedIn func(account string) (bool, error)
+}
+
+// TerminalLogin is a terminal auth method and the account its login stores.
+type TerminalLogin struct {
+	Account string
+	Method  acp.AuthMethodTerminalInline
 }
 
 // Options configures a Host. Every field but Registry, Supports and Store

@@ -71,6 +71,9 @@ type Turn struct {
 	// Model is the name of the configured model the session chose for this
 	// turn. Empty means none was chosen and the configured default applies.
 	Model string
+	// Effort is the reasoning effort the session chose for Model's entry,
+	// in place of the one the entry names. Empty leaves the entry's.
+	Effort string
 	// ParentID is the session that spawned this one as a subagent. It is
 	// written to the store when the turn creates the session, and must then
 	// be a UUID. It is not read for a session that exists.
@@ -89,4 +92,12 @@ type Turn struct {
 	// and the call does not run. An error means the turn was cancelled or
 	// the client failed, and stops the turn. A nil Permit allows every call.
 	Permit func(ctx context.Context, tool string, effect tools.Effect, call acp.ToolCallUpdate) (bool, error)
+	// Elicit sends elicitation/create to the client, scoped to the session.
+	// It is nil when the client did not advertise elicitation.
+	Elicit func(ctx context.Context, params acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error)
+	// ElicitationComplete sends elicitation/complete. It is set with Elicit.
+	ElicitationComplete func(ctx context.Context, params acp.CompleteElicitationNotification) error
+	// MessageMcp sends an MCP request to a server the client provides on
+	// the session's connection, for the acp servers in McpServers.
+	MessageMcp func(ctx context.Context, params acp.UnstableMessageMcpRequest) (acp.UnstableMessageMcpResponse, error)
 }

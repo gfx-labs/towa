@@ -44,10 +44,16 @@ func TestModelsReadsTheAccountsList(t *testing.T) {
 		byID[m.ID] = m
 	}
 	require.Len(t, byID, len(list), "no model is listed twice")
-	require.Equal(t, provider.ModelInfo{ID: "claude-opus-5-5", ContextWindow: 1_000_000, MaxOutputTokens: 128_000}, byID["claude-opus-5-5"])
-	// An older model is listed with its release date, a smaller window, and
-	// adaptive thinking marked as not supported.
+	require.Equal(t, provider.ModelInfo{
+		ID: "claude-opus-5-5", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		Efforts: []string{"low", "medium", "high", "xhigh", "max"},
+	}, byID["claude-opus-5-5"])
+	// An older model is listed with its release date, a smaller window, fewer
+	// efforts, and adaptive thinking marked as not supported.
 	require.Equal(t, provider.ModelInfo{
 		ID: "claude-opus-4-5-20251101", ContextWindow: 200_000, MaxOutputTokens: 64_000, NoAdaptiveThinking: true,
+		Efforts: []string{"low", "medium", "high"},
 	}, byID["claude-opus-4-5-20251101"])
+	// A model that takes no effort lists none.
+	require.Nil(t, byID["claude-haiku-4-5-20251001"].Efforts)
 }

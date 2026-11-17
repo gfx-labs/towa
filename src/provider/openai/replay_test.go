@@ -39,8 +39,7 @@ import (
 // when the file does not exist.
 //
 // The api_ recordings in testdata were made from a local Ollama server, not
-// from OpenAI: see docs/notes/2026-11-11-provider-openai.md for what that
-// does and does not show.
+// from OpenAI.
 const (
 	recordEnv     = "TOWA_RECORD_OPENAI"
 	cacheKey      = "towa-recording"

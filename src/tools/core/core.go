@@ -1,5 +1,5 @@
 // Package core is the tool set every model gets: read, write, edit,
-// apply_patch, bash and todo. Each tool's name, description and schema are
+// apply_patch, bash, bash_output, bash_stop and todo. Each tool's name, description and schema are
 // in specs/, and each runs one capability from a sibling package. There is
 // no tool for finding files or searching them: the model runs rg, find and
 // ls through bash.
@@ -12,6 +12,9 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -19,12 +22,16 @@ import (
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 )
 
 // Deps holds session-owned state and client operations. Reads must be kept
 // across turns and never shared between sessions.
 type Deps struct {
 	Reads *ReadTracker
+	// Jobs are the session's background commands. Like Reads, they are
+	// kept across turns and never shared between sessions.
+	Jobs *jobs.Set
 	// ShowPlan sends the checked list to the client. Nil omits todo, as
 	// does tools.todo.enabled when it is off.
 	ShowPlan func(context.Context, tools.Env, *acp.SessionUpdatePlan) error
@@ -41,6 +48,9 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 	if deps.Reads == nil {
 		return nil, fmt.Errorf("core: session read tracker is required")
 	}
+	if deps.Jobs == nil {
+		return nil, fmt.Errorf("core: session job set is required")
+	}
 	build := []struct {
 		name string
 		tool func(provider.Tool) tools.Tool
@@ -49,7 +59,9 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		{"write", func(spec provider.Tool) tools.Tool { return writeTool(spec, env, cfg, deps.Reads) }},
 		{"edit", func(spec provider.Tool) tools.Tool { return editTool(spec, env, cfg, deps.Reads) }},
 		{"apply_patch", func(spec provider.Tool) tools.Tool { return patchTool(spec, env, cfg, deps.Reads) }},
-		{"bash", func(spec provider.Tool) tools.Tool { return bashTool(spec, cfg) }},
+		{"bash", func(spec provider.Tool) tools.Tool { return bashTool(spec, cfg, deps.Jobs) }},
+		{"bash_output", func(spec provider.Tool) tools.Tool { return jobOutputTool(spec, cfg, deps.Jobs) }},
+		{"bash_stop", func(spec provider.Tool) tools.Tool { return jobStopTool(spec, deps.Jobs) }},
 		{"todo", func(spec provider.Tool) tools.Tool { return planTool(spec, deps) }},
 	}
 	var result []tools.Tool
@@ -61,7 +73,11 @@ func Tools(env tools.Env, cfg config.Tools, deps Deps) ([]tools.Tool, error) {
 		if def.err != nil {
 			return nil, def.err
 		}
-		t := b.tool(def.spec)
+		spec, err := fill(def.spec, limits(cfg))
+		if err != nil {
+			return nil, err
+		}
+		t := b.tool(spec)
 		t.Summary, t.Guidance = def.summary, def.guidance
 		result = append(result, t)
 	}
@@ -110,4 +126,45 @@ func decodeSpec(name string) parsedSpec {
 		spec:    provider.Tool{Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema},
 		summary: spec.Summary, guidance: spec.Guidance,
 	}
+}
+
+// limits are the configured values a spec names as {key} in its
+// description and schema, so the model is told the numbers it is held to.
+func limits(cfg config.Tools) map[string]string {
+	return map[string]string{
+		"{shell_timeout_ms}":     strconv.FormatInt(cfg.Shell.Timeout.Milliseconds(), 10),
+		"{shell_max_timeout_ms}": strconv.FormatInt(cfg.Shell.MaxTimeout.Milliseconds(), 10),
+		"{shell_output_chars}":   strconv.Itoa(bashOutputCharacters),
+		"{read_default_lines}":   strconv.Itoa(cfg.Files.ReadDefaultLines),
+	}
+}
+
+// fill puts the values in place of their keys in a spec's description and
+// schema. A key left in braces that has no value is an error, so a spec
+// never reaches a model with a placeholder in it.
+func fill(spec provider.Tool, values map[string]string) (provider.Tool, error) {
+	pairs := make([]string, 0, 2*len(values))
+	for key, value := range values {
+		pairs = append(pairs, key, value)
+	}
+	r := strings.NewReplacer(pairs...)
+	spec.Description = r.Replace(spec.Description)
+	spec.InputSchema = jsontext.Value(r.Replace(string(spec.InputSchema)))
+	for _, text := range []string{spec.Description, string(spec.InputSchema)} {
+		if key := unfilled.FindString(text); key != "" {
+			return provider.Tool{}, fmt.Errorf("core: spec of %s names %s, which has no value", spec.Name, key)
+		}
+	}
+	return spec, nil
+}
+
+var unfilled = regexp.MustCompile(`\{[a-z_]+\}`)
+
+// displayPath is how a title names an absolute path: relative to the
+// working directory when it is inside it, as the user thinks of it.
+func displayPath(cwd, path string) string {
+	if rel, err := filepath.Rel(cwd, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return rel
+	}
+	return path
 }

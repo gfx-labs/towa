@@ -227,6 +227,10 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 	if err := session.AddModels(registry, loaded.Config.Models, factory.unlisted); err != nil {
 		return errors.Join(err, factory.Close())
 	}
+	logins, err := authStore(h)
+	if err != nil {
+		return errors.Join(err, factory.Close())
+	}
 	host, err := session.NewHost(session.Options{
 		Version:  version(),
 		Open:     factory.Open,
@@ -240,8 +244,16 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 			AdditionalDirectories: true,
 			SystemPrompt:          true,
 			ContextOverrides:      true,
-			MCP:                   &acp.McpCapabilities{Http: true, Sse: true},
-			Prompt:                acp.PromptCapabilities{Image: true},
+			MCP:                   &acp.McpCapabilities{Http: true, Sse: true, Acp: true},
+			Prompt:                acp.PromptCapabilities{Image: true, EmbeddedContext: true},
+			TerminalAuth:          terminalLogins(loaded.Config.Models, loaded.Config.Accounts, auth.Flows()),
+			LoggedIn: func(account string) (bool, error) {
+				_, err := logins.Load(account)
+				if errors.Is(err, auth.ErrNotLoggedIn) {
+					return false, nil
+				}
+				return err == nil, err
+			},
 		},
 	})
 	if err != nil {

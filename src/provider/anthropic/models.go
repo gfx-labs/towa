@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"net/http"
 	"net/url"
@@ -26,6 +27,7 @@ type modelsPage struct {
 					} `json:"adaptive"`
 				} `json:"types"`
 			} `json:"thinking"`
+			Effort efforts `json:"effort"`
 		} `json:"capabilities"`
 	} `json:"data"`
 	HasMore bool   `json:"has_more"`
@@ -47,6 +49,7 @@ func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.M
 			out = append(out, provider.ModelInfo{
 				ID: m.ID, ContextWindow: m.MaxInputTokens, MaxOutputTokens: m.MaxTokens,
 				NoAdaptiveThinking: adaptive != nil && !*adaptive,
+				Efforts:            m.Capabilities.Effort.levels,
 			})
 		}
 		if !page.HasMore {
@@ -57,6 +60,49 @@ func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.M
 		}
 		after = page.LastID
 	}
+}
+
+// efforts is a model's effort capability: {"supported":true,"low":
+// {"supported":true},...}, one member for each level in the API's order.
+// levels holds the supported ones in that order, and stays nil when the
+// model takes no effort.
+type efforts struct{ levels []string }
+
+func (e *efforts) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+	var levels []string
+	supported := false
+	for dec.PeekKind() != '}' {
+		token, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		name := token.String()
+		if name == "supported" {
+			if err := json.UnmarshalDecode(dec, &supported); err != nil {
+				return err
+			}
+			continue
+		}
+		var level struct {
+			Supported bool `json:"supported"`
+		}
+		if err := json.UnmarshalDecode(dec, &level); err != nil {
+			return err
+		}
+		if level.Supported {
+			levels = append(levels, name)
+		}
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+	if supported {
+		e.levels = levels
+	}
+	return nil
 }
 
 func (c *Client) modelsPage(ctx context.Context, cred auth.Credential, after string) (*modelsPage, *provider.Error) {

@@ -141,8 +141,8 @@ func checkBoundaries(lines []string) error {
 	if strings.TrimSpace(lines[0]) != beginMarker {
 		return patchError(firstLineMessage)
 	}
-	if strings.TrimSpace(lines[len(lines)-1]) != endMarker {
-		return patchError(lastLineMessage)
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != endMarker {
+		return patchError(fmt.Sprintf("%s, and this patch ends with '%s'. Nothing was applied. Send the whole patch again with '%s' as its own last line.", lastLineMessage, last, endMarker))
 	}
 	return nil
 }

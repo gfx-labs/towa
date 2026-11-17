@@ -44,6 +44,9 @@ type ProviderModel struct {
 	// MaxOutputTokens is the most tokens one response may hold. A chat
 	// provider is sent it as the limit of every request.
 	MaxOutputTokens int64 `json:"max_output_tokens" validate:"gte=0"`
+	// ReasoningEfforts are the efforts a session may choose for the model,
+	// in the provider's own words. None means the session has no choice.
+	ReasoningEfforts []string `json:"reasoning_efforts" validate:"unique,dive,required"`
 }
 
 // Kinds of a provider: the wire protocol it speaks.

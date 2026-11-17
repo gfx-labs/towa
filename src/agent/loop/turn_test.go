@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"uuid"
@@ -15,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/agent/hooks"
 	"github.com/gfx-labs/towa/src/agent/loop"
@@ -400,4 +405,52 @@ func TestADeadLoginIsAnAuthStop(t *testing.T) {
 	assert.Equal(t, "work", stopped.Stop.Account)
 	assert.Contains(t, stopped.Stop.Message, "log in again")
 	assert.ErrorIs(t, err, refused)
+}
+
+// A provider can drop the stream after the response began. The router does
+// not retry once an event arrived, so the turn sends the request again,
+// keeping nothing of the cut-off response but its usage.
+func TestAResponseCutOffMidStreamIsSentAgain(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if requests.Add(1) == 1 {
+			_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_cut","type":"function","function":{"name":"read_file","arguments":"{\"pa"}}]}}]}`+"\n\n")
+			return
+		}
+		_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"content":"The code is 7421."},"finish_reason":"stop"}]}`+"\n\n"+
+			`data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`+"\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+	f := looptest.At(t, looptest.ReadTurn, server.URL+"/v1")
+	opts := f.Options
+	opts.Limits.Retry.InitialBackoff = time.Millisecond
+	l, err := loop.New(opts)
+	require.NoError(t, err)
+	var c client
+	id := acp.SessionId(uuid.NewV7().String())
+	turn := f.Turn(id, c.update)
+	turn.Sendable = func(acp.SessionUpdate) bool { return true }
+	result, err := l.Run(t.Context(), turn)
+	require.NoError(t, err)
+	assert.Equal(t, acp.StopReasonEndTurn, result.StopReason)
+	assert.Equal(t, "The code is 7421.", result.Final)
+	assert.EqualValues(t, 2, requests.Load())
+
+	var notices int
+	var cutFailed bool
+	for _, u := range c.updates {
+		if u.Notice != nil {
+			notices++
+		}
+		if u.ToolCallUpdate != nil && u.ToolCallUpdate.ToolCallId == "call_cut" && u.ToolCallUpdate.Status != nil {
+			cutFailed = *u.ToolCallUpdate.Status == acp.ToolCallStatusFailed
+		}
+	}
+	assert.Equal(t, 1, notices)
+	assert.True(t, cutFailed, "the client was shown the cut-off call and told it did not run")
+	_, got := entries(t, f.Store, id)
+	for _, entry := range got {
+		assert.Nil(t, entry.Item.ToolCall, "nothing of the cut-off response is stored")
+	}
 }

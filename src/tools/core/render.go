@@ -23,9 +23,8 @@ func readResult(read fsops.ReadResult) tools.Result {
 		return tools.TextResult(transcript.OutcomeCompleted, "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>")
 	}
 	// The lines go as they are in the file, without their numbers: a number
-	// and a tab on every line were about a tenth of a source file's tokens
-	// (docs/notes/2026-11-12-token-use.md). The capability keeps line
-	// endings, and a CRLF's CR is removed here.
+	// and a tab on every line were about a tenth of a source file's tokens.
+	// The capability keeps line endings, and a CRLF's CR is removed here.
 	text := strings.TrimSuffix(strings.ReplaceAll(strings.TrimSuffix(read.Text, "\n"), "\r\n", "\n"), "\r")
 	if strings.TrimSpace(text) == "" {
 		// Blank lines alone would read as a result that was lost.

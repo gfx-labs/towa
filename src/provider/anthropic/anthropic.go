@@ -51,18 +51,17 @@ const (
 // answer an OAuth request with HTTP 429.
 const (
 	// BillingEntrypoint is the cc_entrypoint value of the billing block.
-	// jcode's branches differ: "jcode" on 037163c7b, which is used here,
-	// and "sdk-cli" on origin/master 8e11eb23e, which is what the probe
-	// ran with. Neither was sent from towa to a live account yet.
-	BillingEntrypoint = "jcode"
-	// billingVersion and billingHash are the cc_version and cch values
-	// jcode sends.
-	billingVersion = "2.1.280"
-	billingHash    = "33f85"
-	// billingBlock is sent as the first system block, as text. Anthropic
-	// removes it before the model sees it.
+	// Anthropic accepts any name here, so it names this harness. The OAuth
+	// recordings of 2026-11-17 were made with it.
+	BillingEntrypoint = "towa"
+	// billingVersion is the cc_version value of the billing block. Anthropic
+	// reads it as a version, and the cch token is expected from 2.1.172 on.
+	billingVersion = "2.1.325"
+	// billingBlock is sent as the first system block, as text, with a
+	// placeholder the request's own token replaces once the body is
+	// serialized. Anthropic removes the block before the model sees it.
 	billingBlock = "x-anthropic-billing-header: cc_version=" + billingVersion +
-		"; cc_entrypoint=" + BillingEntrypoint + "; cch=" + billingHash + ";"
+		"; cc_entrypoint=" + BillingEntrypoint + "; " + cchPlaceholder + ";"
 	// oauthBetas is jcode's ANTHROPIC_OAUTH_BETA_HEADERS. Only
 	// oauth-2025-04-20 is known to be required.
 	oauthBetas = "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27," +
@@ -209,6 +208,11 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	defer bytebufferpool.Put(buf)
 	if err := json.MarshalWrite(buf, body); err != nil {
 		return invalidRequest("encode request: " + err.Error())
+	}
+	// The billing token covers the body it is sent in, so it is filled in
+	// after the body is serialized.
+	if req.Credential.Scheme == auth.SchemeOAuth {
+		signBilling(buf.B)
 	}
 	// NewRequest sets the length and GetBody for a bytes.Reader, which a
 	// redirect or a retried connection needs.

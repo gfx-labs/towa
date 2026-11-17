@@ -375,19 +375,20 @@ func (d Dispatcher) runOne(ctx context.Context, b *budget, call transcript.ToolC
 	}
 	// A tool that runs other calls, the batch, finds its dispatcher here.
 	ctx = context.WithValue(ctx, batchKey{}, d.batch(ctx, b, call))
-	return d.execute(ctx, call.ID, call.Name, p, progress)
+	return d.execute(ctx, call.ID, call.ID, call.Name, p, progress)
 }
 
 // execute runs an allowed call and gives its result as the model gets it:
-// settled, gated and passed by the post_tool hooks.
+// settled, gated and passed by the post_tool hooks. clientID is the id of
+// the tool call the client was sent for it.
 func (d Dispatcher) execute(
-	ctx context.Context, id, name string, p planned,
+	ctx context.Context, id, clientID, name string, p planned,
 	progress func(context.Context, []acp.ToolCallContent) error,
 ) tools.Result {
 	env := d.Env
 	env.PutBlob = d.PutBlob
 	env.Progress = progress
-	res, err := p.tool.Run(ctx, tools.Call{ID: id, Input: p.input, Env: env})
+	res, err := p.tool.Run(ctx, tools.Call{ID: id, ClientID: clientID, Input: p.input, Env: env})
 	cancelled := ctx.Err() != nil
 	if err != nil && !cancelled {
 		d.Logger.ErrorContext(ctx, "tool could not be run", "session", d.Env.SessionID, "tool", name, "call", id, "err", err)
@@ -463,7 +464,7 @@ func (d Dispatcher) batch(ctx context.Context, b *budget, parent transcript.Tool
 			// The inner context has no dispatcher: nothing inside a
 			// batch starts another.
 			ctx = context.WithValue(ctx, batchKey{}, nil)
-			return d.execute(ctx, id(index), call.Name, p, nil), nil
+			return d.execute(ctx, id(index), parent.ID, call.Name, p, nil), nil
 		},
 	}
 }

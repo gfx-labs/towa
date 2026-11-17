@@ -2,7 +2,7 @@
 
 towa ([insp.](https://boogiepop.fandom.com/wiki/Towa_Organization)) is an acp-based coding harness, primarily inspired by https://github.com/1jehuang/jcode, https://github.com/vercel-labs/fx, and https://github.com/earendil-works/pi
 
-it is designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings.
+it is designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings. its low-memory footprint makes it ideal for a one-session-per-sandbox type workload
 
 there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
@@ -29,7 +29,7 @@ the package is one static binary for x86_64-linux, aarch64-linux and aarch64-dar
 
 with go 1.27.3: `go install github.com/gfx-labs/towa/cmd/towa@latest`.
 
-or download a static binary from the [latest release](https://github.com/gfx-labs/towa/releases/latest), built for linux amd64, linux arm64 and darwin arm64, with `checksums.txt`:
+or download a static binary from the [latest release](https://github.com/gfx-labs/towa/releases/latest), built for linux amd64, linux arm64, darwin arm64 and darwin amd64, with `checksums.txt`:
 
 ```sh
 curl -fsSLO https://github.com/gfx-labs/towa/releases/latest/download/checksums.txt
@@ -48,7 +48,7 @@ releases are tagged `vX.Y.Z` by release-please. pin one with `/vX.Y.Z` on the fl
 - a proxy can hold the credentials. the harness sends a placeholder and never sees the token, every http client honours `HTTPS_PROXY`, and `towa hosts` prints each host the config will contact, for an egress allowlist.
 - an session log is append-only, with reactive compression which compaction adds a summary and deletes nothing, so `conversation_search` can still read what was compacted away, and a parent can read its subagents' sessions.
 - a tool result over the token budget comes back as a summary with its size. the model asks again to get all of it.
-- mcp servers sit behind one `mcp` tool with list, search and call, so their schemas stay out of the prompt. a server the client adds for the session gets its tools by name.
+- mcp servers sit behind one `mcp` tool with list, search and call, so their schemas stay out of the prompt. a server the client adds for the session gets its tools by name. the client can also serve one itself over the acp connection (`"type": "acp"`, `mcp/message`), with no second process or endpoint.
 - every config key is a flag in `--help`, and can be set in a yaml file or the environment. an invalid value is an error, never a silent fallback.
 - a large amount of levers for selecting custom injected context for the run from different paths.
 - hooks, per-turn limits and opentelemetry traces, metrics and logs, are all config
@@ -57,5 +57,6 @@ releases are tagged `vX.Y.Z` by release-please. pin one with `/vX.Y.Z` on the fl
 ## funny numbers
 
 as a result of doing very little, towa is rather lightweight.
-- one process with one empty session measured about <50 MB, with new empty sessions costing <64kb. know that this is purely synthetic.
+- one process with one empty session measured <40 MB, with new empty sessions costing <64kb.
+- 20 sessions each doing 5 turns is benchmarked consumes ~25mb
 - idle sessions not in turn use almost no measurable cycles

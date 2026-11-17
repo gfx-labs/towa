@@ -21,6 +21,8 @@ type Listed struct {
 	// NoAdaptiveThinking says the list marks adaptive thinking as not
 	// supported.
 	NoAdaptiveThinking bool `json:"no_adaptive_thinking,omitzero"`
+	// Efforts are the reasoning efforts the list says the model takes.
+	Efforts []string `json:"efforts,omitzero"`
 }
 
 // List is one account's model list, as its provider gave it.
@@ -39,12 +41,6 @@ type Lists map[string]List
 
 // ListKey is the key of an entry's account in Lists.
 func ListKey(e config.ChainEntry) string { return e.Provider + ":" + e.Account }
-
-// InTable reports whether the built-in table has the model.
-func InTable(model string) bool {
-	_, ok := builtin[model]
-	return ok
-}
 
 // Lookup returns what the entry's account's list says about the entry's
 // model.

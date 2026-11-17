@@ -12,6 +12,7 @@ import (
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/store"
 	"github.com/gfx-labs/towa/src/tools"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/repair"
 )
 
@@ -40,6 +41,10 @@ type Options struct {
 	// Hooks runs the configured hooks. It may have none.
 	Hooks  *hooks.Runner
 	Logger *slog.Logger
+	// Jobs are the session's background commands. A turn the model ends
+	// while one runs waits for it, and no job outlives the turn that
+	// started it. Nil when the session has none.
+	Jobs *jobs.Set
 }
 
 // Resolved is a model as one turn uses it.

@@ -8,8 +8,7 @@ type OpenAI struct {
 	// reads server-sent events, "websocket" keeps one connection per
 	// conversation and sends only the new input on it. sse is the transport
 	// with recordings replayed in the test suite. The WebSocket transport
-	// has never run against a real server
-	// (docs/notes/2026-11-11-provider-openai.md), so it is opt-in.
+	// has never run against a real server, so it is opt-in.
 	Transport string `name:"transport" default:"sse" validate:"oneof=sse websocket" help:"How a request reaches the endpoint: sse posts it and reads server-sent events, websocket keeps one connection per conversation."`
 	// MaxIdleSockets is how many WebSocket connections are kept open
 	// between requests, one per conversation. It has no default and must be

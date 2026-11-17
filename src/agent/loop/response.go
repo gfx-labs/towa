@@ -39,12 +39,15 @@ type Response struct {
 	// writing holds the ids of the calls announced while the model was
 	// still writing them, in order, until each one finishes.
 	writing []string
+	// arrived says an event came. Before one does, the router owns retrying.
+	arrived bool
 }
 
 // Add takes one event and returns the updates that show it to the client.
 // A finished text or thinking item is shown only when no delta came for it,
 // since its deltas already showed it.
 func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
+	r.arrived = true
 	switch {
 	case e.TextDelta != "":
 		r.textShown = true
@@ -53,7 +56,7 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 		r.thoughtShown = true
 		return []acp.SessionUpdate{ThoughtChunk(e.ThinkingDelta)}
 	case e.ToolCall != nil:
-		return r.progress(*e.ToolCall)
+		return r.progress(m, *e.ToolCall)
 	case e.Item != nil:
 		item := *e.Item
 		r.Items = append(r.Items, item)
@@ -96,16 +99,16 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 
 // progress announces a call the model has started writing, once, when it
 // has an id and a name. The pieces of its argument are not shown: ACP has
-// no update for part of an argument, and the whole one follows.
-func (r *Response) progress(p provider.ToolCallProgress) []acp.SessionUpdate {
+// no update for part of an argument, and the whole one follows. The tool
+// describes the call with no input yet, so the client sees its kind and
+// title from the first frame.
+func (r *Response) progress(m Mapper, p provider.ToolCallProgress) []acp.SessionUpdate {
 	if p.ID == "" || p.Name == "" || slices.Contains(r.writing, p.ID) {
 		return nil
 	}
 	r.writing = append(r.writing, p.ID)
-	return []acp.SessionUpdate{{ToolCall: &acp.SessionUpdateToolCall{
-		ToolCallId: acp.ToolCallId(p.ID), Name: &p.Name, Title: p.Name,
-		Kind: acp.ToolKindOther, Status: acp.ToolCallStatusPending,
-	}}}
+	call := m.ToolCall(transcript.ToolCall{ID: p.ID, Name: p.Name})
+	return []acp.SessionUpdate{{ToolCall: &call}}
 }
 
 // Writing returns the ids of the calls that were announced and never

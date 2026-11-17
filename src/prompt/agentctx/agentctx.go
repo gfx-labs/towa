@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+	"unique"
 
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
@@ -313,7 +314,9 @@ func readText(path string, limit int64) (string, error) {
 	if !utf8.Valid(data) {
 		return "", fmt.Errorf("agentctx: %s: not valid UTF-8", path)
 	}
-	return string(data), nil
+	// Sessions in one directory read the same files. Interned, they hold
+	// one copy between them, freed once no session keeps it.
+	return unique.Make(string(data)).Value(), nil
 }
 
 func checkWorkDir(workDir string) (string, error) {

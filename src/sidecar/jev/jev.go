@@ -2,7 +2,6 @@
 // among options the caller supplies. It backs the jev_decision tool.
 //
 // The request shape, the limits and the treatment of state follow jcode.
-// docs/notes/2026-11-11-webfetch-and-jev.md cites the source of each.
 package jev
 
 import (

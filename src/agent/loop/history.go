@@ -24,6 +24,9 @@ const (
 	textBadHookInput = "A hook changed the tool call's input to one that was not accepted: %v"
 	textNested       = "A %s call cannot hold another one."
 	textLimit        = "The tool call was not run: the turn reached %s."
+	// jobsPrefix starts the message that tells the model how background
+	// commands ended. It is the harness speaking, as the todo poke is.
+	jobsPrefix = "[auto] Background commands ended:\n\n"
 )
 
 func result(call transcript.ToolCall, outcome transcript.Outcome, text string) transcript.ToolResult {
@@ -57,25 +60,6 @@ func told(parts []transcript.Part) []transcript.Part {
 	return kept
 }
 
-// answeredCalls is the ids of the calls in history that have a result.
-func answeredCalls(history []transcript.Item) map[string]bool {
-	answered := map[string]bool{}
-	for _, item := range history {
-		if item.ToolResult != nil {
-			answered[item.ToolResult.CallID] = true
-		}
-	}
-	return answered
-}
-
-// dangling reports a call without a result that something follows.
-func dangling(open []transcript.Item) error {
-	if len(open) == 0 {
-		return nil
-	}
-	return fmt.Errorf("loop: tool call %s has no result and is not at the end of the session", open[0].ToolResult.CallID)
-}
-
 // Conversation prepares the items returned by compact.Items for a model
 // request. It returns the items a provider accepts, and the results to store
 // first for calls that have none.
@@ -88,52 +72,112 @@ func dangling(open []transcript.Item) error {
 // and a user message stored with one as UserItem would have: without the
 // part, and not at all when no part is left.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
-	interrupted := userText(interruption)
-	if err := interrupted.Validate(); err != nil {
+	items = make([]transcript.Item, 0, len(history)+1)
+	repairs, err = walk(history, interruption, func(item transcript.Item) { items = append(items, item) })
+	if err != nil {
 		return nil, nil, err
 	}
-	answered := answeredCalls(history)
+	return append(items, repairs...), repairs, nil
+}
+
+// conversationInPlace is Conversation writing the items over history,
+// which the caller owns and does not read again. Each item emitted takes
+// the place of one read, so the writes never pass the reads.
+func conversationInPlace(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
+	n := 0
+	repairs, err = walk(history, interruption, func(item transcript.Item) {
+		history[n] = item
+		n++
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return append(history[:n], repairs...), repairs, nil
+}
+
+// lostResults returns the results Conversation would store first, without
+// building the items. A turn needs only these when it loads the session.
+func lostResults(history []transcript.Item, interruption string) ([]transcript.Item, error) {
+	return walk(history, interruption, nil)
+}
+
+// walk passes each item a request holds to emit, which may be nil, and
+// returns the results for calls left without one.
+func walk(history []transcript.Item, interruption string, emit func(transcript.Item)) ([]transcript.Item, error) {
+	interrupted := userText(interruption)
+	if err := interrupted.Validate(); err != nil {
+		return nil, err
+	}
+	if emit == nil {
+		emit = func(transcript.Item) {}
+	}
 	// A call is stored before it is dispatched and its result before
 	// anything else, and every turn starts here. So a call without a result
-	// can only be at the end, where its result is appended.
-	var open []transcript.Item
+	// can only be at the end, where its result is appended. pending holds
+	// the calls without a result so far: few, since results follow their
+	// calls.
+	type call struct {
+		item transcript.Item
+		// followed says a user message or an interruption came after it.
+		followed bool
+	}
+	var pending []call
+	follow := func() {
+		for i := range pending {
+			pending[i].followed = true
+		}
+	}
 	for _, item := range history {
 		if err := item.Validate(); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		switch {
 		case item.ToolCall != nil:
-			items = append(items, item)
-			if !answered[item.ToolCall.ID] {
-				lost := result(*item.ToolCall, transcript.OutcomeUnknown, textLost)
-				open = append(open, transcript.Item{ToolResult: &lost})
-			}
+			emit(item)
+			pending = append(pending, call{item: item})
 		case item.Text != nil, item.Thinking != nil, item.Native != nil:
-			items = append(items, item)
+			emit(item)
 		case item.ToolResult != nil:
-			result := *item.ToolResult
-			result.Parts = told(result.Parts)
-			item.ToolResult = &result
-			items = append(items, item)
-		case item.User != nil:
-			if err := dangling(open); err != nil {
-				return nil, nil, err
+			pending = slices.DeleteFunc(pending, func(c call) bool { return c.item.ToolCall.ID == item.ToolResult.CallID })
+			// The stored item is shared with the turn's entries: a changed
+			// result is a copy.
+			if parts := told(item.ToolResult.Parts); !sameParts(parts, item.ToolResult.Parts) {
+				result := *item.ToolResult
+				result.Parts = parts
+				item.ToolResult = &result
 			}
-			user := *item.User
-			user.Parts = filled(user.Parts)
-			if len(user.Parts) == 0 {
+			emit(item)
+		case item.User != nil:
+			follow()
+			parts := filled(item.User.Parts)
+			if len(parts) == 0 {
 				continue
 			}
-			item.User = &user
-			items = append(items, item)
-		case item.Interrupted != nil:
-			if err := dangling(open); err != nil {
-				return nil, nil, err
+			if !sameParts(parts, item.User.Parts) {
+				user := *item.User
+				user.Parts = parts
+				item.User = &user
 			}
-			items = append(items, interrupted)
+			emit(item)
+		case item.Interrupted != nil:
+			follow()
+			emit(interrupted)
 		case item.Compaction != nil:
-			return nil, nil, errors.New("loop: compaction must be materialized before Conversation")
+			return nil, errors.New("loop: compaction must be materialized before Conversation")
 		}
 	}
-	return append(items, open...), open, nil
+	var repairs []transcript.Item
+	for _, c := range pending {
+		if c.followed {
+			return nil, fmt.Errorf("loop: tool call %s has no result and is not at the end of the session", c.item.ToolCall.ID)
+		}
+		lost := result(*c.item.ToolCall, transcript.OutcomeUnknown, textLost)
+		repairs = append(repairs, transcript.Item{ToolResult: &lost})
+	}
+	return repairs, nil
+}
+
+// sameParts reports whether a and b are the same slice.
+func sameParts(a, b []transcript.Part) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }

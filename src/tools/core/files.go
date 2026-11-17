@@ -24,6 +24,33 @@ type editArgs struct {
 		New string `json:"new_string"`
 		All bool   `json:"replace_all"`
 	} `json:"edits"`
+	// Old, New and All are one edit given without edits, as jcode's edit
+	// takes it. Writing them as plain parameters spares the model writing
+	// an array of objects as JSON by hand.
+	Old *string `json:"old_string"`
+	New *string `json:"new_string"`
+	All *bool   `json:"replace_all"`
+}
+
+// operations returns the edits of a call: the edits array or the single
+// edit given beside it, never both.
+func (a editArgs) operations() ([]fsops.Edit, error) {
+	single := a.Old != nil || a.New != nil || a.All != nil
+	switch {
+	case a.Edits != nil && single:
+		return nil, errors.New("give either edits or old_string and new_string, not both")
+	case single && (a.Old == nil || a.New == nil):
+		return nil, errors.New("old_string and new_string go together: give both, or put the edit in edits")
+	case single:
+		return []fsops.Edit{{Old: *a.Old, New: *a.New, All: a.All != nil && *a.All}}, nil
+	case a.Edits == nil:
+		return nil, errors.New("give edits, or old_string and new_string for one edit")
+	}
+	edits := make([]fsops.Edit, len(a.Edits))
+	for i, e := range a.Edits {
+		edits[i] = fsops.Edit{Old: e.Old, New: e.New, All: e.All}
+	}
+	return edits, nil
 }
 
 type writeArgs struct {
@@ -31,9 +58,9 @@ type writeArgs struct {
 	Content string `json:"content"`
 }
 
-func fileDescription(env tools.Env, cfg config.ToolsFiles, title string) func(jsontext.Value) (tools.Description, error) {
+func fileDescription(env tools.Env, cfg config.ToolsFiles, verb string) func(jsontext.Value) (tools.Description, error) {
 	return func(input jsontext.Value) (tools.Description, error) {
-		desc := tools.Description{Title: title, Kind: acp.ToolKindEdit}
+		desc := tools.Description{Title: verb + " file", Kind: acp.ToolKindEdit}
 		var args struct {
 			Path string `json:"file_path"`
 		}
@@ -44,6 +71,7 @@ func fileDescription(env tools.Env, cfg config.ToolsFiles, title string) func(js
 		if err != nil {
 			return desc, nil
 		}
+		desc.Title = verb + " " + displayPath(env.Cwd, path)
 		desc.Locations = []acp.ToolCallLocation{{Path: path}}
 		desc.WritePaths = []string{path}
 		return desc, nil
@@ -53,7 +81,7 @@ func fileDescription(env tools.Env, cfg config.ToolsFiles, title string) func(js
 func writeTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *ReadTracker) tools.Tool {
 	return tools.Tool{
 		Spec: spec, Effect: tools.Writes,
-		Describe: fileDescription(env, cfg.Files, "Write file"),
+		Describe: fileDescription(env, cfg.Files, "Write"),
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args writeArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
@@ -96,11 +124,15 @@ func writeTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *ReadTracker) tools.Tool {
 	return tools.Tool{
 		Spec: spec, Effect: tools.Writes,
-		Describe: fileDescription(env, cfg.Files, "Edit file"),
+		Describe: fileDescription(env, cfg.Files, "Edit"),
 		Run: func(ctx context.Context, call tools.Call) (tools.Result, error) {
 			var args editArgs
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
 				return tools.TextResult(transcript.OutcomeFailed, "Invalid edit input: "+err.Error()), nil
+			}
+			edits, err := args.operations()
+			if err != nil {
+				return tools.TextResult(transcript.OutcomeFailed, "Invalid edit input: "+err.Error()+"."), nil
 			}
 			roots := fsops.RootsOf(call.Env, cfg.Files)
 			path, err := roots.Resolve(args.Path)
@@ -110,12 +142,10 @@ func editTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 			if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 				return tools.TextResult(transcript.OutcomeFailed, "File does not exist. Use write to create a file."), nil
 			}
-			edits := make([]fsops.Edit, len(args.Edits))
-			for i, e := range args.Edits {
-				edits[i] = fsops.Edit{Old: e.Old, New: e.New, All: e.All}
-			}
 			var change fsops.Change
-			err = tracker.Edit(ctx, path, func() error {
+			// An edit needs no read first: ApplyEdits reads the file as it is
+			// now and refuses an old_string that is not in it exactly once.
+			err = tracker.Write(ctx, path, func() error {
 				edited, editErr := fsops.ApplyEdits(ctx, roots, cfg.Files, fsops.EditInput{Path: path, Edits: edits})
 				change = edited.Change
 				return editErr

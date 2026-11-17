@@ -3,6 +3,7 @@ package agentctx
 import (
 	"fmt"
 	"strings"
+	"unique"
 
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/provider"
@@ -163,6 +164,11 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 	if !override {
 		add(SectionClient, client)
 	}
+	// The blocks are the same for every session with the same inputs, so
+	// they are interned: open sessions keep one copy of each.
+	for i := range blocks {
+		blocks[i].Text = unique.Make(blocks[i].Text).Value()
+	}
 	return blocks, nil
 }
 
@@ -255,9 +261,9 @@ func skillsText(skills []Skill, tool string) string {
 	}
 	var b strings.Builder
 	if tool != "" {
-		fmt.Fprintf(&b, "Skills hold instructions for particular kinds of task. When a task matches a skill's description, load the skill with the %s tool before starting.\n", tool)
+		fmt.Fprintf(&b, "Skills hold instructions for particular kinds of task. Load a skill with the %s tool when the task needs something it covers that your other instructions do not already give you. Do not load a skill again while its instructions are still in the conversation.\n", tool)
 	} else {
-		b.WriteString("Skills hold instructions for particular kinds of task. When a task matches a skill's description, read the skill's file before starting.\n")
+		b.WriteString("Skills hold instructions for particular kinds of task. Read a skill's file when the task needs something it covers that your other instructions do not already give you. Do not read it again while its contents are still in the conversation.\n")
 	}
 	for _, s := range skills {
 		// A description may span lines in its front matter. One line

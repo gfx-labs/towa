@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/go-acp/acptest"
 	"github.com/gfx-labs/towa/src/agent/harness"
+	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/cli"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/config/configtest"
@@ -131,4 +134,66 @@ websearch:
 	require.Equal(t, []string{"argument-secret"}, loaded.Config.MCP.Servers[1].Args)
 	require.Equal(t, []string{"/bin/true", "hook-secret"}, loaded.Config.Hooks[0].Command)
 	require.Equal(t, "https://example.com/search?key=search-secret", loaded.Config.WebSearch.Endpoint)
+}
+
+// A client of a configuration whose model takes an API key, with Claude
+// logins stored that no model uses: it is offered no login, and a turn
+// without the key says which variable to set, not that it needs a login.
+func TestAMissingAPIKeyIsNotALogin(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "towa"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "towa", "config.yaml"), []byte(`
+models: ["gateway:main/some-model"]
+providers:
+  - id: gateway
+    kind: chat
+    base_url: http://127.0.0.1:1/v1
+    models: [{id: some-model, context_window: 100000, max_output_tokens: 1000}]
+accounts:
+  - {id: main, provider: gateway, kind: api_key, api_key_env: TOWA_TEST_GATEWAY_KEY}
+`), 0o600))
+	store := auth.NewStore(filepath.Join(dir, "state", "towa", "auth"))
+	for _, id := range []string{"work", "personal"} {
+		require.NoError(t, store.Save(id, auth.Tokens{Provider: config.ProviderClaude, AccessToken: "a", RefreshToken: "r", ExpiresAtUnixMs: 1 << 50}))
+	}
+
+	w, stdin, stdout := acptest.New(t)
+	done := make(chan error, 1)
+	go func() {
+		done <- cli.Run(context.Background(), []string{"towa"}, cli.Host{
+			Stdin: stdin, Stdout: stdout, Stderr: io.Discard,
+			Environ: []string{"XDG_CONFIG_HOME=" + dir, "XDG_STATE_HOME=" + filepath.Join(dir, "state"), "HOME=" + dir},
+		})
+	}()
+	w.Send(
+		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"auth":{"terminal":true}}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"`+dir+`","mcpServers":[]}}`,
+	)
+	got, _ := w.Await(`0`, `1`)
+	require.Nil(t, got[`0`].Error)
+	var initialized struct {
+		AuthMethods []any `json:"authMethods"`
+	}
+	require.NoError(t, json.Unmarshal(got[`0`].Result, &initialized))
+	require.Empty(t, initialized.AuthMethods)
+	require.Nil(t, got[`1`].Error)
+	var created struct {
+		SessionID string `json:"sessionId"`
+	}
+	require.NoError(t, json.Unmarshal(got[`1`].Result, &created))
+
+	w.Send(`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"` + created.SessionID + `","prompt":[{"type":"text","text":"hello"}]}}`)
+	got, _ = w.Await(`2`)
+	require.NotNil(t, got[`2`].Error)
+	require.NotEqual(t, acp.NewAuthRequired(nil).Code, got[`2`].Error.Code)
+	data, ok := got[`2`].Error.Data.(map[string]any)
+	require.True(t, ok, "error data: %#v", got[`2`].Error.Data)
+	addition, present, err := harness.FromMeta(data)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, harness.StopRequest, addition.Stop.Kind)
+	require.Contains(t, addition.Stop.Message, "TOWA_TEST_GATEWAY_KEY")
+
+	w.Close()
+	require.NoError(t, <-done)
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/extras"
 	"github.com/gfx-labs/towa/src/agent/loop"
 	"github.com/gfx-labs/towa/src/auth"
@@ -30,6 +31,7 @@ import (
 	"github.com/gfx-labs/towa/src/support/httpclient"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/core"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/repair"
 	"github.com/gfx-labs/towa/src/transcript"
 )
@@ -237,7 +239,7 @@ func TestBatchEntryIsTheToolAndItsOwnArguments(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "a.txt"), []byte("alpha\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "b.txt"), []byte("beta\n"), 0o600))
 	var tracker core.ReadTracker
-	fileTools, err := core.Tools(env, loaded.Config.Tools, core.Deps{Reads: &tracker})
+	fileTools, err := core.Tools(env, loaded.Config.Tools, core.Deps{Reads: &tracker, Jobs: jobs.NewSet()})
 	require.NoError(t, err)
 	bt, err := extras.Batch(config.ToolsBatch{Enabled: true, MaxCalls: 10}, loop.BatchDispatcher)
 	require.NoError(t, err)
@@ -254,4 +256,39 @@ func TestBatchEntryIsTheToolAndItsOwnArguments(t *testing.T) {
 	require.Contains(t, output, "alpha")
 	require.Contains(t, output, "beta")
 	require.Contains(t, output, "2 succeeded, 0 failed")
+}
+
+// OpenAI models write a batch entry's tool in their functions namespace. A
+// job one entry starts ends under the batch's id: the client was sent no
+// tool call for the entry.
+func TestBatchEntriesInTheFunctionsNamespaceRunAndTheirJobsEndUnderTheBatch(t *testing.T) {
+	loaded, err := configtest.Load(config.Sources{})
+	require.NoError(t, err)
+	env := tools.Env{Cwd: t.TempDir()}
+	require.NoError(t, os.WriteFile(filepath.Join(env.Cwd, "a.txt"), []byte("alpha\n"), 0o600))
+	jobSet := jobs.NewSet()
+	defer func() { require.NoError(t, jobSet.Close()) }()
+	fileTools, err := core.Tools(env, loaded.Config.Tools, core.Deps{Reads: new(core.ReadTracker), Jobs: jobSet})
+	require.NoError(t, err)
+	bt, err := extras.Batch(config.ToolsBatch{Enabled: true, MaxCalls: 10}, loop.BatchDispatcher)
+	require.NoError(t, err)
+	set := tools.Set{Tools: append(fileTools, bt)}
+	schemas, err := loop.Schemas(set)
+	require.NoError(t, err)
+	d := loop.Dispatcher{Tools: set, Schemas: schemas, Env: env, Logger: slog.New(slog.DiscardHandler), Update: func(acp.SessionToolCallUpdate) {}}
+
+	res := d.Run(t.Context(), []transcript.ToolCall{{ID: "batch1", Name: bt.Spec.Name, Input: jsontext.Value(
+		`{"tool_calls":[{"tool":"functions.read","file_path":"a.txt"},{"tool":"functions.bash","command":"printf 'hello\\n\\n'","run_in_background":true}]}`)}})
+	require.NoError(t, res.Err)
+	output := text(tools.Result{Parts: res.Results[0].Parts})
+	require.Equal(t, transcript.OutcomeCompleted, res.Results[0].Outcome, output)
+	require.Contains(t, output, "alpha")
+
+	job, ok := jobSet.Get("bg1")
+	require.True(t, ok)
+	require.Equal(t, "batch1", job.CallID)
+	<-job.Done()
+	_, report := job.Report()
+	require.Contains(t, report, "hello")
+	require.NotContains(t, report, "not shown", "the trailing newlines came after the output shown")
 }

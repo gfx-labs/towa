@@ -390,6 +390,112 @@ func capture(t *testing.T, cfg anthropic.Config, req provider.Request) sent {
 	return got
 }
 
+func TestErrorResultMedia(t *testing.T) {
+	for _, outcome := range []transcript.Outcome{
+		transcript.OutcomeFailed, transcript.OutcomeCancelled, transcript.OutcomeUnknown, transcript.OutcomeCompleted,
+	} {
+		for _, tail := range []string{"end", "user", "assistant"} {
+			t.Run(string(outcome)+"/"+tail, func(t *testing.T) {
+				image := transcript.Part{Image: &transcript.Blob{MimeType: "image/png", Data: []byte{1, 2, 3}}}
+				document := transcript.Part{Resource: &transcript.Resource{URI: "file:///chart.pdf", MimeType: "application/pdf", Data: []byte{4, 5, 6}}}
+				req := (scenario{prompt: "Read the files.", tools: []provider.Tool{readTool}, maxOutput: 256}).request(
+					"model", auth.Credential{Account: "work", Scheme: auth.SchemeAPIKey, Token: "placeholder"})
+				for _, id := range []string{"batch", "other", "document"} {
+					req.Items = append(req.Items, transcript.Item{ToolCall: &transcript.ToolCall{
+						ID: id, Name: "read", Input: jsontext.Value(`{"path":"files"}`),
+					}})
+				}
+				req.Items = append(req.Items,
+					transcript.Item{ToolResult: &transcript.ToolResult{
+						CallID: "batch", Name: "read", Outcome: outcome,
+						Parts: []transcript.Part{{Text: "One file was not found"}, image},
+					}},
+					transcript.Item{ToolResult: &transcript.ToolResult{
+						CallID: "other", Name: "read", Outcome: transcript.OutcomeCompleted,
+						Parts: []transcript.Part{image},
+					}},
+					transcript.Item{ToolResult: &transcript.ToolResult{
+						CallID: "document", Name: "read", Outcome: outcome,
+						Parts: []transcript.Part{{Text: "Another file was not found"}, document},
+					}},
+				)
+				switch tail {
+				case "user":
+					req.Items = append(req.Items, transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "Continue."}}}})
+				case "assistant":
+					req.Items = append(req.Items, transcript.Item{Text: &transcript.Text{Text: "Some files were missing."}})
+				}
+				got := capture(t, anthropic.Config{}, req)
+				type block struct {
+					Type      string  `json:"type"`
+					Text      string  `json:"text"`
+					ToolUseID string  `json:"tool_use_id"`
+					IsError   bool    `json:"is_error"`
+					Content   []block `json:"content"`
+					Source    struct {
+						Data []byte `json:"data"`
+					} `json:"source"`
+				}
+				var body struct {
+					Messages []struct {
+						Role    string  `json:"role"`
+						Content []block `json:"content"`
+					} `json:"messages"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(got.body), &body))
+				require.GreaterOrEqual(t, len(body.Messages), 3)
+				require.Equal(t, "user", body.Messages[2].Role)
+				results := body.Messages[2].Content
+				require.GreaterOrEqual(t, len(results), 3)
+				for i, id := range []string{"batch", "other", "document"} {
+					require.Equal(t, "tool_result", results[i].Type)
+					require.Equal(t, id, results[i].ToolUseID)
+				}
+				require.False(t, results[1].IsError)
+				require.Len(t, results[1].Content, 1)
+				require.Equal(t, "image", results[1].Content[0].Type)
+				require.Equal(t, image.Image.Data, results[1].Content[0].Source.Data)
+				failed := outcome != transcript.OutcomeCompleted
+				for _, i := range []int{0, 2} {
+					require.Equal(t, failed, results[i].IsError)
+					require.Equal(t, "text", results[i].Content[0].Type)
+					require.Equal(t, req.Items[4+i].ToolResult.Parts[0].Text, results[i].Content[0].Text)
+					if failed {
+						require.Len(t, results[i].Content, 1)
+					} else {
+						require.Len(t, results[i].Content, 2)
+					}
+				}
+				media := []block{results[0].Content[len(results[0].Content)-1], results[2].Content[len(results[2].Content)-1]}
+				n := 3
+				if failed {
+					n = 7
+					require.GreaterOrEqual(t, len(results), n)
+					for i, id := range []string{"batch", "document"} {
+						require.Equal(t, "text", results[3+2*i].Type)
+						require.Contains(t, results[3+2*i].Text, id)
+					}
+					media = []block{results[4], results[6]}
+				}
+				require.Equal(t, "image", media[0].Type)
+				require.Equal(t, image.Image.Data, media[0].Source.Data)
+				require.Equal(t, "document", media[1].Type)
+				require.Equal(t, document.Resource.Data, media[1].Source.Data)
+				if tail == "user" {
+					require.Len(t, results, n+1)
+					require.Equal(t, "Continue.", results[n].Text)
+				} else {
+					require.Len(t, results, n)
+				}
+				if tail == "assistant" {
+					require.Len(t, body.Messages, 4)
+					require.Equal(t, "assistant", body.Messages[3].Role)
+				}
+			})
+		}
+	}
+}
+
 // A proxy that holds the account's token swaps the authorization and
 // nothing else, so a proxied credential must not change any other byte.
 func TestProxiedCredentialGetsTheSameRequest(t *testing.T) {

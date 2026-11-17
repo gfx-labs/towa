@@ -5,16 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
+	"strings"
 	"sync"
 	"time"
 	"uuid"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/agent/hooks"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/router"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/repair"
 	"github.com/gfx-labs/towa/src/tools/todo"
@@ -58,6 +62,8 @@ type turn struct {
 	compactionInput *compact.BeforeInput
 	mapper          Mapper
 	schemas         map[string]*repair.Schema
+	// cost is the session's running cost, from its stored usage on.
+	cost Cost
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -78,6 +84,15 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 		tn.limits = *t.Limits
 	}
 	result, err := tn.run(ctx)
+	if l.o.Jobs != nil {
+		// No job outlives its turn. The model learns how the ones it was
+		// not told about ended at the start of the next turn, and the client
+		// before the prompt returns.
+		l.o.Jobs.StopAll()
+		if err == nil {
+			err = tn.reportJobs(ctx)
+		}
+	}
 	result.Final = tn.final
 	if result.Usage == nil {
 		result.Usage = tn.snapshot().Usage()
@@ -280,8 +295,26 @@ func (tn *turn) step(ctx context.Context, session hooks.Session, system []provid
 	if key, over := Exceeded(tn.limits, tn.snapshot()); over {
 		return LimitResult(key, tn.snapshot()), true, nil
 	}
+	if err := tn.reportJobs(ctx); err != nil {
+		return Result{}, true, err
+	}
 
 	resp, streamErr := tn.stream(ctx, system)
+	for retries := 0; ; retries++ {
+		move, again := tn.resend(ctx, resp, streamErr, retries)
+		if !again {
+			break
+		}
+		if err := tn.discard(ctx, resp); err != nil {
+			return Result{}, true, err
+		}
+		tn.moved(ctx, move)
+		if err := sleep(ctx, move.Wait); err != nil {
+			resp, streamErr = &Response{}, err
+			break
+		}
+		resp, streamErr = tn.stream(ctx, system)
+	}
 	tn.final = resp.Text()
 	if err := tn.record(ctx, resp, streamErr); err != nil {
 		return Result{}, true, err
@@ -301,6 +334,68 @@ func (tn *turn) step(ctx context.Context, session hooks.Session, system []provid
 	return tn.stopped(ctx, session, resp.Stop)
 }
 
+// resend says whether a response the provider cut off after it began is
+// sent again, and the move to report. The router retries only until an event
+// arrives, so past that the turn applies the same policy, as to the last
+// entry of a chain.
+func (tn *turn) resend(ctx context.Context, resp *Response, streamErr error, retries int) (router.Move, bool) {
+	perr, ok := errors.AsType[*provider.Error](streamErr)
+	if !ok || !resp.arrived || ctx.Err() != nil {
+		return router.Move{}, false
+	}
+	decision := router.Decide(tn.limits.Retry, perr, router.Attempt{
+		Retries: retries, Entry: 0, Entries: 1, Now: tn.l.o.Now(), Rand: rand.Float64(),
+	})
+	if decision.Action != router.Again {
+		return router.Move{}, false
+	}
+	var entry router.Entry
+	if failed, ok := errors.AsType[*router.Failed](streamErr); ok {
+		entry = failed.Entry
+	}
+	return router.Move{Kind: router.MoveRetry, From: entry, To: entry, Wait: decision.Wait, Err: perr}, true
+}
+
+// discard drops a cut-off response before the request is sent again. Its
+// items are not stored, so the model never sees them. The client is told
+// that each call it was shown did not run, and the usage still counts.
+func (tn *turn) discard(ctx context.Context, resp *Response) error {
+	for _, call := range resp.Calls() {
+		tn.notRun(ctx, call.ID)
+	}
+	for _, id := range resp.Writing() {
+		tn.notRun(ctx, id)
+	}
+	if resp.Usage != nil {
+		tn.usage(ctx, *resp.Usage)
+		if err := tn.append(ctx, transcript.Item{Usage: resp.Usage}); err != nil {
+			return err
+		}
+	}
+	return tn.sendErr
+}
+
+// notRun tells the client that a call it was shown did not run.
+func (tn *turn) notRun(ctx context.Context, id string) {
+	failed := acp.ToolCallStatusFailed
+	tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+		ToolCallId: acp.ToolCallId(id), Status: &failed,
+		Content: []acp.ToolCallContent{tools.TextContent(textNotRun)},
+	}})
+}
+
+// sleep waits for d or until ctx ends.
+func sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 // record tells the client how a response ended and stores it.
 func (tn *turn) record(ctx context.Context, resp *Response, streamErr error) error {
 	stored := resp.Items
@@ -316,18 +411,11 @@ func (tn *turn) record(ctx context.Context, resp *Response, streamErr error) err
 	// A call the response announced and never finished is not an item
 	// and is not stored. The client is still told that it ended.
 	for _, id := range resp.Writing() {
-		failed := acp.ToolCallStatusFailed
-		tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
-			ToolCallId: acp.ToolCallId(id), Status: &failed,
-			Content: []acp.ToolCallContent{tools.TextContent(textNotRun)},
-		}})
+		tn.notRun(ctx, id)
 	}
 	if resp.Usage != nil {
-		tn.add(*resp.Usage)
+		tn.usage(ctx, *resp.Usage)
 		stored = append(stored, transcript.Item{Usage: resp.Usage})
-		if update, ok := tn.mapper.Usage(*resp.Usage); ok {
-			tn.send(ctx, acp.SessionUpdate{UsageUpdate: &update})
-		}
 	}
 	// The calls are durable before any of them is dispatched, so a
 	// process that dies here leaves a call without a result, which the
@@ -351,6 +439,9 @@ func (tn *turn) stopped(ctx context.Context, session hooks.Session, stop provide
 	}
 	logHook(ctx, tn.l.o.Logger, tn.t.SessionID, hookErr)
 	if decision.Action == hooks.Allow {
+		if reason == acp.StopReasonEndTurn && tn.l.o.Jobs != nil {
+			return tn.awaitJobs(ctx, reason)
+		}
 		return tn.pokeTodos(ctx, reason)
 	}
 	// A hook that always denies must not run the turn forever.
@@ -359,6 +450,50 @@ func (tn *turn) stopped(ctx context.Context, session hooks.Session, stop provide
 	}
 	tn.stopDenials++
 	return tn.continueWith(ctx, decision.Reason)
+}
+
+// awaitJobs keeps a turn the model ended going while its background
+// commands run: it waits for the next to end, and the next request tells
+// the model how it ended.
+func (tn *turn) awaitJobs(ctx context.Context, reason acp.StopReason) (Result, bool, error) {
+	if err := tn.l.o.Jobs.Next(ctx); err != nil {
+		if result, done, endErr := tn.ended(ctx, nil); done {
+			return result, true, endErr
+		}
+		return Result{}, true, err
+	}
+	if !tn.l.o.Jobs.Unreported() {
+		return tn.pokeTodos(ctx, reason)
+	}
+	return Result{}, false, nil
+}
+
+// reportJobs tells the model how the background commands it was not told
+// about ended.
+func (tn *turn) reportJobs(ctx context.Context) error {
+	if tn.l.o.Jobs == nil {
+		return nil
+	}
+	ended := tn.l.o.Jobs.Take()
+	if len(ended) == 0 {
+		return nil
+	}
+	reports := make([]string, len(ended))
+	for i, job := range ended {
+		outcome, report := job.Report()
+		reports[i] = report
+		// The call that started the job ended when it started; the client
+		// is shown how the job ended under it.
+		status, err := Status(outcome)
+		if err != nil {
+			return err
+		}
+		tn.send(ctx, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+			ToolCallId: acp.ToolCallId(job.CallID), Status: &status,
+			Content: []acp.ToolCallContent{tools.TextContent(report)},
+		}})
+	}
+	return tn.append(ctx, userText(jobsPrefix+strings.Join(reports, "\n\n")))
 }
 
 // pokeTodos ends the turn, unless it ended by itself with todo items

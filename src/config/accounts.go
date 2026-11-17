@@ -95,7 +95,7 @@ func (c *Config) addStoredAccounts(stored map[string]string) {
 	for _, raw := range c.Models {
 		// An entry that does not parse is for validation to report.
 		entry, err := ParseChainEntry(raw)
-		if err == nil && (entry.Provider == ProviderClaude || entry.Provider == ProviderCodex) {
+		if err == nil && entry.Account != AnyAccount && (entry.Provider == ProviderClaude || entry.Provider == ProviderCodex) {
 			add(entry.Account, entry.Provider)
 		}
 	}

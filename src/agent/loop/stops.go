@@ -2,6 +2,10 @@ package loop
 
 import (
 	"errors"
+	"fmt"
+	"time"
+
+	acp "github.com/gfx-labs/go-acp"
 
 	"github.com/gfx-labs/towa/src/agent/harness"
 	"github.com/gfx-labs/towa/src/auth"
@@ -73,24 +77,17 @@ func StopFor(err error) error {
 	return &StopError{Stop: stop, Err: err}
 }
 
-// MoveFor is the report a client gets for a move of the router. It reports
-// false when the failure's reason is outside provider's list.
-func MoveFor(m router.Move) (harness.Move, bool) {
-	reason, ok := StopKind(m.Err.Reason)
-	if !ok {
-		return harness.Move{}, false
-	}
-	kind := harness.MoveRetry
+// Notice is the notice a client gets for a retry or fallback of the
+// router: a warning whose title names the move and whose description holds
+// the provider's message.
+func Notice(m router.Move) *acp.SessionUpdateNotice {
+	title := fmt.Sprintf("%s on %s, retrying in %s", m.Err.Reason, m.From, m.Wait.Round(time.Millisecond))
 	if m.Kind == router.MoveFallback {
-		kind = harness.MoveFallback
+		title = fmt.Sprintf("%s on %s, falling back to %s", m.Err.Reason, m.From, m.To)
 	}
-	return harness.Move{
-		Kind:        kind,
-		Reason:      reason,
-		FromAccount: m.From.Account,
-		FromModel:   m.From.Model,
-		ToAccount:   m.To.Account,
-		ToModel:     m.To.Model,
-		WaitSeconds: m.Wait.Seconds(),
-	}, true
+	notice := &acp.SessionUpdateNotice{SessionUpdate: "notice", Severity: acp.NoticeSeverityWarning, Title: title}
+	if m.Err.Message != "" {
+		notice.Description = &m.Err.Message
+	}
+	return notice
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"slices"
 	"strings"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -38,6 +39,7 @@ func patchTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 			}
 			roots := fsops.RootsOf(env, cfg.Files)
 			onlyDelete := len(p.Hunks) > 0
+			var names []string
 			for _, h := range p.Hunks {
 				onlyDelete = onlyDelete && h.Kind == patch.Delete
 				for _, path := range []string{h.Path, h.Move} {
@@ -50,10 +52,16 @@ func patchTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Rea
 					}
 					desc.Locations = append(desc.Locations, acp.ToolCallLocation{Path: abs})
 					desc.WritePaths = append(desc.WritePaths, abs)
+					if name := displayPath(env.Cwd, abs); !slices.Contains(names, name) {
+						names = append(names, name)
+					}
 				}
 			}
-			if onlyDelete {
-				desc.Title, desc.Kind = "Delete files", acp.ToolKindDelete
+			switch {
+			case onlyDelete:
+				desc.Title, desc.Kind = "Delete "+strings.Join(names, ", "), acp.ToolKindDelete
+			case len(names) > 0:
+				desc.Title = "Edit " + strings.Join(names, ", ")
 			}
 			return desc, nil
 		},

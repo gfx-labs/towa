@@ -32,7 +32,7 @@ type Config struct {
 	// Models are the models a session can select, each "provider:account/model"
 	// with an optional "#effort". A session starts with the first. A request
 	// that an entry cannot take falls back to the entries listed after it.
-	Models []string `name:"models" group:"models" placeholder:"MODEL" help:"Models a session can select, in order: provider:account/model, optionally with #effort (claude:work/claude-opus-5-5#medium). Comma separated as a flag, a list in a file. A session starts with the first, and a request an entry cannot take falls back to the entries after it. Without #effort none is sent and the provider's default applies."`
+	Models []string `name:"models" group:"models" placeholder:"MODEL" help:"Models a session can select, in order: provider:account/model, optionally with #effort (claude:work/claude-opus-5-5#medium). provider:model means every account of the provider. Comma separated as a flag, a list in a file. A session starts with the first, and a request an entry cannot take falls back to the entries after it. Without #effort none is sent and the provider's default applies."`
 	// ModelContextWindow and ModelMaxOutputTokens are the figures of a model the
 	// built-in table in src/provider/models does not have and no provider's models
 	// entry gives. Zero is not set: the figure is then taken from the

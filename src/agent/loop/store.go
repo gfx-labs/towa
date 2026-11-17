@@ -38,12 +38,15 @@ func (tn *turn) load(ctx context.Context) error {
 			return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
 		}
 		tn.entries = append(tn.entries, entry)
+		if entry.Item.Usage != nil {
+			tn.cost.Add(*entry.Item.Usage)
+		}
 		if entry.Item.Compaction == nil {
 			history = append(history, entry.Item)
 		}
 		tn.parent = entry.ID
 	}
-	_, repairs, err := Conversation(history, tn.model.Interruption)
+	repairs, err := lostResults(history, tn.model.Interruption)
 	if err != nil {
 		return err
 	}

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -13,6 +16,7 @@ import (
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/tools/fsops"
+	"github.com/gfx-labs/towa/src/tools/jobs"
 	"github.com/gfx-labs/towa/src/tools/shell"
 	"github.com/gfx-labs/towa/src/transcript"
 )
@@ -34,6 +38,7 @@ func readTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 			}
 			path, err := fsops.RootsOf(env, cfg.Files).Resolve(args.Path)
 			if err == nil {
+				desc.Title = "Read " + displayPath(env.Cwd, path) + readRange(args.Offset, args.Limit)
 				desc.Locations = []acp.ToolCallLocation{{Path: path}}
 			}
 			return desc, nil
@@ -52,24 +57,55 @@ func readTool(spec provider.Tool, env tools.Env, cfg config.Tools, tracker *Read
 	}
 }
 
+// readRange is the lines a read asks for, for its title: nothing when it
+// reads from the start with the default limit. offset counts from 1.
+func readRange(offset, limit int) string {
+	start := max(offset, 1)
+	switch {
+	case limit > 0:
+		return fmt.Sprintf(" (%d - %d)", start, start+limit-1)
+	case offset > 1:
+		return fmt.Sprintf(" (from line %d)", offset)
+	}
+	return ""
+}
+
+// commandTitle is a command's title when the call gave no description: its
+// first line, marked when there is more.
+func commandTitle(command string) string {
+	command = strings.TrimSpace(command)
+	first, rest, more := strings.Cut(command, "\n")
+	if more && strings.TrimSpace(rest) != "" {
+		return strings.TrimSpace(first) + " …"
+	}
+	return first
+}
+
 type bashArgs struct {
-	Command     string   `json:"command"`
-	Timeout     *float64 `json:"timeout"`
-	Description string   `json:"description"`
+	Command         string   `json:"command"`
+	Timeout         *float64 `json:"timeout"`
+	Description     string   `json:"description"`
+	RunInBackground bool     `json:"run_in_background"`
 }
 
 // stopGrace is how long a cancelled or timed out command has to exit after
 // SIGTERM before it is killed. Claude Code 2.1.280 uses the same 1500 ms.
 const stopGrace = 1500 * time.Millisecond
 
-func bashTool(spec provider.Tool, cfg config.Tools) tools.Tool {
+func bashTool(spec provider.Tool, cfg config.Tools, jobSet *jobs.Set) tools.Tool {
 	return tools.Tool{
 		Spec: spec, Effect: tools.Executes,
 		Describe: func(input jsontext.Value) (tools.Description, error) {
 			desc := tools.Description{Title: "Run command", Kind: acp.ToolKindExecute}
 			var args bashArgs
-			if err := json.Unmarshal(input, &args); err == nil && args.Description != "" {
+			if err := json.Unmarshal(input, &args); err != nil {
+				return desc, nil
+			}
+			switch {
+			case strings.TrimSpace(args.Description) != "":
 				desc.Title = args.Description
+			case strings.TrimSpace(args.Command) != "":
+				desc.Title = commandTitle(args.Command)
 			}
 			return desc, nil
 		},
@@ -80,15 +116,14 @@ func bashTool(spec provider.Tool, cfg config.Tools) tools.Tool {
 			}
 			in := shell.Input{Command: args.Command, CancelGrace: stopGrace, TimeoutGrace: stopGrace}
 			if args.Timeout != nil {
-				ms := *args.Timeout
-				if math.IsNaN(ms) || math.IsInf(ms, 0) || ms <= 0 || ms > float64(cfg.Shell.MaxTimeout)/float64(time.Millisecond) {
-					return tools.TextResult(transcript.OutcomeFailed, "timeout must be positive and within the configured maximum."), nil
+				timeout, refusal := millis(*args.Timeout, cfg)
+				if refusal != "" {
+					return tools.TextResult(transcript.OutcomeFailed, "The command did not run: "+refusal), nil
 				}
-				ns := ms * float64(time.Millisecond)
-				if ns < 1 || ns >= float64(math.MaxInt64) {
-					return tools.TextResult(transcript.OutcomeFailed, "timeout is outside the supported duration range."), nil
-				}
-				in.Timeout = time.Duration(ns)
+				in.Timeout = timeout
+			}
+			if args.RunInBackground {
+				return startJob(ctx, call, cfg, jobSet, args, in), nil
 			}
 			result, err := shell.Run(ctx, call.Env, cfg, in)
 			if err != nil {
@@ -97,4 +132,18 @@ func bashTool(spec provider.Tool, cfg config.Tools) tools.Tool {
 			return bashResult(result), nil
 		},
 	}
+}
+
+// millis is a timeout the model gave in milliseconds. A value outside the
+// configured range comes back as the reason it was refused.
+func millis(ms float64, cfg config.Tools) (time.Duration, string) {
+	if math.IsNaN(ms) || math.IsInf(ms, 0) || ms <= 0 || ms > float64(cfg.Shell.MaxTimeout)/float64(time.Millisecond) {
+		return 0, fmt.Sprintf("timeout %s ms is not allowed. It must be more than 0 and at most %d ms. Omit timeout for the default of %d ms.",
+			strconv.FormatFloat(ms, 'f', -1, 64), cfg.Shell.MaxTimeout.Milliseconds(), cfg.Shell.Timeout.Milliseconds())
+	}
+	ns := ms * float64(time.Millisecond)
+	if ns < 1 || ns >= float64(math.MaxInt64) {
+		return 0, "timeout is outside the supported duration range."
+	}
+	return time.Duration(ns), ""
 }

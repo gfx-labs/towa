@@ -29,6 +29,8 @@ func (a *Agent) baseTurn(s *session) (loop.Turn, error) {
 			return a.permit(ctx, s, permitRequest{arrival: arrival, tool: tool, effect: effect, call: call})
 		},
 	}
+	a.elicitation(s, &base)
+	base.MessageMcp = a.client.UnstableMessageMcp
 	if err := wireCopy(s.systemPrompt, &base.SystemPrompt); err != nil {
 		return loop.Turn{}, err
 	}

@@ -22,8 +22,8 @@ type Compaction struct {
 	// config-types:350.
 	Mode string `name:"mode" default:"reactive" validate:"oneof=reactive proactive semantic off" help:"When to compact: reactive, proactive, semantic or off. Off stops the turn when the next request would not fit."`
 	// SummaryPrompt selects the prompt of the summary request:
-	// SummaryCheckpoint or SummaryShort. docs/design.md makes checkpoint
-	// the default. jcode has only the short prompt.
+	// SummaryCheckpoint or SummaryShort. Checkpoint is the default. jcode
+	// has only the short prompt.
 	SummaryPrompt string `name:"summary_prompt" default:"checkpoint" validate:"oneof=checkpoint short" help:"Prompt of the summary request: checkpoint or short."`
 	// MaxContextTokens caps the budget the thresholds are measured against
 	// below the model's context window. Zero means the window.

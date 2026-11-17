@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"text/tabwriter"
 	"time"
 
+	acp "github.com/gfx-labs/go-acp"
+
+	"github.com/gfx-labs/towa/src/agent/session"
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/support/httpclient"
@@ -302,4 +306,60 @@ func (accountsCmd) Run(loaded *config.Loaded, h Host) error {
 		_, err = fmt.Fprintln(h.Stderr, "there are no accounts: create one with \"towa login <provider> --account <id>\"")
 	}
 	return err
+}
+
+// terminalLogins are the logins a client can run for the user, run as
+// "towa login" on the command line the client starts towa with. Only a
+// login a configured model can use is offered: one per account whose token
+// the harness holds that a model entry names, and one per provider a model
+// entry uses with no such account, which creates an account named after
+// the provider. A login no model reaches would fix nothing for the client.
+// With no model configured, as on a fresh install, every provider with a
+// login is offered: the ACP registry's validator requires a method then.
+func terminalLogins(models []string, accounts []config.Account, flows map[string]auth.Flow) []session.TerminalLogin {
+	if len(models) == 0 {
+		for provider := range flows {
+			models = append(models, provider+":"+config.AnyAccount+"/any")
+		}
+	}
+	used := map[string]bool{}
+	for _, raw := range models {
+		entry, err := config.ParseChainEntry(raw)
+		if err != nil {
+			continue // validation has refused it already
+		}
+		for _, e := range config.ExpandAccounts(entry, accounts) {
+			used[e.Provider+":"+e.Account] = true
+		}
+		used[entry.Provider] = true
+	}
+	var logins []session.TerminalLogin
+	add := func(id, provider string) {
+		description := fmt.Sprintf("Log in to %s in the browser and store the login in auth.json.", provider)
+		logins = append(logins, session.TerminalLogin{
+			Account: id,
+			Method: acp.AuthMethodTerminalInline{
+				Id:          acp.AuthMethodId("login-" + id),
+				Name:        fmt.Sprintf("Log in account %s (%s)", id, provider),
+				Description: &description,
+				Args:        []string{"login", provider, "--account", id},
+			},
+		})
+	}
+	has := map[string]bool{}
+	taken := map[string]bool{}
+	for _, a := range accounts {
+		taken[a.ID] = true
+		if _, ok := flows[a.Provider]; !ok || a.Kind != config.AccountOAuth || !used[a.Provider+":"+a.ID] {
+			continue
+		}
+		has[a.Provider] = true
+		add(a.ID, a.Provider)
+	}
+	for _, provider := range slices.Sorted(maps.Keys(flows)) {
+		if used[provider] && !has[provider] && !taken[provider] {
+			add(provider, provider)
+		}
+	}
+	return logins
 }

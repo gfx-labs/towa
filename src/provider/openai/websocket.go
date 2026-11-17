@@ -17,7 +17,7 @@ import (
 )
 
 // websocketBeta selects version 2 of the Responses WebSocket protocol, the
-// one jcode validated in docs/OPENAI_WEBSOCKET_VALIDATION.md.
+// one jcode validated.
 const websocketBeta = "responses_websockets=2026-02-06"
 
 // socketKey names the conversation a socket is kept for. The token is part

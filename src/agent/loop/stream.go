@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	acp "github.com/gfx-labs/go-acp"
-	"github.com/gfx-labs/towa/src/agent/harness"
+
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/router"
@@ -67,19 +67,16 @@ func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Res
 	return resp, errors.New("loop: the model's response ended without a stop reason")
 }
 
-// moved logs a move of the router and reports a retry or fallback to the
-// client. A credential refresh is not a move the client acts on.
+// moved logs a move of the router and reports a retry or fallback to a
+// client that takes notices. A credential refresh is not a move the client acts on.
 func (tn *turn) moved(ctx context.Context, m router.Move) {
 	tn.l.o.Logger.WarnContext(ctx, "model request moved", "session", tn.t.SessionID, "kind", m.Kind,
 		"from", m.From.String(), "to", m.To.String(), "wait", m.Wait, "err", m.Err)
 	if m.Kind == router.MoveRefresh {
 		return
 	}
-	move, ok := MoveFor(m)
-	if !ok {
-		return
+	update := acp.SessionUpdate{Notice: Notice(m)}
+	if tn.t.Sendable != nil && tn.t.Sendable(update) {
+		tn.send(ctx, update)
 	}
-	tn.send(ctx, acp.SessionUpdate{SessionInfoUpdate: &acp.SessionSessionInfoUpdate{
-		Meta: harness.Meta(nil, harness.Addition{Move: &move}),
-	}})
 }
