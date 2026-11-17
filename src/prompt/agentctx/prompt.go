@@ -3,6 +3,7 @@ package agentctx
 import (
 	"fmt"
 	"strings"
+	"unique"
 
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/provider"
@@ -162,6 +163,11 @@ func Build(p Prompt) ([]provider.SystemBlock, error) {
 	}
 	if !override {
 		add(SectionClient, client)
+	}
+	// The blocks are the same for every session with the same inputs, so
+	// they are interned: open sessions keep one copy of each.
+	for i := range blocks {
+		blocks[i].Text = unique.Make(blocks[i].Text).Value()
 	}
 	return blocks, nil
 }
