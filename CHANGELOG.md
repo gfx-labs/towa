@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/gfx-labs/towa/compare/v0.5.1...v0.6.0) (2026-11-16)
+
+
+### Features
+
+* **auth:** offer a login per provider on a fresh install and answer authenticate ([#15](https://github.com/gfx-labs/towa/issues/15)) ([ba59953](https://github.com/gfx-labs/towa/commit/ba59953abd1d33b20a64d22cde4e37343b633c2a))
+* **tools:** name the file or command in tool call titles ([0cc3f67](https://github.com/gfx-labs/towa/commit/0cc3f674184651dc982fd5bfa0402baee84bea7c))
+
 ## [0.5.1](https://github.com/gfx-labs/towa/compare/v0.5.0...v0.5.1) (2026-11-15)
 
 
