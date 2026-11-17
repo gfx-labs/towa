@@ -27,7 +27,7 @@ type Deps struct {
 	Reads *ReadTracker
 	// ShowPlan sends the checked list to the client. Nil omits todo, as
 	// does tools.todo.enabled when it is off.
-	ShowPlan func(context.Context, tools.Env, []acp.PlanEntry) error
+	ShowPlan func(context.Context, tools.Env, *acp.SessionUpdatePlan) error
 }
 
 //go:embed specs/*.json

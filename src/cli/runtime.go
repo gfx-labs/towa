@@ -395,12 +395,12 @@ func (f *runtimeFactory) assembleTools(ctx context.Context, s turnSetup) (toolse
 }
 
 // showPlan sends a plan update on the turn that is running.
-func showPlan(ctx context.Context, env tools.Env, entries []acp.PlanEntry) error {
+func showPlan(ctx context.Context, env tools.Env, plan *acp.SessionUpdatePlan) error {
 	current, ok := loop.Current(ctx)
 	if !ok || current.Turn.SessionID != env.SessionID {
 		return errors.New("plan update has no matching current turn")
 	}
-	return current.Turn.Update(ctx, acp.SessionUpdate{Plan: &acp.SessionUpdatePlan{Entries: entries}})
+	return current.Turn.Update(ctx, acp.SessionUpdate{Plan: plan})
 }
 
 // prepareEntry fills in one chain entry's preparation and returns its

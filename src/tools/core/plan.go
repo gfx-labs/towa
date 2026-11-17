@@ -25,27 +25,33 @@ func planTool(spec provider.Tool, deps Deps) tools.Tool {
 					Content    string      `json:"content"`
 					Status     todo.Status `json:"status"`
 					ActiveForm string      `json:"activeForm"`
+					Phase      int         `json:"phase"`
+					Lane       string      `json:"lane"`
 					// The confidences, the plan and the goals are the model's own
 					// record. The tool's schema has checked them and nothing
 					// here reads them.
 					Confidence           string `json:"confidence"`
 					CompletionConfidence string `json:"completion_confidence"`
 				} `json:"todos"`
-				Plan  jsontext.Value `json:"plan"`
-				Goals jsontext.Value `json:"goals"`
+				Plan struct {
+					Title                 string `json:"title"`
+					UserIntention         string `json:"user_intention"`
+					UnderstandsUserIntent string `json:"understands_user_intent"`
+				} `json:"plan"`
+				Goals []map[string]any `json:"goals"`
 			}
 			if err := json.Unmarshal(call.Input, &args, json.RejectUnknownMembers(true)); err != nil {
 				return tools.TextResult(transcript.OutcomeFailed, "Invalid todo input: "+err.Error()), nil
 			}
-			list := todo.List{}
+			list := todo.List{Title: args.Plan.Title, UserIntention: args.Plan.UserIntention, Goals: args.Goals}
 			for _, item := range args.Todos {
-				list.Items = append(list.Items, todo.Item{Content: item.Content, Status: item.Status, ActiveForm: item.ActiveForm})
+				list.Items = append(list.Items, todo.Item{Content: item.Content, Status: item.Status, ActiveForm: item.ActiveForm, Phase: item.Phase, Lane: item.Lane})
 			}
 			checked, err := todo.Check(list)
 			if err != nil {
 				return tools.TextResult(transcript.OutcomeFailed, err.Error()), nil
 			}
-			if err := deps.ShowPlan(ctx, call.Env, checked.Entries); err != nil {
+			if err := deps.ShowPlan(ctx, call.Env, &acp.SessionUpdatePlan{Entries: checked.Entries, Meta: checked.Meta}); err != nil {
 				return tools.Result{}, err
 			}
 			return tools.TextResult(transcript.OutcomeCompleted, "The task list was updated."), nil

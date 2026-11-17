@@ -46,6 +46,11 @@ type Item struct {
 	// ActiveForm is the wording for the item while it is in progress
 	// ("Running the tests"). It may be empty.
 	ActiveForm string
+	// Phase and Lane group the item for a client that shows phases and
+	// lanes. Zero and empty mean ungrouped. They are sent in the entry's
+	// _meta as "phase" and "lane".
+	Phase int
+	Lane  string
 }
 
 // List is one call's input: the whole list, in order.
@@ -53,6 +58,12 @@ type List struct {
 	Items []Item
 	// Explanation says why the list changed. It may be empty.
 	Explanation string
+	// Title, UserIntention and Goals describe the whole plan. They may be
+	// empty. They are sent in the plan update's _meta as "title",
+	// "user_intention" and "goals".
+	Title         string
+	UserIntention string
+	Goals         []map[string]any
 }
 
 // Result is a list that passed the checks.
@@ -63,6 +74,9 @@ type Result struct {
 	// Entries is the list as a client is shown it. An item in progress
 	// that has an active form is shown with that wording.
 	Entries []acp.PlanEntry
+	// Meta is the plan update's _meta: nil when the list has no title,
+	// intention or goals.
+	Meta map[string]any
 	// InProgress is how many items are in progress. Neither upstream tool
 	// was found to refuse a list with several (see the package's note), so
 	// this package does not either. An adapter whose upstream does can
@@ -131,12 +145,36 @@ func Check(list List) (Result, error) {
 		if item.Status == InProgress && item.ActiveForm != "" {
 			shown = item.ActiveForm
 		}
-		r.Items[i] = item
 		r.Entries[i] = acp.PlanEntry{
 			Content:  shown,
 			Status:   acp.PlanEntryStatus(item.Status),
 			Priority: acp.PlanEntryPriority(priority),
 		}
+		item.Lane = strings.TrimSpace(item.Lane)
+		r.Items[i] = item
+		if item.Phase != 0 || item.Lane != "" {
+			meta := map[string]any{}
+			if item.Phase != 0 {
+				meta["phase"] = item.Phase
+			}
+			if item.Lane != "" {
+				meta["lane"] = item.Lane
+			}
+			r.Entries[i].Meta = meta
+		}
+	}
+	meta := map[string]any{}
+	if title := strings.TrimSpace(list.Title); title != "" {
+		meta["title"] = title
+	}
+	if intention := strings.TrimSpace(list.UserIntention); intention != "" {
+		meta["user_intention"] = intention
+	}
+	if len(list.Goals) > 0 {
+		meta["goals"] = list.Goals
+	}
+	if len(meta) > 0 {
+		r.Meta = meta
 	}
 	return r, nil
 }

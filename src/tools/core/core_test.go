@@ -52,8 +52,9 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	env := tools.Env{Cwd: t.TempDir()}
 	var tracker core.ReadTracker
 	var shown []acp.PlanEntry
-	set := assemble(t, env, cfg, core.Deps{Reads: &tracker, ShowPlan: func(_ context.Context, _ tools.Env, entries []acp.PlanEntry) error {
-		shown = entries
+	var shownMeta map[string]any
+	set := assemble(t, env, cfg, core.Deps{Reads: &tracker, ShowPlan: func(_ context.Context, _ tools.Env, plan *acp.SessionUpdatePlan) error {
+		shown, shownMeta = plan.Entries, plan.Meta
 		return nil
 	}})
 
@@ -150,6 +151,21 @@ func TestFileToolsShareOneSessionsReadState(t *testing.T) {
 	require.Len(t, shown, 1)
 	require.Equal(t, "Checking files", shown[0].Content)
 	require.Equal(t, acp.PlanEntryStatusInProgress, shown[0].Status)
+	require.Nil(t, shown[0].Meta)
+	require.Equal(t, "Check the files", shownMeta["user_intention"])
+	require.Len(t, shownMeta["goals"], 1)
+
+	result = run(t, set, env, "todo", map[string]any{
+		"todos": []map[string]any{
+			{"content": "Write", "status": "completed", "activeForm": "Writing", "phase": 1, "lane": "code"},
+			{"content": "Ship", "status": "pending", "activeForm": "Shipping"},
+		},
+		"plan": map[string]any{"title": "Towa plan", "user_intention": "Ship it", "understands_user_intent": "clear"},
+	})
+	require.Equal(t, transcript.OutcomeCompleted, result.Outcome)
+	require.Equal(t, map[string]any{"phase": 1, "lane": "code"}, shown[0].Meta)
+	require.Nil(t, shown[1].Meta)
+	require.Equal(t, map[string]any{"title": "Towa plan", "user_intention": "Ship it"}, shownMeta)
 
 	imagePath := filepath.Join(env.Cwd, "picture.png")
 	imageData := fixture(t, "blue-purple-pink-large.png")

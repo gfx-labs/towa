@@ -122,3 +122,21 @@ func TestOpenReadsTheLastAcceptedListAndItsPokes(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, open)
 }
+
+func TestCheckSendsGroupingAndPlanInMeta(t *testing.T) {
+	r, err := todo.Check(todo.List{
+		Items: []todo.Item{
+			{Content: "a", Status: todo.Pending, Phase: 2, Lane: " ui "},
+			{Content: "b", Status: todo.Pending},
+		},
+		Title: "T", UserIntention: " I ", Goals: []map[string]any{{"group": "g"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"phase": 2, "lane": "ui"}, r.Entries[0].Meta)
+	require.Nil(t, r.Entries[1].Meta)
+	require.Equal(t, map[string]any{"title": "T", "user_intention": "I", "goals": []map[string]any{{"group": "g"}}}, r.Meta)
+
+	r, err = todo.Check(todo.List{Items: []todo.Item{{Content: "a", Status: todo.Pending}}})
+	require.NoError(t, err)
+	require.Nil(t, r.Meta)
+}
