@@ -46,7 +46,7 @@ func (tn *turn) load(ctx context.Context) error {
 		}
 		tn.parent = entry.ID
 	}
-	_, repairs, err := Conversation(history, tn.model.Interruption)
+	repairs, err := lostResults(history, tn.model.Interruption)
 	if err != nil {
 		return err
 	}

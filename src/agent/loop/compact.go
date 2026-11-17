@@ -26,7 +26,8 @@ func (tn *turn) contextItems(ctx context.Context, name, interruption string, ori
 	// A provider's search items go back only to the request that can hold
 	// them. After a fallback or a model switch they are sent as text.
 	items = hostedsearch.Portable(items, name, origin, hosted)
-	items, repairs, err := Conversation(items, interruption)
+	// items is this request's own list, so it is reused.
+	items, repairs, err := conversationInPlace(items, interruption)
 	if err != nil {
 		return nil, err
 	}
