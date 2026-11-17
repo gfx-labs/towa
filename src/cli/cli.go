@@ -246,7 +246,7 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 			ContextOverrides:      true,
 			MCP:                   &acp.McpCapabilities{Http: true, Sse: true, Acp: true},
 			Prompt:                acp.PromptCapabilities{Image: true, EmbeddedContext: true},
-			TerminalAuth:          terminalLogins(loaded.Config.Accounts, auth.Flows()),
+			TerminalAuth:          terminalLogins(loaded.Config.Models, loaded.Config.Accounts, auth.Flows()),
 			LoggedIn: func(account string) (bool, error) {
 				_, err := logins.Load(account)
 				if errors.Is(err, auth.ErrNotLoggedIn) {

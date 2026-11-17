@@ -176,8 +176,13 @@ func (r *Router) Stream(ctx context.Context, req provider.Request) iter.Seq2[pro
 			entry := r.chain[i]
 			cred, err := r.source.Credential(ctx, entry.Account)
 			if err != nil {
-				// No credential is the same to the caller as a refused one.
+				// No credential is the same to the caller as a refused one,
+				// except a key the configuration does not supply: no login
+				// fixes that, so it is not an auth failure.
 				failure := &provider.Error{Class: provider.Fallback, Reason: provider.ReasonAuth, Err: err}
+				if errors.Is(err, auth.ErrNoKey) {
+					failure.Reason, failure.Message = provider.ReasonRequest, err.Error()
+				}
 				if i < len(r.chain)-1 && ctx.Err() == nil {
 					report(Move{Kind: MoveFallback, From: entry, To: r.chain[i+1], Err: failure})
 					continue
