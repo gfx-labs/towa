@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -345,8 +346,18 @@ type collector struct {
 	partial []byte
 }
 
-func (c *collector) drain(ctx context.Context, r io.Reader) error {
+// readBuffers holds drain's read buffers. Every bash call reads its
+// output through one, and none outlives its call: keep, write and send copy
+// what they keep.
+var readBuffers = sync.Pool{New: func() any {
 	buf := make([]byte, readChunk)
+	return &buf
+}}
+
+func (c *collector) drain(ctx context.Context, r io.Reader) error {
+	pooled := readBuffers.Get().(*[]byte)
+	defer readBuffers.Put(pooled)
+	buf := *pooled
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
