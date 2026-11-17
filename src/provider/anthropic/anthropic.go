@@ -213,13 +213,12 @@ func (c *Client) stream(ctx context.Context, req provider.Request, yield func(pr
 	}
 	// The billing token covers the body it is sent in, so it is filled in
 	// after the body is serialized.
-	signed := buf.B
 	if req.Credential.Scheme == auth.SchemeOAuth {
-		signed = []byte(signBilling(buf.B))
+		signBilling(buf.B)
 	}
 	// NewRequest sets the length and GetBody for a bytes.Reader, which a
 	// redirect or a retried connection needs.
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(req.Credential), bytes.NewReader(signed))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(req.Credential), bytes.NewReader(buf.B))
 	if err != nil {
 		return invalidRequest("build request: " + err.Error())
 	}

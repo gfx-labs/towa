@@ -1,9 +1,9 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math/bits"
-	"strings"
 )
 
 // The Claude Code subscription billing hash: Anthropic folds the request
@@ -31,51 +31,60 @@ const (
 )
 
 // signBilling computes the cch token of a serialized request body and
-// returns the body with the placeholder replaced.
-func signBilling(body []byte) string {
-	signed := string(body)
-	hash := xxh64([]byte(cchPreimage(signed)), cchSeed)
-	return strings.Replace(signed, cchPlaceholder, "cch="+hexToken(hash), 1)
+// writes it over the placeholder in place. The token has the placeholder's
+// length, so nothing moves and the body is not copied: a long session's
+// request is hundreds of kilobytes, signed on every turn.
+func signBilling(body []byte) {
+	var d xxhDigest
+	d.reset(cchSeed)
+	for _, part := range cchPreimage(body) {
+		d.write(part)
+	}
+	at := bytes.Index(body, []byte(cchPlaceholder))
+	if at < 0 {
+		return
+	}
+	copy(body[at+len("cch="):], hexToken(d.sum()))
 }
 
-// cchPreimage is the body as Claude Code hashes it: the model value is
-// emptied and the max_tokens field is removed.
-func cchPreimage(body string) string {
-	body = stripModelValue(body)
-	return stripMaxTokens(body)
-}
-
-// stripModelValue empties the model value. The request builder writes the
-// model field first, so its value is the first string in the body.
-func stripModelValue(body string) string {
-	const field = `"model":"`
-	n := strings.Index(body, field)
-	if n < 0 {
-		return body
+// cchPreimage is the body as Claude Code hashes it, given as the pieces
+// that remain when the model value is emptied and the max_tokens field is
+// removed. The pieces are slices of body.
+func cchPreimage(body []byte) [][]byte {
+	type cut struct{ start, end int }
+	var cuts []cut
+	// The request builder writes the model field first, so its value is
+	// the first string in the body.
+	if n := bytes.Index(body, []byte(`"model":"`)); n >= 0 {
+		start := n + len(`"model":"`)
+		end := start
+		for end < len(body) && body[end] != '"' {
+			end++
+		}
+		cuts = append(cuts, cut{start, end})
 	}
-	start := n + len(field)
-	end := start
-	for end < len(body) && body[end] != '"' {
-		end++
+	// The model value holds no quote, so emptying it does not change where
+	// this field is found.
+	if n := bytes.Index(body, []byte(`"max_tokens":`)); n >= 0 {
+		end := n + len(`"max_tokens":`)
+		for end < len(body) && body[end] != ',' && body[end] != '}' {
+			end++
+		}
+		if end < len(body) && body[end] == ',' {
+			end++
+		}
+		cuts = append(cuts, cut{n, end})
 	}
-	return body[:start] + body[end:]
-}
-
-// stripMaxTokens removes the max_tokens field with its separator.
-func stripMaxTokens(body string) string {
-	const field = `"max_tokens":`
-	n := strings.Index(body, field)
-	if n < 0 {
-		return body
+	if len(cuts) == 2 && cuts[1].start < cuts[0].start {
+		cuts[0], cuts[1] = cuts[1], cuts[0]
 	}
-	end := n + len(field)
-	for end < len(body) && !strings.ContainsRune(",}", rune(body[end])) {
-		end++
+	pieces := make([][]byte, 0, len(cuts)+1)
+	from := 0
+	for _, c := range cuts {
+		pieces = append(pieces, body[from:c.start])
+		from = c.end
 	}
-	if end < len(body) && body[end] == ',' {
-		end++
-	}
-	return body[:n] + body[end:]
+	return append(pieces, body[from:])
 }
 
 func hexToken(hash uint64) string {
@@ -107,32 +116,59 @@ func xxhAvalanche(h uint64) uint64 {
 	return h
 }
 
-// xxh64 is xxHash64 with a seed, the 64-bit variant without a secret.
-func xxh64(data []byte, seed uint64) uint64 {
-	n := uint64(len(data))
-	var h uint64
-	if len(data) >= 32 {
-		v1 := seed + xxhPrime1 + xxhPrime2
-		v2 := seed + xxhPrime2
-		v3 := seed
-		v4 := seed - xxhPrime1
-		for len(data) >= 32 {
-			v1 = xxhRound(v1, binary.LittleEndian.Uint64(data[0:]))
-			v2 = xxhRound(v2, binary.LittleEndian.Uint64(data[8:]))
-			v3 = xxhRound(v3, binary.LittleEndian.Uint64(data[16:]))
-			v4 = xxhRound(v4, binary.LittleEndian.Uint64(data[24:]))
-			data = data[32:]
+// xxhDigest is xxHash64 with a seed, the 64-bit variant without a secret,
+// fed in pieces.
+type xxhDigest struct {
+	v      [4]uint64
+	total  uint64
+	buf    [32]byte
+	buffed int
+	seed   uint64
+}
+
+func (d *xxhDigest) reset(seed uint64) {
+	*d = xxhDigest{seed: seed}
+	d.v = [4]uint64{seed + xxhPrime1 + xxhPrime2, seed + xxhPrime2, seed, seed - xxhPrime1}
+}
+
+func (d *xxhDigest) stripes(data []byte) []byte {
+	for len(data) >= 32 {
+		for i := range d.v {
+			d.v[i] = xxhRound(d.v[i], binary.LittleEndian.Uint64(data[8*i:]))
 		}
-		h = bits.RotateLeft64(v1, 1) + bits.RotateLeft64(v2, 7) +
-			bits.RotateLeft64(v3, 12) + bits.RotateLeft64(v4, 18)
-		h = xxhMerge(h, v1)
-		h = xxhMerge(h, v2)
-		h = xxhMerge(h, v3)
-		h = xxhMerge(h, v4)
-	} else {
-		h = seed + xxhPrime5
+		data = data[32:]
 	}
-	h += n
+	return data
+}
+
+func (d *xxhDigest) write(data []byte) {
+	d.total += uint64(len(data))
+	if d.buffed > 0 {
+		n := copy(d.buf[d.buffed:], data)
+		d.buffed += n
+		data = data[n:]
+		if d.buffed < 32 {
+			return
+		}
+		d.stripes(d.buf[:])
+		d.buffed = 0
+	}
+	d.buffed = copy(d.buf[:], d.stripes(data))
+}
+
+func (d *xxhDigest) sum() uint64 {
+	var h uint64
+	if d.total >= 32 {
+		h = bits.RotateLeft64(d.v[0], 1) + bits.RotateLeft64(d.v[1], 7) +
+			bits.RotateLeft64(d.v[2], 12) + bits.RotateLeft64(d.v[3], 18)
+		for _, v := range d.v {
+			h = xxhMerge(h, v)
+		}
+	} else {
+		h = d.seed + xxhPrime5
+	}
+	h += d.total
+	data := d.buf[:d.buffed]
 	for len(data) >= 8 {
 		h ^= xxhRound(0, binary.LittleEndian.Uint64(data))
 		h = bits.RotateLeft64(h, 27)*xxhPrime1 + xxhPrime4
