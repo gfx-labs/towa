@@ -205,8 +205,10 @@ func TestHostedImageIsShownAsImageContent(t *testing.T) {
 	}
 
 	// A generation that made no image says so instead of showing nothing.
-	failed := transcript.Item{Native: &transcript.Native{Kind: "image_generation_call"},
-		Opaque: []byte(`{"type":"image_generation_call","id":"ig_2","status":"failed","result":null}`)}
+	failed := transcript.Item{
+		Native: &transcript.Native{Kind: "image_generation_call"},
+		Opaque: []byte(`{"type":"image_generation_call","id":"ig_2","status":"failed","result":null}`),
+	}
 	updates, err := loop.Mapper{}.Updates(failed, &loop.Cost{})
 	require.NoError(t, err)
 	shown := wire(t, updates)
