@@ -92,11 +92,11 @@ func (a *Agent) runTurn(ctx context.Context, s *session, arrival uint64, prompt 
 	a.applyOptions(s, &turn)
 	var result loop.Result
 	var err error
-	if command, args, ok := a.registry.command(prompt); ok && command.Run != nil {
+	if command, args, ok := a.registry().command(prompt); ok && command.Run != nil {
 		result, err = command.Run(ctx, CommandCall{
 			Turn: turn, Args: args, Option: s.option,
 			SetOption: func(ctx context.Context, id acp.SessionConfigId, value Value) error {
-				option := a.registry.option(id)
+				option := a.registry().option(id)
 				return a.setOption(ctx, s, optionChange{id: id, value: value, boolean: option != nil && option.Boolean})
 			},
 		})
@@ -115,7 +115,7 @@ func (a *Agent) runTurn(ctx context.Context, s *session, arrival uint64, prompt 
 // the turn.
 func (a *Agent) applyOptions(s *session, turn *loop.Turn) {
 	for id, value := range s.options() {
-		if apply := a.registry.option(id).Apply; apply != nil {
+		if apply := a.registry().option(id).Apply; apply != nil {
 			apply(turn, value)
 		}
 	}

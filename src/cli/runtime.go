@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
@@ -40,25 +41,36 @@ import (
 	"github.com/gfx-labs/towa/src/tools/toolset"
 )
 
+// runtimeFactory opens session runtimes. What it holds lives as long as the
+// process. What a configuration builds is in its current generation, which
+// reload replaces.
 type runtimeFactory struct {
-	cfg       config.Config
-	host      Host
-	tel       *telemetry.Telemetry
-	client    *http.Client
-	providers *Providers
-	// unlisted is where the figures of a model the built-in table does not
-	// have come from. It is resolved once, when the process starts.
-	unlisted   models.Unlisted
+	host       Host
+	tel        *telemetry.Telemetry
+	client     *http.Client
 	store      *dir.Store
 	pool       *mcp.Pool
 	mcpOptions mcpRuntimeOptions
-	spawner    *subagent.Spawner
-	embeddings *embed.Client
-	jev        *jev.Client
 	// skills and schemas hold what every session reads or builds the same
 	// way, so that a session keeps no copy of its own.
 	skills  agentctx.SkillCache
 	schemas toolset.Cache
+	current atomic.Pointer[generation]
+}
+
+// generation is what one configuration builds. A turn reads the generation
+// that is current when it starts, so a reload applies from the next turn of
+// every session.
+type generation struct {
+	*runtimeFactory
+	cfg       config.Config
+	providers *Providers
+	// unlisted is where the figures of a model the built-in table does not
+	// have come from. It is resolved when the generation is built.
+	unlisted   models.Unlisted
+	spawner    *subagent.Spawner
+	embeddings *embed.Client
+	jev        *jev.Client
 }
 
 type sessionRuntime struct {
@@ -92,21 +104,12 @@ type preparedTurn struct {
 }
 
 func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *telemetry.Telemetry) (_ *runtimeFactory, err error) {
-	f := &runtimeFactory{cfg: cfg, host: h, tel: tel, client: httpclient.New()}
+	f := &runtimeFactory{host: h, tel: tel, client: httpclient.New()}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, f.Close())
 		}
 	}()
-	f.providers, err = NewProviders(ctx, cfg, h, f.client)
-	if err != nil {
-		return nil, err
-	}
-	f.unlisted, err = f.unlistedModels(ctx, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	f.providers.lists.Store(&f.unlisted.Lists)
 	root, err := cfg.Store.Dir(h.Environ)
 	if err != nil {
 		return nil, err
@@ -146,23 +149,67 @@ func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *tele
 	if err != nil {
 		return nil, err
 	}
-	f.spawner, err = subagent.New(subagent.Options{Config: cfg.Subagents})
+	g, err := f.newGeneration(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	f.current.Store(g)
+	return f, nil
+}
+
+// newGeneration builds what cfg configures for a turn: the providers, the
+// model figures and the sidecar clients.
+func (f *runtimeFactory) newGeneration(ctx context.Context, cfg config.Config) (_ *generation, err error) {
+	g := &generation{runtimeFactory: f, cfg: cfg}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, g.close())
+		}
+	}()
+	g.providers, err = NewProviders(ctx, cfg, f.host, f.client)
+	if err != nil {
+		return nil, err
+	}
+	g.unlisted, err = g.unlistedModels(ctx, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	g.providers.lists.Store(&g.unlisted.Lists)
+	g.spawner, err = subagent.New(subagent.Options{Config: cfg.Subagents})
 	if err != nil {
 		return nil, err
 	}
 	if cfg.Embeddings.BaseURL != "" {
-		f.embeddings, err = embed.New(embed.Options{Config: cfg.Embeddings, HTTPClient: f.client, Credentials: f.providers.Credentials})
+		g.embeddings, err = embed.New(embed.Options{Config: cfg.Embeddings, HTTPClient: f.client, Credentials: g.providers.Credentials})
 		if err != nil {
 			return nil, err
 		}
 	}
 	if cfg.Jev.Route != "" {
-		f.jev, err = jev.New(jev.Options{Config: cfg.Jev, HTTPClient: f.client})
+		g.jev, err = jev.New(jev.Options{Config: cfg.Jev, HTTPClient: f.client})
 		if err != nil {
 			return nil, err
 		}
 	}
-	return f, nil
+	return g, nil
+}
+
+// reload makes a generation built from cfg the current one. A turn that
+// started on the one it replaces finishes on it: closing a provider only
+// stops it keeping idle connections.
+func (f *runtimeFactory) reload(ctx context.Context, cfg config.Config) (*generation, error) {
+	g, err := f.newGeneration(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return g, f.current.Swap(g).close()
+}
+
+func (f *generation) close() error {
+	if f.providers == nil {
+		return nil
+	}
+	return f.providers.Close()
 }
 
 func (f *runtimeFactory) Close() error {
@@ -170,8 +217,8 @@ func (f *runtimeFactory) Close() error {
 	if f.pool != nil {
 		errs = append(errs, f.pool.Close())
 	}
-	if f.providers != nil {
-		errs = append(errs, f.providers.Close())
+	if g := f.current.Load(); g != nil {
+		errs = append(errs, g.close())
 	}
 	f.client.CloseIdleConnections()
 	return errors.Join(errs...)
@@ -186,18 +233,19 @@ func (f *runtimeFactory) Open(ctx context.Context, base loop.Turn) (session.Runt
 }
 
 func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRuntime, error) {
+	g := f.current.Load()
 	r := &sessionRuntime{
 		factory: f, reads: &core.ReadTracker{}, jobs: jobs.NewSet(),
-		kept: loop.NewKept(time.Duration(f.cfg.Session.KeepHistorySeconds) * time.Second),
+		kept: loop.NewKept(time.Duration(g.cfg.Session.KeepHistorySeconds) * time.Second),
 	}
 	var taken []string
-	if len(f.cfg.Models) != 0 {
-		loaded, err := f.loadContext(base)
+	if len(g.cfg.Models) != 0 {
+		loaded, err := g.loadContext(base)
 		if err != nil {
 			return nil, err
 		}
 		r.loaded = loaded
-		prepared, err := f.prepare(ctx, turnSetup{turn: base, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
+		prepared, err := g.prepare(ctx, turnSetup{turn: base, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 		if err != nil {
 			return nil, err
 		}
@@ -210,8 +258,8 @@ func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRunt
 		return nil, err
 	}
 	r.manager, r.frozen = manager, frozen
-	if len(f.cfg.Models) != 0 {
-		prepared, err := f.prepare(ctx, turnSetup{turn: base, frozen: frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
+	if len(g.cfg.Models) != 0 {
+		prepared, err := g.prepare(ctx, turnSetup{turn: base, frozen: frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 		if err != nil {
 			return nil, errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 		}
@@ -239,7 +287,7 @@ func (r *sessionRuntime) Close(context.Context) error {
 
 func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, error) {
 	var prepared preparedTurn
-	f := r.factory
+	f := r.factory.current.Load()
 	l, err := loop.New(loop.Options{
 		Resolve: func(ctx context.Context, model string) (loop.Resolved, error) {
 			selected := turn
@@ -287,7 +335,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 
 // loadContext reads what a session's prompt takes from the disk: the context
 // files, the skill listing and the configured sections.
-func (f *runtimeFactory) loadContext(turn loop.Turn) (*agentctx.Loaded, error) {
+func (f *generation) loadContext(turn loop.Turn) (*agentctx.Loaded, error) {
 	contextConfig := f.cfg.Context
 	contextConfig.Agents = append(slices.Clone(contextConfig.Agents), turn.ContextFiles...)
 	contextConfig.SkillsDirs = append(slices.Clone(contextConfig.SkillsDirs), turn.SkillsDirs...)
@@ -344,7 +392,7 @@ type turnSetup struct {
 	prompts *promptCache
 }
 
-func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn, error) {
+func (f *generation) prepare(ctx context.Context, s turnSetup) (preparedTurn, error) {
 	if s.reads == nil {
 		return preparedTurn{}, errors.New("session read tracker is required")
 	}
@@ -398,7 +446,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn
 
 // assembleTools builds the turn's tool set from the core tools, the
 // extras and the session's MCP tools.
-func (f *runtimeFactory) assembleTools(ctx context.Context, s turnSetup) (toolset.Result, error) {
+func (f *generation) assembleTools(ctx context.Context, s turnSetup) (toolset.Result, error) {
 	env := tools.Env{SessionID: s.turn.SessionID, Cwd: s.turn.Cwd, Dirs: slices.Clone(s.turn.Dirs)}
 	coreTools, err := core.Tools(env, f.cfg.Tools, core.Deps{Reads: s.reads, Jobs: s.jobs, ShowPlan: showPlan})
 	if err != nil {
@@ -426,7 +474,7 @@ func showPlan(ctx context.Context, env tools.Env, entries []acp.PlanEntry) error
 // prepareEntry fills in one chain entry's preparation and returns its
 // system prompt. An entry on an OpenAI client also adds its native
 // compaction to result.
-func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry, set tools.Set, s turnSetup, result *preparedTurn) ([]provider.SystemBlock, error) {
+func (f *generation) prepareEntry(chained *router.Entry, entry models.Entry, set tools.Set, s turnSetup, result *preparedTurn) ([]provider.SystemBlock, error) {
 	skillTool := ""
 	if f.cfg.Context.SkillsEnabled {
 		skillTool = extras.NameSkill
@@ -467,7 +515,7 @@ func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry,
 
 // addNative registers the client's compaction under the name its context
 // is known by.
-func (f *runtimeFactory) addNative(result *preparedTurn, client *openai.Client, entry models.Entry) error {
+func (f *generation) addNative(result *preparedTurn, client *openai.Client, entry models.Entry) error {
 	scheme, err := f.accountScheme(entry.Account)
 	if err != nil {
 		return err
@@ -501,7 +549,7 @@ func contextSizeOf(entries []models.Entry) func(model string) (int, bool) {
 	}
 }
 
-func (f *runtimeFactory) accountScheme(id string) (auth.Scheme, error) {
+func (f *generation) accountScheme(id string) (auth.Scheme, error) {
 	for _, account := range f.cfg.Accounts {
 		if account.ID != id {
 			continue
@@ -549,7 +597,7 @@ func toolSections(set tools.Set, hostedSearch, hostedImage, imageEnabled bool) (
 	return listed, append(rules, agentctx.GeneralRules...)
 }
 
-func (f *runtimeFactory) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, error) {
+func (f *generation) extraTools(loaded *agentctx.Loaded) ([]toolset.Extra, error) {
 	var out []toolset.Extra
 	add := func(name string, tool tools.Tool, err error) error {
 		if err != nil {

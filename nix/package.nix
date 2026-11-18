@@ -22,7 +22,7 @@ buildGo127Module {
 
   # The hash of the modules go.sum names. After a dependency changes, set it
   # to lib.fakeHash, build, and copy the hash the error prints.
-  vendorHash = "sha256-oFco+YMLA6YiW3SwmCoaKBdF9tw+udtvgNVmA5hXBVY=";
+  vendorHash = "sha256-eU2bUggdDHKQ0+KcORFgk0WPLhmTvLV8nc0T/kaaxc4=";
 
   subPackages = [ "cmd/towa" ];
 

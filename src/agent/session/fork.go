@@ -112,7 +112,7 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	}
 	attached = true
 	var response acp.UnstableForkSessionResponse
-	err = wireCopy(acp.NewSessionResponse{SessionId: s.id, Modes: modeState(a.registry.option(ModeOption), plan.values[ModeOption].ID), ConfigOptions: a.registry.configOptions(plan.values, a.Gate().BooleanOptions()), Meta: repairMeta(repaired)}, &response)
+	err = wireCopy(acp.NewSessionResponse{SessionId: s.id, Modes: modeState(a.registry().option(ModeOption), plan.values[ModeOption].ID), ConfigOptions: a.registry().configOptions(plan.values, a.Gate().BooleanOptions()), Meta: repairMeta(repaired)}, &response)
 	return response, err
 }
 

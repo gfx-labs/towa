@@ -97,7 +97,7 @@ func TestRuntimeRetainsSemanticEmbeddingAcrossTurns(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, factory.Close()) })
 	factory.store = fixture.Store
-	factory.embeddings, err = embed.New(embed.Options{Config: cfg.Embeddings, HTTPClient: client})
+	factory.current.Load().embeddings, err = embed.New(embed.Options{Config: cfg.Embeddings, HTTPClient: client})
 	require.NoError(t, err)
 	runtime, err := factory.open(t.Context(), turn)
 	require.NoError(t, err)

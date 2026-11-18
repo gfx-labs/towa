@@ -143,8 +143,8 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	}
 	attached = true
 	a.logger.Info("session attached from the store", "session", s.id, "replayed", replay, "was_live", live)
-	return modeState(a.registry.option(ModeOption), plan.values[ModeOption].ID),
-		a.registry.configOptions(plan.values, a.Gate().BooleanOptions()), nil
+	return modeState(a.registry().option(ModeOption), plan.values[ModeOption].ID),
+		a.registry().configOptions(plan.values, a.Gate().BooleanOptions()), nil
 }
 
 // attachPlan is what a stored session starts with in this process.
@@ -295,7 +295,7 @@ func (a *Agent) ListSessions(ctx context.Context, p acp.ListSessionsRequest) (ac
 		if meta.ParentID != uuid.Nil() || meta.ID.Compare(after) <= 0 {
 			continue
 		}
-		if a.pageSize > 0 && len(resp.Sessions) == a.pageSize {
+		if a.settings.Load().session.ListPageSize > 0 && len(resp.Sessions) == a.settings.Load().session.ListPageSize {
 			resp.NextCursor = new(string(resp.Sessions[len(resp.Sessions)-1].SessionId))
 			break
 		}
@@ -371,7 +371,7 @@ func (a *Agent) storedMeta(ctx context.Context, id acp.SessionId) (store.Meta, e
 func (a *Agent) storedValues(meta store.Meta) map[acp.SessionConfigId]Value {
 	stored := map[acp.SessionConfigId]Value{}
 	for id, value := range map[acp.SessionConfigId]string{ModeOption: meta.Mode, ModelOption: meta.Model} {
-		if value != "" && a.registry.option(id) != nil {
+		if value != "" && a.registry().option(id) != nil {
 			stored[id] = Value{ID: acp.SessionConfigValueId(value)}
 		}
 	}
@@ -390,7 +390,7 @@ func (a *Agent) fillMeta(s *session, meta *store.Meta) error {
 	// Select-only overrides have already become config values. Reapplying
 	// them later would undo a subsequent set_config_option.
 	turnOverrides := map[string]any{}
-	for _, override := range a.registry.overrides {
+	for _, override := range a.registry().overrides {
 		value, ok := s.overrides[override.Key]
 		if !ok {
 			continue

@@ -30,7 +30,7 @@ func (a *Agent) setOption(ctx context.Context, s *session, change optionChange) 
 		return err
 	}
 	change.value = value
-	values, changed, err := s.set(change.id, change.value, a.registry.align)
+	values, changed, err := s.set(change.id, change.value, a.registry().align)
 	if err != nil || !changed {
 		return err
 	}
@@ -48,14 +48,14 @@ func (a *Agent) setOption(ctx context.Context, s *session, change optionChange) 
 		return nil
 	}
 	return a.send(ctx, s, acp.SessionUpdate{ConfigOptionUpdate: &acp.SessionConfigOptionUpdate{
-		SessionUpdate: "config_option_update", ConfigOptions: a.registry.configOptions(values, gate.BooleanOptions()),
+		SessionUpdate: "config_option_update", ConfigOptions: a.registry().configOptions(values, gate.BooleanOptions()),
 	}})
 }
 
 // checkChange returns the value an option change sets, or reports one the
 // registry does not accept for a session with values.
 func (a *Agent) checkChange(gate Gate, change optionChange, values map[acp.SessionConfigId]Value) (Value, error) {
-	option := a.registry.option(change.id)
+	option := a.registry().option(change.id)
 	switch {
 	case option == nil, option.Boolean && !gate.BooleanOptions():
 		return Value{}, invalid("unknown config option %q", change.id)
@@ -93,7 +93,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, p acp.SetSessionConf
 	if err := a.setOption(ctx, s, optionChange{id: id, value: value, boolean: p.Boolean != nil, inResponse: true}); err != nil {
 		return acp.SetSessionConfigOptionResponse{}, err
 	}
-	return acp.SetSessionConfigOptionResponse{ConfigOptions: a.registry.configOptions(s.options(), a.Gate().BooleanOptions())}, nil
+	return acp.SetSessionConfigOptionResponse{ConfigOptions: a.registry().configOptions(s.options(), a.Gate().BooleanOptions())}, nil
 }
 
 // SetSessionMode switches the session's mode, which is the mode config
@@ -141,7 +141,7 @@ func (a *Agent) UnstableSessionOptions(ctx context.Context, p acp.UnstableSessio
 	if err != nil {
 		return acp.UnstableSessionOptionsResponse{}, err
 	}
-	mode := a.registry.option(ModeOption)
+	mode := a.registry().option(ModeOption)
 	modes := &acp.UnstableSessionModeState{CurrentModeId: acp.SessionModeId(values[ModeOption].ID)}
 	for _, c := range mode.Choices {
 		modes.AvailableModes = append(modes.AvailableModes, acp.UnstableSessionMode{
@@ -150,6 +150,6 @@ func (a *Agent) UnstableSessionOptions(ctx context.Context, p acp.UnstableSessio
 	}
 	return acp.UnstableSessionOptionsResponse{
 		Modes:         modes,
-		ConfigOptions: a.registry.unstableConfigOptions(values, a.Gate().BooleanOptions()),
+		ConfigOptions: a.registry().unstableConfigOptions(values, a.Gate().BooleanOptions()),
 	}, nil
 }

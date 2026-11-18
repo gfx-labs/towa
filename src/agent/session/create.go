@@ -128,8 +128,8 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 	a.logger.Info("session created", "session", s.id, "cwd", s.cwd)
 	return acp.NewSessionResponse{
 		SessionId:     s.id,
-		Modes:         modeState(a.registry.option(ModeOption), values[ModeOption].ID),
-		ConfigOptions: a.registry.configOptions(values, a.Gate().BooleanOptions()),
+		Modes:         modeState(a.registry().option(ModeOption), values[ModeOption].ID),
+		ConfigOptions: a.registry().configOptions(values, a.Gate().BooleanOptions()),
 	}, nil
 }
 
@@ -141,14 +141,14 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 // in a step gives the effort choices of the next.
 func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionConfigOption, stored map[acp.SessionConfigId]Value) (map[acp.SessionConfigId]Value, []func(*loop.Turn), error) {
 	gate := a.Gate()
-	values := a.registry.defaults()
+	values := a.registry().defaults()
 	maps.Copy(values, stored)
-	a.registry.align(values)
-	perTurn, err := a.registry.applyMeta(meta, values)
+	a.registry().align(values)
+	perTurn, err := a.registry().applyMeta(meta, values)
 	if err != nil {
 		return nil, nil, invalid("%v", err)
 	}
-	a.registry.align(values)
+	a.registry().align(values)
 	// Initial values are applied in order. Unlike session/set_config_option,
 	// the protocol has an entry that does not apply ignored, and only a
 	// repeated id rejected.
@@ -168,7 +168,7 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 			return nil, nil, invalid("configOptions: %q is set twice", id)
 		}
 		seen[id] = true
-		option := a.registry.option(id)
+		option := a.registry().option(id)
 		if option == nil || option.Boolean != (entry.Boolean != nil) || option.Boolean && !gate.BooleanOptions() {
 			a.logger.Debug("initial config option ignored", "option", id)
 			continue
@@ -179,7 +179,7 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 			continue
 		}
 		values[id] = resolved
-		a.registry.align(values)
+		a.registry().align(values)
 	}
 	// A stored value the request did not replace must still be usable
 	// here: this process may be configured differently from the one that
@@ -188,7 +188,7 @@ func (a *Agent) startValues(meta map[string]any, initial []acp.InitialSessionCon
 		if values[id] != value {
 			continue
 		}
-		option := a.registry.option(id)
+		option := a.registry().option(id)
 		if option == nil {
 			return nil, nil, invalid("stored config option %q is not supported here", id)
 		}

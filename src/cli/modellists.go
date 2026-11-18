@@ -33,7 +33,7 @@ func modelListsPath(h Host) (string, error) {
 // A list that cannot be read is logged and not an error: the model's name
 // may still say its figures, and a model nothing is known about is refused
 // when it is selected.
-func (f *runtimeFactory) unlistedModels(ctx context.Context, now time.Time) (models.Unlisted, error) {
+func (f *generation) unlistedModels(ctx context.Context, now time.Time) (models.Unlisted, error) {
 	cfg := f.cfg
 	unlisted := models.Unlisted{
 		Providers:  cfg.Providers,
@@ -66,7 +66,7 @@ func (f *runtimeFactory) unlistedModels(ctx context.Context, now time.Time) (mod
 // modelsWithLists returns the configured models whose provider can list
 // its models. A model the table has is among them: the table gives no
 // reasoning efforts.
-func (f *runtimeFactory) modelsWithLists() ([]config.ChainEntry, error) {
+func (f *generation) modelsWithLists() ([]config.ChainEntry, error) {
 	var wanted []config.ChainEntry
 	for _, raw := range f.cfg.Models {
 		entry, err := config.ParseChainEntry(raw)
@@ -82,7 +82,7 @@ func (f *runtimeFactory) modelsWithLists() ([]config.ChainEntry, error) {
 
 // refreshLists reads into lists the model list of each wanted entry whose
 // kept list is too old, and reports whether it changed lists.
-func (f *runtimeFactory) refreshLists(ctx context.Context, lists models.Lists, wanted []config.ChainEntry, now time.Time) (changed bool) {
+func (f *generation) refreshLists(ctx context.Context, lists models.Lists, wanted []config.ChainEntry, now time.Time) (changed bool) {
 	maxAge := time.Duration(f.cfg.ModelListMaxAgeSeconds) * time.Second
 	timeout := time.Duration(f.cfg.ModelListTimeoutSeconds) * time.Second
 	for _, entry := range wanted {

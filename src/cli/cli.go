@@ -116,6 +116,11 @@ func run(ctx context.Context, args []string, h Host, env commandEnv) error {
 	slices.Sort(device)
 
 	var line commandLine
+	vars := kong.Vars{
+		"version":          version(),
+		"login_providers":  strings.Join(providers, " or "),
+		"device_providers": strings.Join(device, ", "),
+	}
 	// --help and --version print and ask kong to exit. Nothing runs after
 	// either, whatever the rest of the command line or the files hold.
 	printed := false
@@ -136,11 +141,7 @@ func run(ctx context.Context, args []string, h Host, env commandEnv) error {
 		kong.Writers(h.Stdout, h.Stderr),
 		kong.Exit(func(int) { printed = true }),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true, NoAppDescFormat: true}),
-		kong.Vars{
-			"version":          version(),
-			"login_providers":  strings.Join(providers, " or "),
-			"device_providers": strings.Join(device, ", "),
-		},
+		vars,
 	)
 	if printed {
 		return nil
@@ -149,7 +150,12 @@ func run(ctx context.Context, args []string, h Host, env commandEnv) error {
 		return err
 	}
 	parsed.BindTo(ctx, (*context.Context)(nil))
-	return parsed.Run(loaded, h, env.login, env.mcp, env.hosts)
+	reparse := reparser(func() (*config.Loaded, error) {
+		var line commandLine
+		_, loaded, err := config.Parse(sources(h), &line, &line.Flags, args[1:], kong.Name("towa"), kong.Writers(io.Discard, io.Discard), vars)
+		return loaded, err
+	})
+	return parsed.Run(loaded, h, env.login, env.mcp, env.hosts, reparse)
 }
 
 // sources names the config layers this host has. The files of --config are
@@ -184,7 +190,7 @@ func sources(h Host) config.Sources {
 type serveCmd struct{}
 
 // Run serves until the client closes standard input or ctx is cancelled.
-func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
+func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host, reparse reparser) error {
 	tel, err := telemetry.Start(ctx, loaded.Config.Telemetry, version(), h.Stderr)
 	if err != nil {
 		return err
@@ -195,7 +201,7 @@ func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
 			return errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
 		}
 	}
-	err = serveACP(ctx, loaded, h, tel)
+	err = serveACP(ctx, loaded, h, tel, reparse)
 	err = errors.Join(err, stopPprof())
 	tel.Logger.Info("stopped", "err", err)
 	// ctx may be cancelled already. The exporters' own timeouts bound this.
@@ -204,27 +210,13 @@ func (serveCmd) Run(ctx context.Context, loaded *config.Loaded, h Host) error {
 
 // serveACP serves the configured transports until they end, then closes
 // what it opened.
-func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry.Telemetry) error {
+func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry.Telemetry, reparse reparser) error {
 	factory, err := newRuntimeFactory(ctx, loaded.Config, h, tel)
 	if err != nil {
 		return err
 	}
-	registry := &session.Registry{}
-	if selected, err := models.Select(loaded.Config.Models, factory.unlisted, ""); err == nil {
-		for _, entry := range selected.Entries {
-			if entry.Listed {
-				tel.Logger.Debug("the model's figures are from the provider's model list",
-					"model", entry.Model, "account", entry.Account,
-					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
-			}
-			if entry.GuessedFrom != "" {
-				tel.Logger.Info("model is not in the built-in table, a figure is guessed from its name",
-					"model", entry.Model, "from", entry.GuessedFrom,
-					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
-			}
-		}
-	}
-	if err := session.AddModels(registry, loaded.Config.Models, factory.unlisted); err != nil {
+	registry, err := modelRegistry(factory.current.Load(), tel)
+	if err != nil {
 		return errors.Join(err, factory.Close())
 	}
 	logins, err := authStore(h)
@@ -259,12 +251,57 @@ func serveACP(ctx context.Context, loaded *config.Loaded, h Host, tel *telemetry
 	if err != nil {
 		return errors.Join(err, factory.Close())
 	}
+	watch, err := watchConfig(loaded)
+	if err != nil {
+		return errors.Join(err, host.Close(context.WithoutCancel(ctx)), factory.Close())
+	}
+	watchCtx, stopWatching := context.WithCancel(ctx)
+	watched := make(chan error, 1)
+	go func() {
+		watched <- watch.run(watchCtx, loaded, reparse, tel.Logger, func(ctx context.Context, next *config.Loaded) error {
+			g, err := factory.reload(ctx, next.Config)
+			if err != nil {
+				return err
+			}
+			registry, err := modelRegistry(g, tel)
+			if err != nil {
+				return err
+			}
+			return host.Reload(ctx, registry, next.Config.Session)
+		})
+	}()
 	err = serveListeners(ctx, loaded.Config.Listen, host, h, tel.Logger, h.CloseStdio)
 	if ctx.Err() != nil && errors.Is(err, context.Cause(ctx)) {
 		err = nil
 	}
+	stopWatching()
+	err = errors.Join(err, <-watched)
 	err = errors.Join(err, host.Close(context.WithoutCancel(ctx)))
 	return errors.Join(err, factory.Close())
+}
+
+// modelRegistry is the registry of the models g's configuration names. It
+// logs where a model's figures come from when not from the built-in table.
+func modelRegistry(g *generation, tel *telemetry.Telemetry) (*session.Registry, error) {
+	registry := &session.Registry{}
+	if selected, err := models.Select(g.cfg.Models, g.unlisted, ""); err == nil {
+		for _, entry := range selected.Entries {
+			if entry.Listed {
+				tel.Logger.Debug("the model's figures are from the provider's model list",
+					"model", entry.Model, "account", entry.Account,
+					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
+			}
+			if entry.GuessedFrom != "" {
+				tel.Logger.Info("model is not in the built-in table, a figure is guessed from its name",
+					"model", entry.Model, "from", entry.GuessedFrom,
+					config.KeyModelContextWindow, entry.Metadata.ContextWindow, config.KeyModelMaxOutputTokens, entry.Metadata.MaxOutputTokens)
+			}
+		}
+	}
+	if err := session.AddModels(registry, g.cfg.Models, g.unlisted); err != nil {
+		return nil, err
+	}
+	return registry, nil
 }
 
 type configCmd struct{}

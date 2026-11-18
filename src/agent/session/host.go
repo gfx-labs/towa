@@ -6,12 +6,15 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	acp "github.com/gfx-labs/go-acp"
+
 	"github.com/gfx-labs/towa/src/agent/loop"
+	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/store"
 )
 
@@ -26,17 +29,17 @@ type Host struct {
 // shared is the state of a Host. Agents embed it, so that an agent reads
 // the process's settings as its own.
 type shared struct {
-	version  string
-	open     func(context.Context, loop.Turn) (Runtime, error)
-	logger   *slog.Logger
-	tracer   trace.Tracer
-	turns    metric.Int64Counter
-	repairs  metric.Int64Counter
-	registry *Registry
+	version string
+	open    func(context.Context, loop.Turn) (Runtime, error)
+	logger  *slog.Logger
+	tracer  trace.Tracer
+	turns   metric.Int64Counter
+	repairs metric.Int64Counter
+	// settings is the registry and the session section of the
+	// configuration, which Reload replaces.
+	settings atomic.Pointer[settings]
 	supports Supports
 	store    store.Store
-	// pageSize is session.list_page_size.
-	pageSize int
 
 	liveMu   sync.Mutex
 	ending   bool
@@ -73,27 +76,12 @@ func NewHost(o Options) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	registry := &Registry{}
-	if o.Registry != nil {
-		registry = o.Registry.clone()
-	}
-	if err := errors.Join(
-		registry.AddConfigOption(modeOption(acp.SessionConfigValueId(o.Session.Mode))),
-		registry.AddOverride(modeOverride()),
-		registry.AddCommand(modeCommand()),
-	); err != nil {
+	registry, err := newRegistry(o.Registry, o.Session, o.Supports)
+	if err != nil {
 		return nil, err
 	}
-	if o.Supports.ContextOverrides {
-		if err := errors.Join(
-			registry.AddOverride(pathsOverride("context_files", func(turn *loop.Turn, paths []string) { turn.ContextFiles = paths })),
-			registry.AddOverride(pathsOverride("skills_dirs", func(turn *loop.Turn, paths []string) { turn.SkillsDirs = paths })),
-		); err != nil {
-			return nil, err
-		}
-	}
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Host{&shared{
+	h := &Host{&shared{
 		version:  o.Version,
 		open:     o.Open,
 		lifetime: lifetime,
@@ -102,13 +90,78 @@ func NewHost(o Options) (*Host, error) {
 		tracer:   o.Tracer,
 		turns:    turns,
 		repairs:  repairs,
-		registry: registry,
 		supports: o.Supports,
 		store:    o.Store,
-		pageSize: o.Session.ListPageSize,
 		live:     map[acp.SessionId]*session{},
 		busy:     map[acp.SessionId]*idLock{},
-	}}, nil
+	}}
+	h.settings.Store(&settings{registry: registry, session: o.Session})
+	return h, nil
+}
+
+// settings are what the configuration gives the host besides Open: the
+// registry with the mode option, override and command, and the session
+// section.
+type settings struct {
+	registry *Registry
+	session  config.Session
+}
+
+// newRegistry is a copy of base, which may be nil, with what the host adds:
+// the mode option starting in the configured mode, its override and
+// command, and the context overrides when the turn takes them.
+func newRegistry(base *Registry, cfg config.Session, supports Supports) (*Registry, error) {
+	registry := &Registry{}
+	if base != nil {
+		registry = base.clone()
+	}
+	if err := errors.Join(
+		registry.AddConfigOption(modeOption(acp.SessionConfigValueId(cfg.Mode))),
+		registry.AddOverride(modeOverride()),
+		registry.AddCommand(modeCommand()),
+	); err != nil {
+		return nil, err
+	}
+	if supports.ContextOverrides {
+		if err := errors.Join(
+			registry.AddOverride(pathsOverride("context_files", func(turn *loop.Turn, paths []string) { turn.ContextFiles = paths })),
+			registry.AddOverride(pathsOverride("skills_dirs", func(turn *loop.Turn, paths []string) { turn.SkillsDirs = paths })),
+		); err != nil {
+			return nil, err
+		}
+	}
+	return registry, nil
+}
+
+func (h *shared) registry() *Registry { return h.settings.Load().registry }
+
+// Reload replaces the registry and the session section with those of a new
+// configuration. A live session keeps each config value the new registry
+// still accepts, and takes the option's new default for one it does not,
+// such as a model that is no longer configured. Its client is sent the
+// options and commands as they now are. The change applies from each
+// session's next turn: the runtime reads the configuration per turn.
+func (h *Host) Reload(ctx context.Context, base *Registry, cfg config.Session) error {
+	registry, err := newRegistry(base, cfg, h.supports)
+	if err != nil {
+		return err
+	}
+	h.settings.Store(&settings{registry: registry, session: cfg})
+	h.liveMu.Lock()
+	type owned struct {
+		s     *session
+		owner *Agent
+	}
+	var live []owned
+	for _, s := range h.live {
+		live = append(live, owned{s, s.owner})
+	}
+	h.liveMu.Unlock()
+	var errs []error
+	for _, o := range live {
+		errs = append(errs, o.owner.reloaded(ctx, o.s, registry))
+	}
+	return errors.Join(errs...)
 }
 
 // NewAgent returns the agent for one connection. Call SetClient before the

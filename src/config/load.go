@@ -69,6 +69,10 @@ type Loaded struct {
 	// Origin names the layer that supplied each key's value: "default", a
 	// file, "environment" or "flag".
 	Origin map[string]string
+	// Watched are the files a change to which changes the configuration:
+	// the ones read, and a config file the system or user directory could
+	// gain. A file that is not there is still named.
+	Watched []string
 }
 
 // Parse parses args with grammar, a struct that embeds *flags beside its
@@ -89,7 +93,7 @@ func Parse(src Sources, grammar any, flags *Flags, args []string, options ...kon
 		return nil, nil, err
 	}
 
-	loaded := &Loaded{Config: flags.Config, Values: map[string]string{}, Origin: l.origin}
+	loaded := &Loaded{Config: flags.Config, Values: map[string]string{}, Origin: l.origin, Watched: l.watched}
 	for _, element := range ctx.Path {
 		if element.Flag != nil && !element.Resolved && l.keys[element.Flag.Name] == element.Flag {
 			loaded.Origin[element.Flag.Name] = "flag"
@@ -141,9 +145,10 @@ type layers struct {
 	keys     map[string]*kong.Flag
 	sections map[string]bool
 	// files are in the order they were read.
-	files  []file
-	env    map[string]variable
-	origin map[string]string
+	files   []file
+	watched []string
+	env     map[string]variable
+	origin  map[string]string
 }
 
 type file struct {
@@ -191,6 +196,9 @@ func (l *layers) load(ctx *kong.Context) error {
 		if dir == "" {
 			continue
 		}
+		for _, name := range configNames {
+			l.watched = append(l.watched, filepath.Join(dir, name))
+		}
 		path, err := findIn(dir)
 		if err != nil {
 			return err
@@ -199,6 +207,7 @@ func (l *layers) load(ctx *kong.Context) error {
 			paths = append(paths, path)
 		}
 	}
+	l.watched = append(l.watched, slices.Concat(l.src.Files, listed)...)
 	for _, path := range slices.Concat(paths, l.src.Files, listed) {
 		values, err := readFile(path)
 		if err != nil {
@@ -459,10 +468,14 @@ func readFile(path string) (map[string]any, error) {
 	return values, nil
 }
 
+// configNames are the names a config file in the system or user directory
+// may have.
+var configNames = []string{"config.yaml", "config.yml", "config.json"}
+
 // findIn returns the one config file in dir, or "" when there is none.
 func findIn(dir string) (string, error) {
 	var found []string
-	for _, name := range []string{"config.yaml", "config.yml", "config.json"} {
+	for _, name := range configNames {
 		path := filepath.Join(dir, name)
 		switch _, err := os.Stat(path); {
 		case err == nil:

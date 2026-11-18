@@ -170,9 +170,9 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
 			Update: func(context.Context, acp.SessionUpdate) error { return nil },
 		}
-		loaded, err := factory.loadContext(turn)
+		loaded, err := factory.current.Load().loadContext(turn)
 		require.NoError(t, err)
-		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, reads: &core.ReadTracker{}, jobs: jobs.NewSet(), loaded: loaded, prompts: &promptCache{}})
+		prepared, err := factory.current.Load().prepare(t.Context(), turnSetup{turn: turn, reads: &core.ReadTracker{}, jobs: jobs.NewSet(), loaded: loaded, prompts: &promptCache{}})
 		require.NoError(t, err)
 		// The entry's effort goes with the turn's requests as written.
 		require.Equal(t, effort, prepared.resolved.Effort)
@@ -237,7 +237,7 @@ func TestContextFilesAreReadWhenTheSessionOpens(t *testing.T) {
 	}
 	globalInstructions := func(r *sessionRuntime) string {
 		turn := loop.Turn{SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model}
-		prepared, err := factory.prepare(t.Context(), turnSetup{turn: turn, frozen: r.frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
+		prepared, err := factory.current.Load().prepare(t.Context(), turnSetup{turn: turn, frozen: r.frozen, reads: r.reads, jobs: r.jobs, loaded: r.loaded, prompts: &r.prompts})
 		require.NoError(t, err)
 		for _, block := range prepared.system {
 			if block.Name == agentctx.SectionGlobalInstructions {
