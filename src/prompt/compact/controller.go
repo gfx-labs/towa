@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"uuid"
 
@@ -317,7 +318,10 @@ func (c *Controller) startBackground(ctx context.Context, in BeforeInput, view V
 		if len(in.Request.Items) == 0 {
 			return errors.New("compact: native compaction needs the loop's normalized request items")
 		}
-		work.Native, work.NativeRequest, work.ProviderName = native, in.Request, in.ProviderName
+		// The loop builds its next request in the same list.
+		request := in.Request
+		request.Items = slices.Clone(request.Items)
+		work.Native, work.NativeRequest, work.ProviderName = native, request, in.ProviderName
 		c.pendingNativeProvider = in.ProviderName
 		c.pendingNativeOrigin = in.Origin
 	}

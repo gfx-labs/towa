@@ -11,6 +11,7 @@ package compact
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"uuid"
 
@@ -127,11 +128,17 @@ func indexOfID(entries []transcript.Entry, id uuid.UUID) int {
 // The result still holds Usage, ModelSwitch and Interrupted items. The
 // loop's Conversation deals with those, as it does without a compaction.
 func Items(entries []transcript.Entry, providerName string, target ...transcript.Origin) ([]transcript.Item, error) {
+	return AppendItems(nil, entries, providerName, target...)
+}
+
+// AppendItems is Items written over dst[:0], so that a caller building
+// one request after another reuses one list.
+func AppendItems(dst []transcript.Item, entries []transcript.Entry, providerName string, target ...transcript.Origin) ([]transcript.Item, error) {
 	view, err := Read(entries)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]transcript.Item, 0, len(view.Active)+1)
+	items := slices.Grow(dst[:0], len(view.Active)+1)
 	if view.Compaction != nil {
 		head, err := standIn(*view.Compaction, providerName, target...)
 		if err != nil {

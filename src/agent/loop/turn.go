@@ -66,6 +66,8 @@ type turn struct {
 	cost Cost
 	// loaded says entries holds the whole log: the turn got past load.
 	loaded bool
+	// items is the list the last request's items were built in.
+	items []transcript.Item
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex

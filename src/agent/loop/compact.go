@@ -21,7 +21,9 @@ type turnLimitError struct{ key string }
 func (e *turnLimitError) Error() string { return "loop: the turn reached " + e.key }
 
 func (tn *turn) contextItems(ctx context.Context, name, interruption string, origin transcript.Origin, hosted, hostedImage bool) ([]transcript.Item, error) {
-	items, err := compact.Items(tn.entries, name, origin)
+	// The list of the turn's request before is reused: the provider is done
+	// with it, and a background compaction that keeps one takes a copy.
+	items, err := compact.AppendItems(tn.items, tn.entries, name, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +36,7 @@ func (tn *turn) contextItems(ctx context.Context, name, interruption string, ori
 	if err != nil {
 		return nil, err
 	}
+	tn.items = items
 	if err := tn.store(ctx, repairs); err != nil {
 		return nil, err
 	}
