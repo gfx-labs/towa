@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"iter"
 	"os"
@@ -84,16 +85,35 @@ func encodeLines(dst *bytebufferpool.ByteBuffer, entries []transcript.Entry) (co
 	return compaction, nil
 }
 
-// decodeLine decodes one entry.
-func decodeLine(line []byte) (transcript.Entry, error) {
-	var e transcript.Entry
-	if err := json.Unmarshal(line, &e); err != nil {
+// lineDecoder decodes log lines into entries. One serves a whole read: its
+// decoder state is reset for each line rather than built again, and the
+// entry it fills is reused, so a line costs only the entry's own data. A
+// decoded entry is valid until the next call: the caller copies it out.
+type lineDecoder struct {
+	dec   jsontext.Decoder
+	line  bytes.Reader
+	entry transcript.Entry
+}
+
+func (d *lineDecoder) decode(line []byte) (transcript.Entry, error) {
+	d.line.Reset(line)
+	d.dec.Reset(&d.line)
+	// Every field is replaced: the entry before must leave nothing behind.
+	d.entry = transcript.Entry{}
+	if err := json.UnmarshalDecode(&d.dec, &d.entry); err != nil {
 		return transcript.Entry{}, err
 	}
-	if err := e.Item.Validate(); err != nil {
+	// One value per line, as json.Unmarshal required.
+	if _, err := d.dec.ReadToken(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("more than one value on the line")
+		}
 		return transcript.Entry{}, err
 	}
-	return e, nil
+	if err := d.entry.Item.Validate(); err != nil {
+		return transcript.Entry{}, err
+	}
+	return d.entry, nil
 }
 
 // compactionKey is in every line that holds a compaction entry. It can also

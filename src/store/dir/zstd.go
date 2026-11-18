@@ -258,6 +258,7 @@ func (z zstdFormat) forward(f *os.File, from, end int64, r store.Range, fromComp
 		defer bytebufferpool.Put(compressed)
 		defer bytebufferpool.Put(buf)
 		position := 0
+		var d lineDecoder
 		for pos := from; pos < end && (r.To == 0 || position < r.To); {
 			m, ok, err := readMarker(f, pos)
 			if err == nil && (!ok || m.recordLen() > end-pos) {
@@ -297,7 +298,7 @@ func (z zstdFormat) forward(f *os.File, from, end int64, r store.Range, fromComp
 				if position <= r.From {
 					continue
 				}
-				e, err := decodeLine(line)
+				e, err := d.decode(line)
 				if err != nil {
 					yield(transcript.Entry{}, &CorruptError{Offset: rec.offset, Err: err})
 					return

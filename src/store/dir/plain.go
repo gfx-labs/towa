@@ -156,6 +156,7 @@ func (p plainFormat) history(f *os.File, end int64, r store.Range) iter.Seq2[tra
 func (plainFormat) forward(f *os.File, from, end int64, r store.Range) iter.Seq2[transcript.Entry, error] {
 	return func(yield func(transcript.Entry, error) bool) {
 		lines := lineReader{r: bufio.NewReaderSize(io.NewSectionReader(f, from, end-from), readChunk), offset: from}
+		var d lineDecoder
 		for position := 0; r.To == 0 || position < r.To; {
 			offset := lines.offset
 			line, err := lines.next()
@@ -173,7 +174,7 @@ func (plainFormat) forward(f *os.File, from, end int64, r store.Range) iter.Seq2
 			if position <= r.From {
 				continue
 			}
-			e, err := decodeLine(line)
+			e, err := d.decode(line)
 			if err != nil {
 				yield(transcript.Entry{}, &CorruptError{Offset: offset, Err: err})
 				return
