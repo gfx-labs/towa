@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.0](https://github.com/gfx-labs/towa/compare/v0.7.0...v0.8.0) (2026-11-18)
+
+
+### Features
+
+* support OpenAI hosted image generation over ACP ([#23](https://github.com/gfx-labs/towa/issues/23)) ([08927c0](https://github.com/gfx-labs/towa/commit/08927c05b7600edc96926d9e421a7723c94c18ba))
+
+
+### Performance
+
+* **chat:** decode every stream chunk into one reused value ([2870600](https://github.com/gfx-labs/towa/commit/28706007ba36ed5c8cc109e5cc9e16707180ef23))
+* **chat:** stop boxing message content on encode ([eda4bac](https://github.com/gfx-labs/towa/commit/eda4baca4d8c6037607dfeeb0920ff2a03c5e1ec))
+* **chat:** write each message into the body as it is built ([2d2baf9](https://github.com/gfx-labs/towa/commit/2d2baf9d89ce33672bcdb591aff4d2956e270fcf))
+* cut a turn's allocations on a long session by a fifth ([a3e6bc5](https://github.com/gfx-labs/towa/commit/a3e6bc5ed12c5e3976007b76be3c6a7dec538f07))
+* **loop:** build each request's items in the list of the one before ([4196968](https://github.com/gfx-labs/towa/commit/419696876b9be0df97e6b544d1398b0898bdbca6))
+* **loop:** keep a session's history in memory between turns ([d4fddab](https://github.com/gfx-labs/towa/commit/d4fddabecbd620a5c3337073b76fffd5dddaa3d6))
+* **loop:** send stream updates without a slice or context per event ([a625c61](https://github.com/gfx-labs/towa/commit/a625c61b16699cddd6bbbfe2e7d715c137f0cc0a))
+* **store:** decode a log's lines with one reused decoder and entry ([f11d66d](https://github.com/gfx-labs/towa/commit/f11d66dd9154afc8df2e60c623e6343371bab1a4))
+* **store:** let compressed logs decode in parallel, one per CPU by default ([3d8aacb](https://github.com/gfx-labs/towa/commit/3d8aacbc2d44c269cfd2bb9a8c2ca2d53c818f0b))
+
 ## [0.7.0](https://github.com/gfx-labs/towa/compare/v0.6.0...v0.7.0) (2026-11-17)
 
 
