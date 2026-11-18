@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"uuid"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -150,6 +151,13 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	cfg.ModelContextWindow, cfg.ModelMaxOutputTokens = 100_000, 1024
 	home := t.TempDir()
 	host := Host{Stdout: io.Discard, Stderr: io.Discard, Environ: []string{"HOME=" + home, "XDG_STATE_HOME=" + filepath.Join(home, "state"), "RUNTIME_TEST_KEY=placeholder"}}
+	// The codex account's model list says the model takes image input, so
+	// its entry gets the image tool. A fresh list is not read again.
+	listsPath, err := modelListsPath(host)
+	require.NoError(t, err)
+	require.NoError(t, models.Lists{"codex:chat": {FetchedAtUnixMs: time.Now().UnixMilli(), Models: map[string]models.Listed{
+		"gpt-5.5": {InputModalities: []string{"text", "image"}},
+	}}}.Save(listsPath))
 	tel, err := telemetry.Start(t.Context(), cfg.Telemetry, version(), io.Discard)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, tel.Shutdown(context.Background())) })

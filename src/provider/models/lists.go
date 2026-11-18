@@ -23,6 +23,8 @@ type Listed struct {
 	NoAdaptiveThinking bool `json:"no_adaptive_thinking,omitzero"`
 	// Efforts are the reasoning efforts the list says the model takes.
 	Efforts []string `json:"efforts,omitzero"`
+	// InputModalities are the kinds of input the list says the model takes.
+	InputModalities []string `json:"input_modalities,omitzero"`
 }
 
 // List is one account's model list, as its provider gave it.

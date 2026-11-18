@@ -10,6 +10,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gfx-labs/towa/src/config"
@@ -27,10 +28,12 @@ const Kind = "image_generation_call"
 // Tool returns the hosted image generation tool for a chain entry, and false
 // when the entry has none. Only the built-in codex provider has it: a
 // configured endpoint that speaks the same API may not implement it, and
-// the Messages API has no such tool. A model with codex in its name refuses
-// hosted tools it does not know, as it does web search.
-func Tool(cfg config.ImageGeneration, providerID, model string) (provider.Tool, bool, error) {
-	if !cfg.Enabled || providerID != config.ProviderCodex || strings.Contains(strings.ToLower(model), "codex") {
+// the Messages API has no such tool. As Codex does, it is offered only to a
+// model the account's model list says takes image input, so a model the
+// list does not describe goes without it. A model with codex in its name
+// refuses hosted tools it does not know, as it does web search.
+func Tool(cfg config.ImageGeneration, providerID, model string, inputModalities []string) (provider.Tool, bool, error) {
+	if !cfg.Enabled || providerID != config.ProviderCodex || strings.Contains(strings.ToLower(model), "codex") || !slices.Contains(inputModalities, "image") {
 		return provider.Tool{}, false, nil
 	}
 	raw, err := json.Marshal(map[string]any{"type": Name, "output_format": cfg.OutputFormat}, json.Deterministic(true))

@@ -117,7 +117,7 @@ func fetchModelList(ctx context.Context, p *Providers, entry config.ChainEntry, 
 	}
 	list := models.List{Models: make(map[string]models.Listed, len(infos))}
 	for _, info := range infos {
-		list.Models[info.ID] = models.Listed{ContextWindow: info.ContextWindow, MaxOutputTokens: info.MaxOutputTokens, NoAdaptiveThinking: info.NoAdaptiveThinking, Efforts: info.Efforts}
+		list.Models[info.ID] = models.Listed{ContextWindow: info.ContextWindow, MaxOutputTokens: info.MaxOutputTokens, NoAdaptiveThinking: info.NoAdaptiveThinking, Efforts: info.Efforts, InputModalities: info.InputModalities}
 	}
 	return list, nil
 }

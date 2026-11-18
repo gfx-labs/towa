@@ -20,7 +20,7 @@ const codexClientVersion = "1.0.0"
 
 // Models returns the models an OAuth account can use, from the Codex
 // backend's model list, which gives a context window, the reasoning
-// efforts and no output limit.
+// efforts, the input modalities and no output limit.
 // The API key endpoint's list gives neither figure, so an API key gets
 // provider.ErrNoModelList.
 func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.ModelInfo, error) {
@@ -60,6 +60,7 @@ func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.M
 			SupportedReasoningLevels []struct {
 				Effort string `json:"effort"`
 			} `json:"supported_reasoning_levels"`
+			InputModalities []string `json:"input_modalities"`
 		} `json:"models"`
 	}
 	if err := json.UnmarshalRead(resp.Body, &list); err != nil {
@@ -67,7 +68,7 @@ func (c *Client) Models(ctx context.Context, cred auth.Credential) ([]provider.M
 	}
 	out := make([]provider.ModelInfo, len(list.Models))
 	for i, m := range list.Models {
-		out[i] = provider.ModelInfo{ID: m.Slug, ContextWindow: m.ContextWindow}
+		out[i] = provider.ModelInfo{ID: m.Slug, ContextWindow: m.ContextWindow, InputModalities: m.InputModalities}
 		for _, level := range m.SupportedReasoningLevels {
 			out[i].Efforts = append(out[i].Efforts, level.Effort)
 		}

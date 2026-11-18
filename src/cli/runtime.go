@@ -435,7 +435,7 @@ func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry,
 	if err != nil {
 		return nil, err
 	}
-	image, hasImage, err := hostedimage.Tool(f.cfg.ImageGeneration, entry.Provider, entry.Model)
+	image, hasImage, err := hostedimage.Tool(f.cfg.ImageGeneration, entry.Provider, entry.Model, entry.InputModalities)
 	if err != nil {
 		return nil, err
 	}

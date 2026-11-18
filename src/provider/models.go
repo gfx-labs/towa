@@ -22,6 +22,10 @@ type ModelInfo struct {
 	// Efforts are the reasoning efforts the list says the model takes, in
 	// the provider's own words and order. Nil means the list does not say.
 	Efforts []string
+	// InputModalities are the kinds of input the list says the model takes,
+	// in the provider's own words ("text", "image"). Nil means the list does
+	// not say.
+	InputModalities []string
 }
 
 // ErrNoModelList is what Models returns for a credential whose endpoint has

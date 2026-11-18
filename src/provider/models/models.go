@@ -36,6 +36,9 @@ type Entry struct {
 	// the ones its provider's configuration names, or else the ones its
 	// account's model list gives. Nil means neither says.
 	Efforts []string
+	// InputModalities are the kinds of input the account's model list says
+	// the model takes. Nil means the list does not say.
+	InputModalities []string
 }
 
 // Unlisted is where a model's figures come from other than the built-in
@@ -202,7 +205,7 @@ func Select(configured []string, unlisted Unlisted, name string) (Model, error) 
 		if len(missing) > 0 {
 			return Model{}, &MetadataError{Entry: raw, Missing: missing, Provider: configuredProvider}
 		}
-		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, Listed: fromList, GuessedFrom: guessedFrom, Efforts: efforts})
+		m.Entries = append(m.Entries, Entry{ChainEntry: parsed, Metadata: meta, Listed: fromList, GuessedFrom: guessedFrom, Efforts: efforts, InputModalities: listed.InputModalities})
 	}
 	return m, nil
 }

@@ -17,9 +17,10 @@ import (
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
-func TestToolIsOfferedOnlyOnCodexModelsThatTakeHostedTools(t *testing.T) {
+func TestToolIsOfferedOnlyOnCodexModelsListedWithImageInput(t *testing.T) {
 	cfg := config.ImageGeneration{Enabled: true, OutputFormat: "png"}
-	tool, ok, err := hostedimage.Tool(cfg, config.ProviderCodex, "gpt-6.1-sol")
+	image := []string{"text", "image"}
+	tool, ok, err := hostedimage.Tool(cfg, config.ProviderCodex, "gpt-6.1-sol", image)
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, provider.NativeAPIResponses, tool.NativeAPI)
@@ -28,18 +29,21 @@ func TestToolIsOfferedOnlyOnCodexModelsThatTakeHostedTools(t *testing.T) {
 	assert.Equal(t, map[string]string{"type": "image_generation", "output_format": "png"}, def)
 
 	for name, c := range map[string]struct {
-		cfg      config.ImageGeneration
-		provider string
-		model    string
+		cfg        config.ImageGeneration
+		provider   string
+		model      string
+		modalities []string
 	}{
-		"disabled":      {config.ImageGeneration{OutputFormat: "png"}, config.ProviderCodex, "gpt-6.1-sol"},
-		"claude":        {cfg, config.ProviderClaude, "claude-opus-5.5"},
-		"configured":    {cfg, "openrouter", "openai/gpt-6.1-sol"},
-		"codex-named":   {cfg, config.ProviderCodex, "gpt-6-codex-mini"},
-		"other casing":  {cfg, config.ProviderCodex, "GPT-6-Codex"},
-		"empty account": {cfg, "", "gpt-6.1-sol"},
+		"disabled":      {config.ImageGeneration{OutputFormat: "png"}, config.ProviderCodex, "gpt-6.1-sol", image},
+		"claude":        {cfg, config.ProviderClaude, "claude-opus-5.5", image},
+		"configured":    {cfg, "openrouter", "openai/gpt-6.1-sol", image},
+		"codex-named":   {cfg, config.ProviderCodex, "gpt-6-codex-mini", image},
+		"other casing":  {cfg, config.ProviderCodex, "GPT-6-Codex", image},
+		"empty account": {cfg, "", "gpt-6.1-sol", image},
+		"not listed":    {cfg, config.ProviderCodex, "gpt-6.1-sol", nil},
+		"text only":     {cfg, config.ProviderCodex, "gpt-6.1-sol", []string{"text"}},
 	} {
-		_, ok, err := hostedimage.Tool(c.cfg, c.provider, c.model)
+		_, ok, err := hostedimage.Tool(c.cfg, c.provider, c.model, c.modalities)
 		require.NoError(t, err, name)
 		assert.False(t, ok, name)
 	}
