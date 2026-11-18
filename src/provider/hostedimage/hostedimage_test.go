@@ -98,3 +98,17 @@ func TestPortableKeepsAGenerationOnlyForItsOwnRequest(t *testing.T) {
 		assert.NotContains(t, got[1].Text.Text, base64.StdEncoding.EncodeToString(buf.Bytes()), name)
 	}
 }
+
+// A generation that made no image has nothing to send back, so every
+// request gets its text, the one that made it included.
+func TestPortableNeverReturnsAFailedGeneration(t *testing.T) {
+	raw, err := json.Marshal(map[string]any{"type": hostedimage.Kind, "id": "ig_3", "status": "failed"})
+	require.NoError(t, err)
+	failed := transcript.Item{
+		Native: &transcript.Native{Kind: hostedimage.Kind}, Opaque: raw,
+		Provider: "codex", Origin: &transcript.Origin{Model: "m", Account: "a"},
+	}
+	got := hostedimage.Portable([]transcript.Item{failed}, "codex", transcript.Origin{Model: "m", Account: "a"}, true)
+	require.Len(t, got, 1)
+	require.NotNil(t, got[0].Text)
+}

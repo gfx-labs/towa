@@ -117,14 +117,16 @@ func standIn(img Image) string {
 }
 
 // Portable returns items with every generation that the request cannot
-// carry replaced by text. A generation goes back as it is only to the
+// carry replaced by text. A failed generation is always text. A generation goes back as it is only to the
 // provider, model and account that made it, and only when the request
 // declares the tool. Other items are returned unchanged.
 func Portable(items []transcript.Item, providerName string, origin transcript.Origin, declared bool) []transcript.Item {
 	var out []transcript.Item
 	for i, item := range items {
 		img, ok := Read(item)
-		if !ok || (declared && item.OpaqueCompatible(providerName, origin)) {
+		// A failed generation has no image, and nothing shows the API takes
+		// one back, so it goes as text to every request.
+		if !ok || (!img.Failed && declared && item.OpaqueCompatible(providerName, origin)) {
 			if out != nil {
 				out = append(out, item)
 			}
