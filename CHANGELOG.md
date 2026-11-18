@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.9.0](https://github.com/gfx-labs/towa/compare/v0.8.0...v0.9.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **store:** store new session logs uncompressed by default
+
+### Features
+
+* reload the configuration while serving, for open sessions too ([57777be](https://github.com/gfx-labs/towa/commit/57777be63d9b05d1cabde9495e32b0055e960b53))
+* **session:** open a session in one process at a time ([9fd1a39](https://github.com/gfx-labs/towa/commit/9fd1a398947c1431b5375dbf959adedf909f5a8e))
+* **store:** store new session logs uncompressed by default ([4a756e4](https://github.com/gfx-labs/towa/commit/4a756e418f16b14d2690af7a60dfd7f3d9f962ef))
+
+
+### Bug fixes
+
+* **store:** encode compressed logs one at a time again ([8bfca3b](https://github.com/gfx-labs/towa/commit/8bfca3b9bc957a13edfa426da391cb3844d95ae2))
+
+
+### Performance
+
+* **store:** read plain logs through pooled buffered readers ([00ab688](https://github.com/gfx-labs/towa/commit/00ab6882cca28dfe61df1b37f57f2fab038a8c0d))
+
 ## [0.8.0](https://github.com/gfx-labs/towa/compare/v0.7.0...v0.8.0) (2026-11-18)
 
 
