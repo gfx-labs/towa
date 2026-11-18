@@ -157,7 +157,13 @@ func (p plainFormat) history(f *os.File, end int64, r store.Range) iter.Seq2[tra
 // at offset from.
 func (plainFormat) forward(f *os.File, from, end int64, r store.Range) iter.Seq2[transcript.Entry, error] {
 	return func(yield func(transcript.Entry, error) bool) {
-		lines := lineReader{r: bufio.NewReaderSize(io.NewSectionReader(f, from, end-from), readChunk), offset: from}
+		br := readers.Get().(*bufio.Reader)
+		br.Reset(io.NewSectionReader(f, from, end-from))
+		defer func() {
+			br.Reset(nil)
+			readers.Put(br)
+		}()
+		lines := lineReader{r: br, offset: from}
 		var d lineDecoder
 		for position := 0; r.To == 0 || position < r.To; {
 			offset := lines.offset

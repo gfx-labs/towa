@@ -1,6 +1,7 @@
 package dir
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json/jsontext"
@@ -34,6 +35,10 @@ var chunks = sync.Pool{New: func() any {
 	buf := make([]byte, readChunk)
 	return &buf
 }}
+
+// readers holds the buffered readers a plain log is read forward through.
+// Lines and decoded entries are copied out before the reader goes back.
+var readers = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, readChunk) }}
 
 // TornError reports a log that ends in a record that was not written whole,
 // which a crash during Append leaves behind. The entries before Offset are
