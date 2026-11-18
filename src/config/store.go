@@ -19,6 +19,11 @@ type Store struct {
 	// is acknowledged. Off, a crash of the machine can lose or tear the
 	// last writes, and the next open drops a torn record.
 	Fsync bool `name:"fsync" default:"true" help:"Flush every write of a session to the disk before it is acknowledged. On by default. Off is faster, and a crash of the machine can lose the last writes."`
+	// ZstdConcurrency is how many compressed logs can be encoded or decoded
+	// at once, over every session of the process. The store shares one
+	// encoder and one decoder, and a call beyond this many waits. Each slot
+	// holds its own working buffers once used. 0 is one per CPU.
+	ZstdConcurrency int `name:"zstd_concurrency" default:"0" validate:"gte=0" help:"Compressed logs encoded or decoded at once, over every session. 0 is one per CPU."`
 }
 
 // Values of Store.Compression. They are the names src/store/dir takes.

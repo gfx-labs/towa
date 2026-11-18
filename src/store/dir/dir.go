@@ -72,6 +72,9 @@ type Options struct {
 	// NoSync leaves out every fsync, of files and of directories. A crash
 	// of the machine can then lose or tear the last writes.
 	NoSync bool
+	// ZstdConcurrency is how many zstd encodes or decodes run at once over
+	// every session. 0 is one per CPU.
+	ZstdConcurrency int
 }
 
 // Compression names a log format.
@@ -112,7 +115,11 @@ func New(opts Options) (*Store, error) {
 	if !filepath.IsAbs(opts.Root) {
 		return nil, fmt.Errorf("store/dir: root %q is not an absolute path", opts.Root)
 	}
+	if opts.ZstdConcurrency < 0 {
+		return nil, fmt.Errorf("store/dir: zstd concurrency %d is negative", opts.ZstdConcurrency)
+	}
 	s := &Store{root: filepath.Clean(opts.Root), noSync: opts.NoSync}
+	s.codec.concurrency = opts.ZstdConcurrency
 	plain, compressed := plainFormat{}, zstdFormat{codec: &s.codec}
 	s.formats = []logFormat{plain, compressed}
 	switch opts.Compression {

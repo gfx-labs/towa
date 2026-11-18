@@ -108,7 +108,10 @@ func newRuntimeFactory(ctx context.Context, cfg config.Config, h Host, tel *tele
 	if err != nil {
 		return nil, err
 	}
-	f.store, err = dir.New(dir.Options{Root: root, Compression: dir.Compression(cfg.Store.Compression), NoSync: !cfg.Store.Fsync})
+	f.store, err = dir.New(dir.Options{
+		Root: root, Compression: dir.Compression(cfg.Store.Compression), NoSync: !cfg.Store.Fsync,
+		ZstdConcurrency: cfg.Store.ZstdConcurrency,
+	})
 	if err != nil {
 		return nil, err
 	}
