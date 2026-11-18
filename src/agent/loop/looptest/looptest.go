@@ -226,7 +226,8 @@ func build(t testing.TB, s Scenario, base string, transport func(next http.Round
 	routed, served := newRouter(t, s, cfg, base, transport)
 	st, err := dir.New(dir.Options{Root: t.TempDir(), Compression: dir.CompressionNone})
 	fail(t, err)
-	opts := loopOptions(s, cfg, routed, st)
+	opts, err := loopOptions(s, cfg, routed, st)
+	fail(t, err)
 	l, err := loop.New(opts)
 	fail(t, err)
 	return &Fixture{Loop: l, Store: st, Cwd: cwd, Config: cfg, Options: opts, Served: served, scenario: s}
@@ -269,10 +270,15 @@ func newRouter(t testing.TB, s Scenario, cfg config.Config, base string, transpo
 	return routed, served
 }
 
-func loopOptions(s Scenario, cfg config.Config, routed *router.Router, st store.Store) loop.Options {
+func loopOptions(s Scenario, cfg config.Config, routed *router.Router, st store.Store) (loop.Options, error) {
 	var set tools.Set
 	if s.Tools {
 		set = tools.Set{Tools: []tools.Tool{ReadTool(cfg.Tools.Files)}}
+	}
+	// A session compiles its tools' schemas once, as the CLI's tool set does.
+	schemas, err := loop.Schemas(set)
+	if err != nil {
+		return loop.Options{}, err
 	}
 	return loop.Options{
 		Resolve: func(_ context.Context, model string) (loop.Resolved, error) {
@@ -280,7 +286,7 @@ func loopOptions(s Scenario, cfg config.Config, routed *router.Router, st store.
 				return loop.Resolved{}, fmt.Errorf("looptest: the fixture has one model and was asked for %q", model)
 			}
 			return loop.Resolved{
-				Provider: routed, Tools: set, Model: s.Model,
+				Provider: routed, Tools: set, Schemas: schemas, Model: s.Model,
 				ContextSize: ContextSize, MaxOutputTokens: s.MaxOutputTokens, Interruption: Interruption,
 			}, nil
 		},
@@ -297,7 +303,7 @@ func loopOptions(s Scenario, cfg config.Config, routed *router.Router, st store.
 		Gate:   cfg.Tools.Gate,
 		Hooks:  hooks.New(nil),
 		Logger: slog.New(slog.DiscardHandler),
-	}
+	}, nil
 }
 
 // ReadToolName is the name of the fixture's one tool.
