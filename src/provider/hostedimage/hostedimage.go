@@ -3,6 +3,15 @@
 // generation leaves in the transcript. That item is stored whole and only its
 // own provider takes it back, so this package also gives the text that stands
 // for one in a request to another provider.
+//
+// Known limit: the stored item keeps the image's base64 result, and it goes
+// back whole to the same provider, model and account on every later request,
+// because the API's own reference by id needs a stored response and towa
+// sends store false. Those bytes count toward no context estimate: compaction
+// follows the provider's token usage. A long session with many images grows
+// each request body by the size of every image, until the provider's request
+// size limit or a compaction replaces them. Whether result may be dropped on
+// resend has not been checked against the live API.
 package hostedimage
 
 import (
