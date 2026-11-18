@@ -1,9 +1,13 @@
 package openai_test
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +21,7 @@ import (
 	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/config"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/provider/openai"
 	"github.com/gfx-labs/towa/src/provider/providertest"
@@ -114,6 +119,32 @@ func checkHostedSearch(t *testing.T, events []provider.Event, err error) {
 	require.Equal(t, items, same)
 }
 
+// checkImageGeneration expects the provider to have generated one image,
+// kept whole, that decodes, and an item that goes back to this client.
+func checkImageGeneration(t *testing.T, events []provider.Event, err error) {
+	require.NoError(t, err)
+	var images int
+	for _, ev := range events {
+		if ev.Item == nil {
+			continue
+		}
+		img, ok := hostedimage.Read(*ev.Item)
+		if !ok {
+			continue
+		}
+		images++
+		require.Empty(t, img.Failure)
+		require.NotEmpty(t, img.ID)
+		require.Contains(t, []string{"image/png", "image/jpeg", "image/webp"}, img.MimeType)
+		if img.MimeType != "image/webp" {
+			_, _, err := image.Decode(bytes.NewReader(img.Data))
+			require.NoError(t, err)
+		}
+	}
+	require.Equal(t, 1, images, "the response holds one generated image")
+	require.Equal(t, provider.StopEndTurn, events[len(events)-1].Stop)
+}
+
 func scenarios() []scenario {
 	searchTool, ok, err := hostedsearch.Tool(config.WebSearch{Enabled: true, Hosted: true}, config.ProviderCodex, "")
 	if err != nil || !ok {
@@ -147,6 +178,23 @@ func scenarios() []scenario {
 				check: checkToolCall('"'),
 			},
 		)
+	}
+	// Model access is separate from the tool: record these with a model and
+	// an account that have image generation.
+	imageTool, ok, err := hostedimage.Tool(config.ImageGeneration{Enabled: true, Quality: "low", OutputFormat: "png"}, config.ProviderCodex)
+	if err != nil || !ok {
+		panic("the codex provider has a hosted image generation tool")
+	}
+	for _, ep := range []struct {
+		prefix string
+		scheme auth.Scheme
+	}{{"api_", auth.SchemeAPIKey}, {"codex_", auth.SchemeOAuth}} {
+		out = append(out, scenario{
+			name: ep.prefix + "image_generation", scheme: ep.scheme, effort: "low",
+			prompt: "Generate a studio photo of a single red apple on an off-white background.",
+			tools:  []provider.Tool{imageTool},
+			check:  checkImageGeneration,
+		})
 	}
 	// The Codex backend takes no output limit, so only the API can be cut
 	// short on purpose.

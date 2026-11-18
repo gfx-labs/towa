@@ -26,6 +26,7 @@ import (
 	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/provider/models"
 	"github.com/gfx-labs/towa/src/support/telemetry"
@@ -400,4 +401,43 @@ func TestPromptIsBuiltAgainOnlyWhenItsInputsChange(t *testing.T) {
 	hosted, err := cache.build(true, prompt)
 	require.NoError(t, err)
 	require.NotSame(t, &moved[0], &hosted[0])
+}
+
+// With image generation on, a model whose provider cannot run it fails the
+// turn with a reason, and one whose provider can is prepared.
+func TestImageGenerationNeedsAProviderThatHasIt(t *testing.T) {
+	loaded, err := configtest.Load(config.Sources{})
+	require.NoError(t, err)
+	cfg := loaded.Config
+	cfg.ConversationSearch.Enabled = false
+	cfg.ImageGeneration.Enabled = true
+	cfg.Providers = []config.Provider{{ID: "other", Kind: config.ProviderResponses, BaseURL: "http://127.0.0.1:1/v1"}}
+	cfg.Accounts = []config.Account{
+		{ID: "chat", Provider: config.ProviderCodex, Kind: config.AccountProxiedOAuth},
+		{ID: "local", Provider: "other", Kind: config.AccountNone},
+	}
+	const plainModel, imageModel = "other:local/gpt-5.5", "codex:chat/gpt-5.5#medium"
+	cfg.Models = []string{plainModel, imageModel}
+	cfg.ModelContextWindow, cfg.ModelMaxOutputTokens = 100_000, 1024
+	home := t.TempDir()
+	host := Host{Stdout: io.Discard, Stderr: io.Discard, Environ: []string{"HOME=" + home, "XDG_STATE_HOME=" + filepath.Join(home, "state")}}
+	tel, err := telemetry.Start(t.Context(), cfg.Telemetry, version(), io.Discard)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tel.Shutdown(context.Background())) })
+	factory, err := newRuntimeFactory(t.Context(), cfg, host, tel)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, factory.Close()) })
+
+	prepare := func(model string) error {
+		turn := loop.Turn{
+			SessionID: acp.SessionId(uuid.NewV7().String()), Cwd: home, Model: model,
+			Update: func(context.Context, acp.SessionUpdate) error { return nil },
+		}
+		loaded, err := factory.loadContext(turn)
+		require.NoError(t, err)
+		_, err = factory.prepare(t.Context(), turnSetup{turn: turn, reads: &core.ReadTracker{}, jobs: jobs.NewSet(), loaded: loaded, prompts: &promptCache{}})
+		return err
+	}
+	require.NoError(t, prepare(imageModel))
+	require.ErrorIs(t, prepare(plainModel), hostedimage.ErrUnsupported)
 }

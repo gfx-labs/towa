@@ -62,6 +62,7 @@ type Config struct {
 	Claude                  Claude             `embed:"" prefix:"claude." group:"claude"`
 	WebFetch                WebFetch           `embed:"" prefix:"webfetch." group:"webfetch"`
 	WebSearch               WebSearch          `embed:"" prefix:"websearch." group:"websearch"`
+	ImageGeneration         ImageGeneration    `embed:"" prefix:"imagegeneration." group:"imagegeneration"`
 	Jev                     Jev                `embed:"" prefix:"jev." group:"jev"`
 	Compaction              Compaction         `embed:"" prefix:"compaction." group:"compaction"`
 	ConversationSearch      ConversationSearch `embed:"" prefix:"conversation_search." group:"conversation_search"`
@@ -141,7 +142,7 @@ func (c *Config) validate() error {
 		c.Auth.validate, c.validateAccounts, c.validateProviders, c.Store.validate, c.Tools.validate, c.MCP.validate,
 		c.Session.validate, c.Context.validate, c.Listen.validate, c.Limits.validate,
 		func() error { return validateHookList(c.Hooks) },
-		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.Claude.validate, c.WebFetch.validate, c.WebSearch.validate,
+		c.Embeddings.validate, c.validateEmbeddingsAccount, c.OpenAI.validate, c.Claude.validate, c.WebFetch.validate, c.WebSearch.validate, c.ImageGeneration.validate,
 		c.Jev.validate, c.validateJevAccount, c.Compaction.validate, c.validateCompaction,
 		c.ConversationSearch.validate, c.Subagents.validate, c.validateSubagentModels,
 		func() error { return validateModels(c.Models, c.Accounts, c.Providers) },

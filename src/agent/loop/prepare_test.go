@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gfx-labs/towa/src/auth"
 	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/provider/router"
 	"github.com/gfx-labs/towa/src/tools"
@@ -61,4 +62,44 @@ func TestPreparationSwapsTheSearchToolPerEntry(t *testing.T) {
 	require.Equal(t, []provider.Tool{read, local}, prepare([]provider.Tool{read, local}, router.Preparation{}))
 	// A session with search turned off does not get the provider's.
 	require.Equal(t, []provider.Tool{read}, prepare([]provider.Tool{read}, with))
+}
+
+// An entry whose provider generates images itself gets that tool, and the
+// image items of the conversation go back to it only. After a fallback to
+// an entry without the tool they are text.
+func TestPreparationOffersHostedImageGenerationPerEntry(t *testing.T) {
+	read := provider.Tool{Name: "read", InputSchema: jsontext.Value(`{"type":"object"}`)}
+	hosted := provider.Tool{Name: "image_generation", Native: jsontext.Value(`{"type":"image_generation"}`), NativeAPI: provider.NativeAPIResponses}
+	origin := &transcript.Origin{Model: "m", Account: "a"}
+	generated := transcript.Item{
+		Provider: "openai", Origin: origin, Native: &transcript.Native{Kind: "image_generation_call"},
+		Opaque: jsontext.Value(`{"type":"image_generation_call","id":"ig_1","status":"failed","result":null}`),
+	}
+	prepare := func(entry router.Preparation) provider.Request {
+		var set tools.Set
+		set.Tools = append(set.Tools, tools.Tool{Spec: read})
+		tn := &turn{
+			l: &Loop{o: Options{Now: time.Now}}, started: time.Now(),
+			model: Resolved{Interruption: "i", ProviderName: "openai", Tools: set},
+			entries: []transcript.Entry{
+				{Item: transcript.Item{User: &transcript.User{Parts: []transcript.Part{{Text: "draw"}}}}},
+				{Item: generated},
+			},
+		}
+		entry.ContextWindow, entry.MaxOutputTokens = 2048, 128
+		// The request arrives holding what the entry before it was sent.
+		req, err := tn.prepareRequest(t.Context(), router.Entry{Preparation: &entry},
+			provider.Request{Model: "m", Credential: auth.Credential{Account: "a"}, Tools: []provider.Tool{hosted}})
+		require.NoError(t, err)
+		return req
+	}
+
+	with := prepare(router.Preparation{HostedImage: hosted})
+	require.Equal(t, []provider.Tool{read, hosted}, with.Tools)
+	require.Equal(t, generated, with.Items[1])
+
+	without := prepare(router.Preparation{})
+	require.Equal(t, []provider.Tool{read}, without.Tools)
+	require.Nil(t, without.Items[1].Native)
+	require.NotNil(t, without.Items[1].Text)
 }

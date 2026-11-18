@@ -3,10 +3,12 @@ package loop
 import (
 	"context"
 	"errors"
+	"slices"
 
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/provider/router"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -18,7 +20,7 @@ type turnLimitError struct{ key string }
 
 func (e *turnLimitError) Error() string { return "loop: the turn reached " + e.key }
 
-func (tn *turn) contextItems(ctx context.Context, name, interruption string, origin transcript.Origin, hosted bool) ([]transcript.Item, error) {
+func (tn *turn) contextItems(ctx context.Context, name, interruption string, origin transcript.Origin, hosted, image bool) ([]transcript.Item, error) {
 	items, err := compact.Items(tn.entries, name, origin)
 	if err != nil {
 		return nil, err
@@ -26,6 +28,8 @@ func (tn *turn) contextItems(ctx context.Context, name, interruption string, ori
 	// A provider's search items go back only to the request that can hold
 	// them. After a fallback or a model switch they are sent as text.
 	items = hostedsearch.Portable(items, name, origin, hosted)
+	// The same holds for a generated image.
+	items = hostedimage.Portable(items, name, origin, image)
 	// items is this request's own list, so it is reused.
 	items, repairs, err := conversationInPlace(items, interruption)
 	if err != nil {
@@ -50,7 +54,7 @@ func (tn *turn) contextName(entry router.Entry, req provider.Request) (string, e
 
 func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req provider.Request) (provider.Request, error) {
 	window, interruption := tn.model.ContextSize, tn.model.Interruption
-	hosted := false
+	hosted, image := false, false
 	if selected := entry.Preparation; selected != nil {
 		if selected.ContextWindow <= 0 || selected.MaxOutputTokens <= 0 {
 			return provider.Request{}, errors.New("loop: selected entry needs positive context and output allowances")
@@ -60,6 +64,9 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		// From the session's tools each time: after a fallback req holds
 		// what the entry before was sent.
 		req.Tools, hosted = searchTools(tn.model.Tools.Specs(), *selected)
+		if len(selected.HostedImage.Native) > 0 {
+			req.Tools, image = append(slices.Clone(req.Tools), selected.HostedImage), true
+		}
 	}
 	if window > 0 {
 		tn.mapper.ContextSize = func(string) (int, bool) { return int(window), true }
@@ -69,7 +76,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		return provider.Request{}, err
 	}
 	origin := transcript.Origin{Model: req.Model, Account: req.Credential.Account}
-	items, err := tn.contextItems(ctx, name, interruption, origin, hosted)
+	items, err := tn.contextItems(ctx, name, interruption, origin, hosted, image)
 	if err != nil {
 		if _, unreadable := errors.AsType[*compact.UnreadableError](err); tn.compactor == nil || !unreadable {
 			return provider.Request{}, err
@@ -88,7 +95,7 @@ func (tn *turn) prepareRequest(ctx context.Context, entry router.Entry, req prov
 		if err := tn.applyCompaction(ctx, effects); err != nil {
 			return provider.Request{}, err
 		}
-		req.Items, err = tn.contextItems(ctx, name, interruption, origin, hosted)
+		req.Items, err = tn.contextItems(ctx, name, interruption, origin, hosted, image)
 		if err != nil {
 			return provider.Request{}, err
 		}

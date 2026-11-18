@@ -7,6 +7,7 @@ import (
 
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/harness"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/tools"
 	"github.com/gfx-labs/towa/src/transcript"
@@ -27,7 +28,7 @@ type Mapper struct {
 
 // Updates returns the updates for one item, in order. Items a client is not
 // shown give none: ModelSwitch, Compaction, Interrupted, and a Native item
-// that is not a provider's web search. cost is the session's running cost,
+// that is not a provider's web search or generated image. cost is the session's running cost,
 // which a Usage item adds to.
 func (m Mapper) Updates(item transcript.Item, cost *Cost) ([]acp.SessionUpdate, error) {
 	if err := item.Validate(); err != nil {
@@ -64,13 +65,38 @@ func (m Mapper) Updates(item transcript.Item, cost *Cost) ([]acp.SessionUpdate, 
 		}
 		return []acp.SessionUpdate{{ToolCallUpdate: &update}}, nil
 	case item.Native != nil:
-		return HostedSearch(item), nil
+		return Hosted(item), nil
 	case item.Usage != nil:
 		if update, ok := m.Usage(*item.Usage, cost.Add(*item.Usage)); ok {
 			return []acp.SessionUpdate{{UsageUpdate: &update}}, nil
 		}
 	}
 	return nil, nil
+}
+
+// Hosted shows what a provider ran inside a response: a web search or a
+// generated image. Any other native item gives none.
+func Hosted(item transcript.Item) []acp.SessionUpdate {
+	if updates := HostedSearch(item); updates != nil {
+		return updates
+	}
+	return HostedImage(item)
+}
+
+// HostedImage shows an image the provider generated as agent message
+// content, so that a client displays it. A generation that made no image is
+// shown as text that says why.
+func HostedImage(item transcript.Item) []acp.SessionUpdate {
+	img, ok := hostedimage.Read(item)
+	if !ok {
+		return nil
+	}
+	if img.Failure != "" {
+		return []acp.SessionUpdate{TextChunk("[" + img.Failure + "]")}
+	}
+	return []acp.SessionUpdate{{AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{Content: acp.ContentBlock{
+		Image: &acp.ContentBlockImage{Type: "image", MimeType: img.MimeType, Data: base64.StdEncoding.EncodeToString(img.Data)},
+	}}}}
 }
 
 // HostedSearch shows a web search the provider ran as a tool call: the

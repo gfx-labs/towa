@@ -1,8 +1,12 @@
 package loop_test
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"image"
+	"image/png"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +14,7 @@ import (
 
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/towa/src/agent/loop"
+	"github.com/gfx-labs/towa/src/provider"
 	"github.com/gfx-labs/towa/src/transcript"
 )
 
@@ -164,4 +169,47 @@ func TestAPromptSurvivesTheTripThroughTheTranscript(t *testing.T) {
 	var refused *acp.RequestError
 	require.ErrorAs(t, err, &refused)
 	assert.Equal(t, acp.NewInvalidParams(nil).Code, refused.Code)
+}
+
+// A generated image reaches the client as image content of the agent's
+// message, live and when the session is loaded again.
+func TestHostedImageIsShownAsImageContent(t *testing.T) {
+	var data bytes.Buffer
+	require.NoError(t, png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 3, 2))))
+	raw, err := json.Marshal(map[string]string{
+		"type": "image_generation_call", "id": "ig_1", "status": "completed",
+		"result": base64.StdEncoding.EncodeToString(data.Bytes()),
+	})
+	require.NoError(t, err)
+	item := transcript.Item{Native: &transcript.Native{Kind: "image_generation_call"}, Opaque: raw}
+
+	var live loop.Response
+	loaded, err := loop.Mapper{}.Updates(item, &loop.Cost{})
+	require.NoError(t, err)
+	for name, updates := range map[string][]acp.SessionUpdate{
+		"loaded": loaded,
+		"live":   live.Add(loop.Mapper{}, provider.Event{Item: &item}),
+	} {
+		shown := wire(t, updates)
+		require.Len(t, shown, 1, name)
+		require.Equal(t, "agent_message_chunk", shown[0]["sessionUpdate"], name)
+		content, ok := shown[0]["content"].(map[string]any)
+		require.True(t, ok, name)
+		require.Equal(t, "image", content["type"], name)
+		require.Equal(t, "image/png", content["mimeType"], name)
+		decoded, err := base64.StdEncoding.DecodeString(content["data"].(string))
+		require.NoError(t, err, name)
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(decoded))
+		require.NoError(t, err, name)
+		require.Equal(t, 3, cfg.Width, name)
+	}
+
+	// A generation that made no image says so instead of showing nothing.
+	failed := transcript.Item{Native: &transcript.Native{Kind: "image_generation_call"},
+		Opaque: []byte(`{"type":"image_generation_call","id":"ig_2","status":"failed","result":null}`)}
+	updates, err := loop.Mapper{}.Updates(failed, &loop.Cost{})
+	require.NoError(t, err)
+	shown := wire(t, updates)
+	require.Len(t, shown, 1)
+	require.Equal(t, "text", shown[0]["content"].(map[string]any)["type"])
 }

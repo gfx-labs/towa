@@ -23,6 +23,7 @@ import (
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/provider/models"
 	"github.com/gfx-labs/towa/src/provider/openai"
@@ -371,7 +372,7 @@ func (f *runtimeFactory) prepare(ctx context.Context, s turnSetup) (preparedTurn
 	for i, entry := range selected.Entries {
 		result.summaryWindow = min(result.summaryWindow, entry.Metadata.ContextWindow)
 		result.summaryOutput = min(result.summaryOutput, entry.Metadata.MaxOutputTokens)
-		system, err := f.prepareEntry(&chain[i], entry, assembled.Set, s, &result)
+		system, err := f.prepareEntry(&chain[i], entry, assembled.Set, s, &result, i == 0)
 		if err != nil {
 			return preparedTurn{}, err
 		}
@@ -420,9 +421,10 @@ func showPlan(ctx context.Context, env tools.Env, entries []acp.PlanEntry) error
 }
 
 // prepareEntry fills in one chain entry's preparation and returns its
-// system prompt. An entry on an OpenAI client also adds its native
+// system prompt. When image generation is enabled, the first entry must be
+// able to run it, and a later entry that cannot is left without it. An entry on an OpenAI client also adds its native
 // compaction to result.
-func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry, set tools.Set, s turnSetup, result *preparedTurn) ([]provider.SystemBlock, error) {
+func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry, set tools.Set, s turnSetup, result *preparedTurn, first bool) ([]provider.SystemBlock, error) {
 	skillTool := ""
 	if f.cfg.Context.SkillsEnabled {
 		skillTool = extras.NameSkill
@@ -442,6 +444,20 @@ func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry,
 	chained.Preparation = &router.Preparation{
 		ContextWindow: entry.Metadata.ContextWindow, MaxOutputTokens: entry.Metadata.MaxOutputTokens,
 		Interruption: agentctx.Interruption, System: system,
+	}
+	image, hasImage, err := hostedimage.Tool(f.cfg.ImageGeneration, entry.Provider)
+	switch {
+	case errors.Is(err, hostedimage.ErrUnsupported) && !first:
+		// A fallback entry takes over only after the first has failed, and
+		// the client is told of the move. Failing here would make every
+		// chain that ends in another provider unusable with the tool on.
+	case errors.Is(err, hostedimage.ErrUnsupported):
+		return nil, fmt.Errorf("imagegeneration.enabled is set, and %s:%s/%s is not on the %q provider: %w",
+			entry.Provider, entry.Account, entry.Model, config.ProviderCodex, err)
+	case err != nil:
+		return nil, err
+	case hasImage:
+		chained.Preparation.HostedImage = image
 	}
 	if hasHosted {
 		chained.Preparation.HostedSearch, chained.Preparation.LocalSearch = hosted, extras.NameWebSearch
