@@ -23,6 +23,7 @@ import (
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/prompt/compact"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/provider/models"
 	"github.com/gfx-labs/towa/src/provider/openai"
@@ -297,24 +298,24 @@ func (f *runtimeFactory) loadContext(turn loop.Turn) (*agentctx.Loaded, error) {
 
 // promptCache keeps the system prompts one session has built. A session's
 // prompt differs between model entries only in whether web search is the
-// provider's own, so there is one place for each. A prompt is built again
+// provider's own and whether the provider generates images, so there is one
+// place for each combination. A prompt is built again
 // when anything it is made from differs from what the kept one was made
 // from, which is the case once: when the session's MCP tools arrive.
 type promptCache struct {
-	plain, hosted *builtPrompt
+	kept map[hostedTools]*builtPrompt
 }
+
+// hostedTools says which of the provider's own tools an entry is sent.
+type hostedTools struct{ search, image bool }
 
 type builtPrompt struct {
 	from   agentctx.Prompt
 	system []provider.SystemBlock
 }
 
-func (c *promptCache) build(hosted bool, p agentctx.Prompt) ([]provider.SystemBlock, error) {
-	kept := &c.plain
-	if hosted {
-		kept = &c.hosted
-	}
-	if b := *kept; b != nil && b.from.Instructions == p.Instructions && slices.Equal(b.from.Tools, p.Tools) &&
+func (c *promptCache) build(hosted hostedTools, p agentctx.Prompt) ([]provider.SystemBlock, error) {
+	if b := c.kept[hosted]; b != nil && b.from.Instructions == p.Instructions && slices.Equal(b.from.Tools, p.Tools) &&
 		slices.Equal(b.from.Rules, p.Rules) && b.from.Loaded == p.Loaded && b.from.WorkDir == p.WorkDir &&
 		slices.Equal(b.from.AdditionalDirs, p.AdditionalDirs) && b.from.SkillTool == p.SkillTool &&
 		reflect.DeepEqual(b.from.Client, p.Client) {
@@ -325,7 +326,10 @@ func (c *promptCache) build(hosted bool, p agentctx.Prompt) ([]provider.SystemBl
 		return nil, err
 	}
 	p.AdditionalDirs = slices.Clone(p.AdditionalDirs)
-	*kept = &builtPrompt{from: p, system: system}
+	if c.kept == nil {
+		c.kept = map[hostedTools]*builtPrompt{}
+	}
+	c.kept[hosted] = &builtPrompt{from: p, system: system}
 	return system, nil
 }
 
@@ -431,8 +435,12 @@ func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry,
 	if err != nil {
 		return nil, err
 	}
-	listed, rules := toolSections(set, hasHosted)
-	system, err := s.prompts.build(hasHosted, agentctx.Prompt{
+	image, hasImage, err := hostedimage.Tool(f.cfg.ImageGeneration, entry.Provider, entry.Model)
+	if err != nil {
+		return nil, err
+	}
+	listed, rules := toolSections(set, hasHosted, hasImage, f.cfg.ImageGeneration.Enabled)
+	system, err := s.prompts.build(hostedTools{search: hasHosted, image: hasImage}, agentctx.Prompt{
 		Instructions: s.loaded.Instructions, Tools: listed, Rules: rules, Loaded: s.loaded,
 		WorkDir: s.turn.Cwd, AdditionalDirs: s.turn.Dirs, SkillTool: skillTool, Client: s.turn.SystemPrompt,
 	})
@@ -445,6 +453,9 @@ func (f *runtimeFactory) prepareEntry(chained *router.Entry, entry models.Entry,
 	}
 	if hasHosted {
 		chained.Preparation.HostedSearch, chained.Preparation.LocalSearch = hosted, extras.NameWebSearch
+	}
+	if hasImage {
+		chained.Preparation.HostedImage = image
 	}
 	if client, ok := chained.Provider.(*openai.Client); ok {
 		if err := f.addNative(result, client, entry); err != nil {
@@ -514,7 +525,9 @@ func (f *runtimeFactory) accountScheme(id string) (auth.Scheme, error) {
 // every tool. An entry with hosted search gets the provider's tool in place
 // of the local one, so its lines name that tool. A tool without a summary,
 // such as an MCP server's, is not listed: its definition describes it.
-func toolSections(set tools.Set, hostedSearch bool) (listed []agentctx.ToolLine, rules []string) {
+// Image generation is the provider's own where it is offered at all. When it
+// is enabled and this entry has none, a rule says so.
+func toolSections(set tools.Set, hostedSearch, hostedImage, imageEnabled bool) (listed []agentctx.ToolLine, rules []string) {
 	for _, tool := range set.Tools {
 		if hostedSearch && tool.Spec.Name == extras.NameWebSearch {
 			listed = append(listed, agentctx.ToolLine{Name: hostedsearch.Name, Summary: extras.SearchSummary})
@@ -525,6 +538,13 @@ func toolSections(set tools.Set, hostedSearch bool) (listed []agentctx.ToolLine,
 			listed = append(listed, agentctx.ToolLine{Name: tool.Spec.Name, Summary: tool.Summary})
 		}
 		rules = append(rules, tool.Guidance...)
+	}
+	switch {
+	case hostedImage:
+		listed = append(listed, agentctx.ToolLine{Name: hostedimage.Name, Summary: hostedimage.Summary})
+		rules = append(rules, hostedimage.Guidance)
+	case imageEnabled:
+		rules = append(rules, hostedimage.Unavailable)
 	}
 	return listed, append(rules, agentctx.GeneralRules...)
 }

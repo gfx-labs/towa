@@ -45,6 +45,9 @@ type Preparation struct {
 	// without search does not get one this way.
 	HostedSearch provider.Tool
 	LocalSearch  string
+	// HostedImage, when it holds a native definition, is the entry's
+	// provider-run image generation. It is added to the request's tools.
+	HostedImage provider.Tool
 }
 
 // String returns the entry as a chain names it: provider:account/model.

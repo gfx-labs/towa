@@ -26,6 +26,7 @@ import (
 	"github.com/gfx-labs/towa/src/config/configtest"
 	"github.com/gfx-labs/towa/src/prompt/agentctx"
 	"github.com/gfx-labs/towa/src/provider"
+	"github.com/gfx-labs/towa/src/provider/hostedimage"
 	"github.com/gfx-labs/towa/src/provider/hostedsearch"
 	"github.com/gfx-labs/towa/src/provider/models"
 	"github.com/gfx-labs/towa/src/support/telemetry"
@@ -138,6 +139,7 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	cfg := loaded.Config
 	cfg.ConversationSearch.Enabled = false
 	cfg.WebSearch.Enabled = true
+	cfg.ImageGeneration.Enabled = true
 	cfg.Providers = []config.Provider{{ID: "other", Kind: config.ProviderResponses, BaseURL: "http://127.0.0.1:1/v1"}}
 	cfg.Accounts = []config.Account{
 		{ID: "chat", Provider: config.ProviderCodex, Kind: config.AccountProxiedOAuth},
@@ -182,6 +184,12 @@ func TestPromptToolsSectionFollowsTheToolsOfTheEntry(t *testing.T) {
 	require.Contains(t, plain, extras.NameWebSearch)
 	require.Contains(t, hosted, hostedsearch.Name)
 	require.NotContains(t, hosted, extras.NameWebSearch)
+	// The entry with the provider's image tool lists it. The one without is
+	// told it has none.
+	require.Contains(t, hosted, hostedimage.Guidance)
+	require.NotContains(t, hosted, hostedimage.Unavailable)
+	require.Contains(t, plain, hostedimage.Unavailable)
+	require.NotContains(t, plain, hostedimage.Guidance)
 	for _, text := range []string{plain, hosted} {
 		require.NotContains(t, text, extras.NameConversationSearch)
 	}
@@ -374,30 +382,30 @@ func TestPromptIsBuiltAgainOnlyWhenItsInputsChange(t *testing.T) {
 		}
 		return b.String()
 	}
-	first, err := cache.build(false, prompt)
+	first, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
-	again, err := cache.build(false, prompt)
+	again, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	require.Same(t, &first[0], &again[0])
 
 	// The session's MCP tools arrive after its first prompt was built.
 	prompt.Rules = []string{"read before editing", "ask the tracker for issues"}
-	changed, err := cache.build(false, prompt)
+	changed, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	require.Contains(t, text(changed), "ask the tracker for issues")
 
 	// A kept prompt does not follow a caller that reuses its slice.
 	dirs := []string{"/other"}
 	prompt.AdditionalDirs = dirs
-	_, err = cache.build(false, prompt)
+	_, err = cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	dirs[0] = "/elsewhere"
-	moved, err := cache.build(false, prompt)
+	moved, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	require.Contains(t, text(moved), "/elsewhere")
 
 	// Provider-run web search has its own prompt.
-	hosted, err := cache.build(true, prompt)
+	hosted, err := cache.build(hostedTools{search: true}, prompt)
 	require.NoError(t, err)
 	require.NotSame(t, &moved[0], &hosted[0])
 }

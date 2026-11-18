@@ -87,7 +87,7 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 				Locations: call.Locations, RawInput: call.RawInput,
 			}}}
 		case item.Native != nil:
-			return HostedSearch(item)
+			return Hosted(item)
 		}
 	case e.Usage != nil:
 		r.Usage = e.Usage
