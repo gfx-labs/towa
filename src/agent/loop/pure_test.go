@@ -226,7 +226,7 @@ func TestResponseShowsEachPieceOnce(t *testing.T) {
 	var r loop.Response
 	var shown []string
 	add := func(e provider.Event) {
-		for _, u := range r.Add(m, e) {
+		for _, u := range r.Add(nil, m, e) {
 			switch {
 			case u.AgentMessageChunk != nil:
 				shown = append(shown, "text:"+u.AgentMessageChunk.Content.Text.Text)

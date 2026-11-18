@@ -33,6 +33,7 @@ func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Res
 			return resp, err
 		}
 	}
+	var updates []acp.SessionUpdate
 	for event, err := range tn.model.Provider.Stream(ctx, req) {
 		if err != nil {
 			return resp, err
@@ -44,7 +45,8 @@ func (tn *turn) stream(ctx context.Context, system []provider.SystemBlock) (*Res
 			}
 			event.Item = &item
 		}
-		for _, update := range resp.Add(tn.mapper, event) {
+		updates = resp.Add(updates[:0], tn.mapper, event)
+		for _, update := range updates {
 			tn.send(ctx, update)
 		}
 		if tn.sendErr != nil {

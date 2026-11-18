@@ -72,6 +72,8 @@ type turn struct {
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
 	sendErr error
+	// sendCtx is sendFrom without its cancellation, for updates.
+	sendFrom, sendCtx context.Context
 }
 
 // Run runs one prompt turn. It has the shape of session.TurnFunc.

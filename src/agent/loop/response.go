@@ -43,20 +43,21 @@ type Response struct {
 	arrived bool
 }
 
-// Add takes one event and returns the updates that show it to the client.
+// Add takes one event and appends to dst the updates that show it to the
+// client, so that a caller reuses one slice for every event.
 // A finished text or thinking item is shown only when no delta came for it,
 // since its deltas already showed it.
-func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
+func (r *Response) Add(dst []acp.SessionUpdate, m Mapper, e provider.Event) []acp.SessionUpdate {
 	r.arrived = true
 	switch {
 	case e.TextDelta != "":
 		r.textShown = true
-		return []acp.SessionUpdate{TextChunk(e.TextDelta)}
+		return append(dst, TextChunk(e.TextDelta))
 	case e.ThinkingDelta != "":
 		r.thoughtShown = true
-		return []acp.SessionUpdate{ThoughtChunk(e.ThinkingDelta)}
+		return append(dst, ThoughtChunk(e.ThinkingDelta))
 	case e.ToolCall != nil:
-		return r.progress(m, *e.ToolCall)
+		return r.progress(dst, m, *e.ToolCall)
 	case e.Item != nil:
 		item := *e.Item
 		r.Items = append(r.Items, item)
@@ -65,36 +66,36 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 			shown := r.textShown
 			r.textShown = false
 			if !shown && item.Text.Text != "" {
-				return []acp.SessionUpdate{TextChunk(item.Text.Text)}
+				return append(dst, TextChunk(item.Text.Text))
 			}
 		case item.Thinking != nil:
 			shown := r.thoughtShown
 			r.thoughtShown = false
 			if !shown && item.Thinking.Text != "" {
-				return []acp.SessionUpdate{ThoughtChunk(item.Thinking.Text)}
+				return append(dst, ThoughtChunk(item.Thinking.Text))
 			}
 		case item.ToolCall != nil:
 			call := m.ToolCall(*item.ToolCall)
 			i := slices.Index(r.writing, item.ToolCall.ID)
 			if i < 0 {
-				return []acp.SessionUpdate{{ToolCall: &call}}
+				return append(dst, acp.SessionUpdate{ToolCall: &call})
 			}
 			// The call was announced under its name. Now that its argument
 			// is whole it gets its title, kind, locations and input.
 			r.writing = slices.Delete(r.writing, i, i+1)
-			return []acp.SessionUpdate{{ToolCallUpdate: &acp.SessionToolCallUpdate{
+			return append(dst, acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
 				ToolCallId: call.ToolCallId, Title: &call.Title, Kind: &call.Kind,
 				Locations: call.Locations, RawInput: call.RawInput,
-			}}}
+			}})
 		case item.Native != nil:
-			return Hosted(item)
+			return append(dst, Hosted(item)...)
 		}
 	case e.Usage != nil:
 		r.Usage = e.Usage
 	case e.Stop != "":
 		r.Stop = e.Stop
 	}
-	return nil
+	return dst
 }
 
 // progress announces a call the model has started writing, once, when it
@@ -102,13 +103,13 @@ func (r *Response) Add(m Mapper, e provider.Event) []acp.SessionUpdate {
 // no update for part of an argument, and the whole one follows. The tool
 // describes the call with no input yet, so the client sees its kind and
 // title from the first frame.
-func (r *Response) progress(m Mapper, p provider.ToolCallProgress) []acp.SessionUpdate {
+func (r *Response) progress(dst []acp.SessionUpdate, m Mapper, p provider.ToolCallProgress) []acp.SessionUpdate {
 	if p.ID == "" || p.Name == "" || slices.Contains(r.writing, p.ID) {
-		return nil
+		return dst
 	}
 	r.writing = append(r.writing, p.ID)
 	call := m.ToolCall(transcript.ToolCall{ID: p.ID, Name: p.Name})
-	return []acp.SessionUpdate{{ToolCall: &call}}
+	return append(dst, acp.SessionUpdate{ToolCall: &call})
 }
 
 // Writing returns the ids of the calls that were announced and never

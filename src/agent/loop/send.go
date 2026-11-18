@@ -32,8 +32,12 @@ func (tn *turn) update(ctx context.Context, update acp.SessionUpdate) error {
 	if tn.sendErr != nil {
 		return tn.sendErr
 	}
-	// A cancelled turn still tells the client how its tool calls ended.
-	if err := tn.t.Update(context.WithoutCancel(ctx), update); err != nil {
+	// A cancelled turn still tells the client how its tool calls ended. A
+	// stream sends many updates under one context, which is detached once.
+	if ctx != tn.sendFrom {
+		tn.sendFrom, tn.sendCtx = ctx, context.WithoutCancel(ctx)
+	}
+	if err := tn.t.Update(tn.sendCtx, update); err != nil {
 		tn.sendErr = fmt.Errorf("loop: sending an update: %w", err)
 	}
 	return tn.sendErr
