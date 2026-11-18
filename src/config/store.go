@@ -13,8 +13,11 @@ type Store struct {
 	// absolute path. Empty means the XDG state directory: Dir resolves it.
 	Root string `name:"root" placeholder:"DIR" help:"Absolute directory that holds one directory per session. Empty means towa/sessions in the XDG state directory."`
 	// Compression is how the log of a new session is stored. A session
-	// that exists keeps the format it was created with.
-	Compression string `name:"compression" default:"zstd" validate:"oneof=none zstd" help:"How the log of a new session is stored: none or zstd."`
+	// that exists keeps the format it was created with. Off by default:
+	// each append is its own frame, too small to compress well (23% saved
+	// over 78 real sessions), and the encoder and decoder add about 2 MB to
+	// every process that uses them.
+	Compression string `name:"compression" default:"none" validate:"oneof=none zstd" help:"How the log of a new session is stored: none or zstd. zstd saves disk space and costs about 2 MB of memory per process."`
 	// Fsync flushes every write of a session to the disk before the write
 	// is acknowledged. Off, a crash of the machine can lose or tear the
 	// last writes, and the next open drops a torn record.
