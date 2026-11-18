@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -16,7 +17,7 @@ import (
 // wireRequest is the body of a Chat Completions request.
 type wireRequest struct {
 	Model         string           `json:"model"`
-	Messages      []wireMessage    `json:"messages"`
+	Messages      *wireMessages    `json:"messages"`
 	Stream        bool             `json:"stream"`
 	StreamOptions *streamOptions   `json:"stream_options,omitzero"`
 	Tools         []jsontext.Value `json:"tools,omitzero"`
@@ -79,8 +80,9 @@ type wireToolCall struct {
 }
 
 type wireFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Name string `json:"name"`
+	// Arguments is the arguments object as a JSON string, already encoded.
+	Arguments jsontext.Value `json:"arguments"`
 }
 
 type wireTool struct {
@@ -154,16 +156,9 @@ func (c *Client) body(dst io.Writer, req provider.Request) *provider.Error {
 		w.SessionID = req.CacheKey
 	}
 
-	if system := systemText(req.System); system != "" {
-		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: textContent(system)})
-	}
-	msgs, perr := c.messages(transcript.Origin{Model: req.Model, Account: req.Credential.Account}, req.Items)
-	if perr != nil {
-		return perr
-	}
-	w.Messages = append(w.Messages, msgs...)
-	if len(w.Messages) == 0 {
-		return invalid("request has no system prompt and no items")
+	w.Messages = &wireMessages{
+		client: c, origin: transcript.Origin{Model: req.Model, Account: req.Credential.Account},
+		system: systemText(req.System), items: req.Items,
 	}
 
 	for i, t := range req.Tools {
@@ -190,7 +185,13 @@ func (c *Client) body(dst io.Writer, req provider.Request) *provider.Error {
 	}
 
 	if err := json.MarshalWrite(dst, w); err != nil {
+		if perr, ok := errors.AsType[*provider.Error](err); ok {
+			return perr
+		}
 		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: "encode request", Err: err}
+	}
+	if w.Messages.count == 0 {
+		return invalid("request has no system prompt and no items")
 	}
 	return nil
 }
@@ -246,6 +247,46 @@ func (c *wireContent) MarshalJSONTo(enc *jsontext.Encoder) error {
 	return enc.WriteToken(jsontext.String(c.text))
 }
 
+// wireMessages encodes the conversation's messages as they are built, so
+// that a request holds no list of them besides its body.
+type wireMessages struct {
+	client *Client
+	origin transcript.Origin
+	system string
+	items  []transcript.Item
+	// count is how many messages were written.
+	count int
+}
+
+func (m *wireMessages) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if err := enc.WriteToken(jsontext.BeginArray); err != nil {
+		return err
+	}
+	opts := enc.Options()
+	b := &messageBuilder{client: m.client, origin: m.origin, emit: func(msg *wireMessage) error {
+		m.count++
+		return json.MarshalEncode(enc, msg, opts)
+	}}
+	if m.system != "" {
+		b.msg = wireMessage{Role: "system", Content: textContent(m.system)}
+		if err := b.emit(&b.msg); err != nil {
+			return err
+		}
+	}
+	for i, item := range m.items {
+		if err := b.add(i, item); err != nil {
+			return err
+		}
+	}
+	if err := b.flush(); err != nil {
+		return err
+	}
+	if err := b.attach(len(m.items)); err != nil {
+		return err
+	}
+	return enc.WriteToken(jsontext.EndArray)
+}
+
 func jsonString(s string) jsontext.Value {
 	v, err := jsontext.AppendQuote(nil, s)
 	if err != nil {
@@ -256,43 +297,38 @@ func jsonString(s string) jsontext.Value {
 	return v
 }
 
-// messageBuilder turns items into wire messages. Thinking, text and tool
-// calls that follow one another are one assistant message, as the model
-// wrote them in one response.
+// messageBuilder turns items into wire messages and emits each when it is
+// whole. Thinking, text and tool calls that follow one another are one
+// assistant message, as the model wrote them in one response. The message
+// and buffers are reused: emit copies a message into the body.
 type messageBuilder struct {
 	client *Client
 	origin transcript.Origin
-	out    []wireMessage
-	cur    *wireMessage // the assistant message being built
-	text   strings.Builder
+	emit   func(*wireMessage) error
+	// cur is the assistant message being built, when open.
+	cur  wireMessage
+	open bool
+	// args holds the encoded arguments of cur's tool calls.
+	args []byte
+	// msg is any other message, from its building to its emit.
+	msg wireMessage
+	// text joins the pieces of one message's text, and quoted holds it
+	// encoded.
+	text   []byte
+	quoted []byte
 	// attached holds what the tool results of the current run returned that
 	// a tool message cannot carry.
 	attached []wirePart
 }
 
-// messages turns the conversation into wire messages.
-func (c *Client) messages(origin transcript.Origin, items []transcript.Item) ([]wireMessage, *provider.Error) {
-	b := &messageBuilder{client: c, origin: origin}
-	for i, item := range items {
-		if perr := b.add(i, item); perr != nil {
-			return nil, perr
-		}
-	}
-	b.flush()
-	if perr := b.attach(len(items)); perr != nil {
-		return nil, perr
-	}
-	return b.out, nil
-}
-
-// add appends the message or the part of one that item makes.
-func (b *messageBuilder) add(i int, item transcript.Item) *provider.Error {
+// add emits the message or builds the part of one that item makes.
+func (b *messageBuilder) add(i int, item transcript.Item) error {
 	if err := item.Validate(); err != nil {
 		return invalid("items[%d]: %v", i, err)
 	}
 	if item.ToolResult == nil {
-		if perr := b.attach(i); perr != nil {
-			return perr
+		if err := b.attach(i); err != nil {
+			return err
 		}
 	}
 	mine := item.OpaqueCompatible(b.client.cfg.ID, b.origin)
@@ -300,8 +336,8 @@ func (b *messageBuilder) add(i int, item transcript.Item) *provider.Error {
 	case item.User != nil:
 		return b.addUser(i, item.User)
 	case item.Text != nil:
-		b.text.WriteString(item.Text.Text)
 		b.assistant()
+		b.text = append(b.text, item.Text.Text...)
 		return nil
 	case item.Thinking != nil:
 		// Incompatible reasoning has no plain form here.
@@ -320,25 +356,42 @@ func (b *messageBuilder) add(i int, item transcript.Item) *provider.Error {
 	}
 }
 
-// flush ends the assistant message being built.
-func (b *messageBuilder) flush() {
-	if b.cur == nil {
-		return
+// flush emits the assistant message being built.
+func (b *messageBuilder) flush() error {
+	if !b.open {
+		return nil
 	}
-	if b.text.Len() > 0 {
-		b.cur.Content = textContent(b.text.String())
+	m := &b.cur
+	if len(b.text) > 0 {
+		content, err := b.quote(b.text)
+		if err != nil {
+			return err
+		}
+		m.Content = content
 	}
+	var err error
 	// Reasoning alone is not a message an endpoint accepts.
-	if !b.cur.Content.IsZero() || len(b.cur.ToolCalls) > 0 {
-		b.out = append(b.out, *b.cur)
+	if !m.Content.IsZero() || len(m.ToolCalls) > 0 {
+		err = b.emit(m)
 	}
-	b.cur = nil
-	b.text.Reset()
+	b.cur = wireMessage{ToolCalls: m.ToolCalls[:0], ReasoningDetails: m.ReasoningDetails[:0]}
+	b.open, b.args, b.text = false, b.args[:0], b.text[:0]
+	return err
+}
+
+// quote returns text as encoded content, in a buffer the next quote reuses.
+func (b *messageBuilder) quote(text []byte) (wireContent, error) {
+	quoted, err := jsontext.AppendQuote(b.quoted[:0], text)
+	if err != nil {
+		return wireContent{}, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: "message text", Err: err}
+	}
+	b.quoted = quoted
+	return partsContent(quoted), nil
 }
 
 // attach writes the content tool results could not carry as one user
 // message.
-func (b *messageBuilder) attach(i int) *provider.Error {
+func (b *messageBuilder) attach(i int) error {
 	if len(b.attached) == 0 {
 		return nil
 	}
@@ -346,35 +399,39 @@ func (b *messageBuilder) attach(i int) *provider.Error {
 	if err != nil {
 		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
 	}
-	b.out = append(b.out, wireMessage{Role: "user", Content: partsContent(content)})
 	b.attached = nil
-	return nil
+	b.msg = wireMessage{Role: "user", Content: partsContent(content)}
+	return b.emit(&b.msg)
 }
 
 func (b *messageBuilder) assistant() *wireMessage {
-	if b.cur == nil {
-		b.cur = &wireMessage{Role: "assistant"}
+	if !b.open {
+		b.open = true
+		b.cur.Role = "assistant"
 	}
-	return b.cur
+	return &b.cur
 }
 
-func (b *messageBuilder) addUser(i int, u *transcript.User) *provider.Error {
+func (b *messageBuilder) addUser(i int, u *transcript.User) error {
 	role := u.Role
 	if role == "" {
 		role = "user"
 	}
-	b.flush()
-	content, perr := userContent(i, u.Parts)
-	if perr != nil {
-		return perr
+	if err := b.flush(); err != nil {
+		return err
 	}
-	if !content.IsZero() {
-		b.out = append(b.out, wireMessage{Role: role, Content: content})
+	content, err := b.userContent(i, u.Parts)
+	if err != nil {
+		return err
 	}
-	return nil
+	if content.IsZero() {
+		return nil
+	}
+	b.msg = wireMessage{Role: role, Content: content}
+	return b.emit(&b.msg)
 }
 
-func (b *messageBuilder) addThinking(i int, item transcript.Item) *provider.Error {
+func (b *messageBuilder) addThinking(i int, item transcript.Item) error {
 	var op thinkingOpaque
 	if err := json.Unmarshal(item.Opaque, &op); err != nil {
 		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: opaque", i), Err: err}
@@ -393,7 +450,7 @@ func (b *messageBuilder) addThinking(i int, item transcript.Item) *provider.Erro
 	return nil
 }
 
-func (b *messageBuilder) addToolCall(i int, item transcript.Item, mine bool) *provider.Error {
+func (b *messageBuilder) addToolCall(i int, item transcript.Item, mine bool) error {
 	// Another provider's call goes without its extensions. Text input has no
 	// plain form to fall back to.
 	if len(item.Opaque) > 0 && !mine && item.ToolCall.Input.Kind() == '"' {
@@ -403,11 +460,15 @@ func (b *messageBuilder) addToolCall(i int, item transcript.Item, mine bool) *pr
 	if tc.ID == "" || tc.Name == "" {
 		return invalid("items[%d]: tool call has no id or no name", i)
 	}
-	args, perr := arguments(i, tc.Input)
+	start := len(b.args)
+	args, perr := appendArguments(b.args, i, tc.Input)
 	if perr != nil {
 		return perr
 	}
-	call := wireToolCall{ID: tc.ID, Type: "function", Function: wireFunction{Name: tc.Name, Arguments: args}}
+	// A call before holds a slice of the old array when this one grew it,
+	// which stays valid.
+	b.args = args
+	call := wireToolCall{ID: tc.ID, Type: "function", Function: wireFunction{Name: tc.Name, Arguments: args[start:len(args):len(args)]}}
 	if mine && item.Opaque != nil {
 		var op toolCallOpaque
 		if err := json.Unmarshal(item.Opaque, &op); err != nil {
@@ -420,24 +481,25 @@ func (b *messageBuilder) addToolCall(i int, item transcript.Item, mine bool) *pr
 	return nil
 }
 
-func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) *provider.Error {
-	b.flush()
+func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) error {
+	if err := b.flush(); err != nil {
+		return err
+	}
 	if tr.CallID == "" {
 		return invalid("items[%d]: tool result has no call id", i)
 	}
 	// Most results are one text part, sent as stored without a copy.
 	var first string
 	var pieces int
-	var text strings.Builder
 	write := func(s string) {
 		switch pieces {
 		case 0:
 			first = s
 		case 1:
-			text.WriteString(first)
+			b.text = append(b.text[:0], first...)
 			fallthrough
 		default:
-			text.WriteString(s)
+			b.text = append(b.text, s...)
 		}
 		pieces++
 	}
@@ -480,12 +542,16 @@ func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) *provid
 		}
 		write(note)
 	}
-	content := first
+	content := textContent(first)
 	if pieces > 1 {
-		content = text.String()
+		var err error
+		if content, err = b.quote(b.text); err != nil {
+			return err
+		}
+		b.text = b.text[:0]
 	}
-	b.out = append(b.out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: textContent(content)})
-	return nil
+	b.msg = wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: content}
+	return b.emit(&b.msg)
 }
 
 // What the model reads in place of content a tool message cannot carry, and
@@ -502,12 +568,19 @@ const (
 // object. Any other input, which is JSON the model left unfinished or
 // another provider's free-text call, is sent as an object with the value
 // under "input", so the model still sees what was written.
-func arguments(i int, input jsontext.Value) (string, *provider.Error) {
-	if input.Kind() == '{' {
-		return string(input), nil
+func appendArguments(dst []byte, i int, input jsontext.Value) ([]byte, *provider.Error) {
+	fail := func(err error) ([]byte, *provider.Error) {
+		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: tool call input", i), Err: err}
 	}
-	fail := func(err error) (string, *provider.Error) {
-		return "", &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]: tool call input", i), Err: err}
+	quote := func(object []byte) ([]byte, *provider.Error) {
+		out, err := jsontext.AppendQuote(dst, object)
+		if err != nil {
+			return fail(err)
+		}
+		return out, nil
+	}
+	if input.Kind() == '{' {
+		return quote(input)
 	}
 	if input.Kind() == '"' {
 		var text string
@@ -515,7 +588,7 @@ func arguments(i int, input jsontext.Value) (string, *provider.Error) {
 			return fail(err)
 		}
 		if v := jsontext.Value(text); v.IsValid() && v.Kind() == '{' {
-			return text, nil
+			return quote(v)
 		}
 	}
 	wrapped, err := json.Marshal(struct {
@@ -524,7 +597,7 @@ func arguments(i int, input jsontext.Value) (string, *provider.Error) {
 	if err != nil {
 		return fail(err)
 	}
-	return string(wrapped), nil
+	return quote(wrapped)
 }
 
 func linkText(l *transcript.Link) string {
@@ -535,42 +608,73 @@ func linkText(l *transcript.Link) string {
 }
 
 // userContent returns a user message's content: a string when every part is
-// text, and an array of parts otherwise. It is nil when no part is sent.
-func userContent(i int, parts []transcript.Part) (wireContent, *provider.Error) {
-	var wire []wirePart
-	plain := true
+// text, and an array of parts otherwise. It is zero when no part is sent.
+func (b *messageBuilder) userContent(i int, parts []transcript.Part) (wireContent, error) {
+	// Most messages are text alone, which needs no list of parts.
+	texts, first := 0, ""
 	for j, p := range parts {
 		switch {
 		case p.Stored != nil:
-		case p.Text != "":
-			wire = append(wire, wirePart{Type: "text", Text: p.Text})
+		case p.Image != nil, p.Audio != nil, p.Resource != nil && p.Resource.Data != nil:
+			return userParts(i, parts)
+		case p.Text != "", p.Resource != nil, p.Link != nil:
+			text := partText(p)
+			if texts == 1 {
+				b.text = append(b.text[:0], first...)
+			}
+			if texts >= 1 {
+				b.text = append(b.text, "\n\n"...)
+				b.text = append(b.text, text...)
+			}
+			if texts == 0 {
+				first = text
+			}
+			texts++
+		default:
+			return wireContent{}, invalid("items[%d].parts[%d]: part has nothing set", i, j)
+		}
+	}
+	switch texts {
+	case 0:
+		return wireContent{}, nil
+	case 1:
+		return textContent(first), nil
+	}
+	content, err := b.quote(b.text)
+	b.text = b.text[:0]
+	return content, err
+}
+
+// partText is the text a user message sends for a text, a text resource or
+// a link.
+func partText(p transcript.Part) string {
+	switch {
+	case p.Text != "":
+		return p.Text
+	case p.Resource != nil:
+		return resourceText(p.Resource)
+	default:
+		return linkText(p.Link)
+	}
+}
+
+// userParts is the content of a user message that holds more than text.
+func userParts(i int, parts []transcript.Part) (wireContent, error) {
+	var wire []wirePart
+	for j, p := range parts {
+		switch {
+		case p.Stored != nil:
 		case p.Image != nil, p.Audio != nil, p.Resource != nil && p.Resource.Data != nil:
 			part, perr := binaryPart(i, j, p)
 			if perr != nil {
 				return wireContent{}, perr
 			}
-			plain = false
 			wire = append(wire, part)
-		case p.Resource != nil:
-			wire = append(wire, wirePart{Type: "text", Text: resourceText(p.Resource)})
-		case p.Link != nil:
-			wire = append(wire, wirePart{Type: "text", Text: linkText(p.Link)})
+		case p.Text != "", p.Resource != nil, p.Link != nil:
+			wire = append(wire, wirePart{Type: "text", Text: partText(p)})
 		default:
 			return wireContent{}, invalid("items[%d].parts[%d]: part has nothing set", i, j)
 		}
-	}
-	if len(wire) == 0 {
-		return wireContent{}, nil
-	}
-	if plain && len(wire) == 1 {
-		return textContent(wire[0].Text), nil
-	}
-	if plain {
-		texts := make([]string, len(wire))
-		for k, p := range wire {
-			texts[k] = p.Text
-		}
-		return textContent(strings.Join(texts, "\n\n")), nil
 	}
 	out, err := json.Marshal(wire)
 	if err != nil {
