@@ -64,6 +64,8 @@ type turn struct {
 	schemas         map[string]*repair.Schema
 	// cost is the session's running cost, from its stored usage on.
 	cost Cost
+	// loaded says entries holds the whole log: the turn got past load.
+	loaded bool
 
 	// sendMu orders updates from tools that run at the same time.
 	sendMu  sync.Mutex
@@ -92,6 +94,11 @@ func (l *Loop) Run(ctx context.Context, t Turn) (Result, error) {
 		if err == nil {
 			err = tn.reportJobs(ctx)
 		}
+	}
+	// Every entry in tn.entries was stored, so after a turn without an
+	// error they are the log as this process left it.
+	if err == nil && tn.loaded {
+		l.o.Kept.put(id, tn.entries, tn.cost)
 	}
 	result.Final = tn.final
 	if result.Usage == nil {

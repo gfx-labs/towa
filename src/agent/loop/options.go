@@ -45,6 +45,9 @@ type Options struct {
 	// while one runs waits for it, and no job outlives the turn that
 	// started it. Nil when the session has none.
 	Jobs *jobs.Set
+	// Kept holds the session's entries between turns. Nil reads the whole
+	// log at the start of every turn.
+	Kept *Kept
 }
 
 // Resolved is a model as one turn uses it.
@@ -75,8 +78,8 @@ type Resolved struct {
 	Interruption string
 }
 
-// Loop runs prompt turns. It keeps nothing between turns: a session's
-// conversation is read from the store when a turn starts.
+// Loop runs prompt turns. A session's conversation is read from the store
+// when a turn starts, or from Options.Kept and the entries stored after it.
 type Loop struct {
 	o Options
 }

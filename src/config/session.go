@@ -10,6 +10,11 @@ type Session struct {
 	// Zero means every session in one response, which is the default: no
 	// measurement says where a page should end.
 	ListPageSize int `name:"list_page_size" default:"0" validate:"gte=0" help:"Most sessions in one session/list response. 0 puts every session in one response."`
+	// KeepHistorySeconds is how long an open session keeps its history in
+	// memory after a turn. A turn within that time reads only what was
+	// appended since. 15 minutes holds the history across the pauses of
+	// someone at work in a session, and an idle session gives it back.
+	KeepHistorySeconds int64 `name:"keep_history_seconds" default:"900" validate:"gte=0" help:"Seconds an open session keeps its history in memory after a turn, so that the next turn does not read the whole log. 0 reads the log at every turn."`
 }
 
 // Session modes.

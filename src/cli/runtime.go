@@ -76,6 +76,8 @@ type sessionRuntime struct {
 	mapper       loop.Mapper
 	compactor    *compact.Controller
 	compactorKey string
+	// kept is the session's history between turns.
+	kept *loop.Kept
 }
 
 type preparedTurn struct {
@@ -183,7 +185,10 @@ func (f *runtimeFactory) Open(ctx context.Context, base loop.Turn) (session.Runt
 }
 
 func (f *runtimeFactory) open(ctx context.Context, base loop.Turn) (*sessionRuntime, error) {
-	r := &sessionRuntime{factory: f, reads: &core.ReadTracker{}, jobs: jobs.NewSet()}
+	r := &sessionRuntime{
+		factory: f, reads: &core.ReadTracker{}, jobs: jobs.NewSet(),
+		kept: loop.NewKept(time.Duration(f.cfg.Session.KeepHistorySeconds) * time.Second),
+	}
 	var taken []string
 	if len(f.cfg.Models) != 0 {
 		loaded, err := f.loadContext(base)
@@ -224,6 +229,7 @@ func (f *runtimeFactory) Run(ctx context.Context, child loop.Turn) (result loop.
 }
 
 func (r *sessionRuntime) Close(context.Context) error {
+	r.kept.Drop()
 	if r.compactor != nil {
 		r.compactor.Close()
 	}
@@ -243,7 +249,7 @@ func (r *sessionRuntime) Run(ctx context.Context, turn loop.Turn) (loop.Result, 
 		},
 		Store: f.store, System: func(context.Context, loop.Turn) ([]provider.SystemBlock, error) { return prepared.system, nil },
 		Limits: f.cfg.Limits, Now: time.Now, Repair: f.cfg.Tools.Repair.Enabled,
-		Gate: f.cfg.Tools.Gate, Hooks: hooks.New(f.cfg.Hooks), Logger: f.tel.Logger, Jobs: r.jobs,
+		Gate: f.cfg.Tools.Gate, Hooks: hooks.New(f.cfg.Hooks), Logger: f.tel.Logger, Jobs: r.jobs, Kept: r.kept,
 		NewCompactor: func(context.Context, loop.Turn, loop.Resolved) (*compact.Controller, error) {
 			if r.compactor != nil && r.compactorKey == prepared.compactorKey {
 				return r.compactor, nil
