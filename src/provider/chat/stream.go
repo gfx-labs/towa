@@ -83,6 +83,10 @@ type streamState struct {
 	header http.Header
 	// out holds the events of the chunk being read.
 	out []provider.Event
+	// wire is each chunk as decoded, reused. It is zeroed before each
+	// decode, its choices too: unmarshal would write into the old values'
+	// slices, which events and tool calls still hold.
+	wire wireChunk
 
 	text           strings.Builder
 	thinking       strings.Builder
@@ -106,8 +110,10 @@ func (s *streamState) malformed(err error, format string, args ...any) *provider
 
 // chunk reads one data event.
 func (s *streamState) chunk(data []byte) *provider.Error {
-	var c wireChunk
-	if err := json.Unmarshal(data, &c); err != nil {
+	clear(s.wire.Choices[:cap(s.wire.Choices)])
+	s.wire = wireChunk{Choices: s.wire.Choices[:0]}
+	c := &s.wire
+	if err := json.Unmarshal(data, c); err != nil {
 		return s.malformed(err, "a stream event is not a chat completion chunk")
 	}
 	if c.Error != nil && c.Error.Kind() != 'n' {
