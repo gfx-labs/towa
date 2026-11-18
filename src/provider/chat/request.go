@@ -237,9 +237,9 @@ func textContent(s string) wireContent { return wireContent{text: s, set: true} 
 
 func partsContent(v jsontext.Value) wireContent { return wireContent{parts: v, set: true} }
 
-func (c wireContent) IsZero() bool { return !c.set }
+func (c *wireContent) IsZero() bool { return !c.set }
 
-func (c wireContent) MarshalJSONTo(enc *jsontext.Encoder) error {
+func (c *wireContent) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if c.parts != nil {
 		return enc.WriteValue(c.parts)
 	}
