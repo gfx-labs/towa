@@ -4,9 +4,9 @@ towa ([insp.](https://boogiepop.fandom.com/wiki/Towa_Organization)) is an acp-ba
 
 it is designed to be run in autonomous harness swarms and workflows in a single-turn, or orchestrated multi-turn settings. its low-memory footprint makes it ideal for a one-session-per-sandbox type workload
 
-there is no ui. the only way to speak with it is the acp protocol, over stdio or socket.
+towa comes with ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
-try it with out with https://github.com/gfx-labs/acpc or acpx
+for use on desktop, try [wisp](https://github.com/gfx-labs/wist), our acp native cli/tui client.
 
 there are a large amount of configuration keys, everything configurable through ENV, cli, or file.
 
