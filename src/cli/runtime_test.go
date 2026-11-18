@@ -374,30 +374,30 @@ func TestPromptIsBuiltAgainOnlyWhenItsInputsChange(t *testing.T) {
 		}
 		return b.String()
 	}
-	first, err := cache.build(false, prompt)
+	first, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
-	again, err := cache.build(false, prompt)
+	again, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	require.Same(t, &first[0], &again[0])
 
 	// The session's MCP tools arrive after its first prompt was built.
 	prompt.Rules = []string{"read before editing", "ask the tracker for issues"}
-	changed, err := cache.build(false, prompt)
+	changed, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	require.Contains(t, text(changed), "ask the tracker for issues")
 
 	// A kept prompt does not follow a caller that reuses its slice.
 	dirs := []string{"/other"}
 	prompt.AdditionalDirs = dirs
-	_, err = cache.build(false, prompt)
+	_, err = cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	dirs[0] = "/elsewhere"
-	moved, err := cache.build(false, prompt)
+	moved, err := cache.build(hostedTools{}, prompt)
 	require.NoError(t, err)
 	require.Contains(t, text(moved), "/elsewhere")
 
 	// Provider-run web search has its own prompt.
-	hosted, err := cache.build(true, prompt)
+	hosted, err := cache.build(hostedTools{search: true}, prompt)
 	require.NoError(t, err)
 	require.NotSame(t, &moved[0], &hosted[0])
 }

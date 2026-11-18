@@ -62,3 +62,21 @@ func TestPreparationSwapsTheSearchToolPerEntry(t *testing.T) {
 	// A session with search turned off does not get the provider's.
 	require.Equal(t, []provider.Tool{read}, prepare([]provider.Tool{read}, with))
 }
+
+// An entry whose provider generates images is sent that tool beside the
+// session's, and one without it is not.
+func TestPreparationAddsTheImageToolPerEntry(t *testing.T) {
+	read := provider.Tool{Name: "read", InputSchema: jsontext.Value(`{"type":"object"}`)}
+	image := provider.Tool{Name: "image_generation", Native: jsontext.Value(`{"type":"image_generation"}`), NativeAPI: provider.NativeAPIResponses}
+	session := tools.Set{Tools: []tools.Tool{{Spec: read}}}
+	prepare := func(entry router.Preparation) []provider.Tool {
+		tn := &turn{l: &Loop{o: Options{Now: time.Now}}, started: time.Now(), model: Resolved{Interruption: "i", Tools: session}}
+		entry.ContextWindow, entry.MaxOutputTokens = 2048, 128
+		req, err := tn.prepareRequest(t.Context(), router.Entry{Preparation: &entry}, provider.Request{Tools: []provider.Tool{image}})
+		require.NoError(t, err)
+		return req.Tools
+	}
+	require.Equal(t, []provider.Tool{read, image}, prepare(router.Preparation{HostedImage: image}))
+	require.Equal(t, []provider.Tool{read}, prepare(router.Preparation{}))
+	require.Equal(t, []provider.Tool{read}, session.Specs(), "the session's tools are not changed")
+}
