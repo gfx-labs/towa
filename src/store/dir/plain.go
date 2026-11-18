@@ -77,7 +77,9 @@ func (plainFormat) end(f *os.File, size int64) (int64, error) {
 		}
 	} else {
 		// Drop the line that was cut short.
-		buf := make([]byte, readChunk)
+		bp := chunks.Get().(*[]byte)
+		defer chunks.Put(bp)
+		buf := *bp
 		for whole > 0 {
 			n := min(int64(len(buf)), whole)
 			if _, err := f.ReadAt(buf[:n], whole-n); err != nil {
@@ -215,7 +217,9 @@ func (l *lineReader) next() ([]byte, error) {
 // line first, until visit returns true. The log before end ends in a
 // newline. A line is valid until visit returns.
 func linesBack(f io.ReaderAt, end int64, visit func(offset int64, line []byte) (bool, error)) error {
-	buf := make([]byte, readChunk)
+	bp := chunks.Get().(*[]byte)
+	defer chunks.Put(bp)
+	buf := *bp
 	// tail holds the end of the line being assembled, in pieces from the
 	// last to the first. They are kept apart until the line's first byte is
 	// found, so that a long line is copied once.

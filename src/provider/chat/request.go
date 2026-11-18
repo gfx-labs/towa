@@ -59,7 +59,7 @@ type wireMessage struct {
 	// Content is a JSON string, or an array of parts for a user message
 	// that has more than text. It is left out of an assistant message that
 	// has only tool calls.
-	Content    jsontext.Value `json:"content,omitzero"`
+	Content    wireContent    `json:"content,omitzero"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitzero"`
 	ToolCallID string         `json:"tool_call_id,omitzero"`
 	// The three reasoning members are how different endpoints take a
@@ -155,7 +155,7 @@ func (c *Client) body(dst io.Writer, req provider.Request) *provider.Error {
 	}
 
 	if system := systemText(req.System); system != "" {
-		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: jsonString(system)})
+		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: textContent(system)})
 	}
 	msgs, perr := c.messages(transcript.Origin{Model: req.Model, Account: req.Credential.Account}, req.Items)
 	if perr != nil {
@@ -222,6 +222,28 @@ func systemText(blocks []provider.SystemBlock) string {
 		}
 	}
 	return strings.Join(texts, "\n\n")
+}
+
+// wireContent is a message's content: text, which the encoder quotes into
+// the body without a copy of its own, or an array of parts already encoded.
+// An empty text is still content: a tool result can be empty.
+type wireContent struct {
+	text  string
+	parts jsontext.Value
+	set   bool
+}
+
+func textContent(s string) wireContent { return wireContent{text: s, set: true} }
+
+func partsContent(v jsontext.Value) wireContent { return wireContent{parts: v, set: true} }
+
+func (c wireContent) IsZero() bool { return !c.set }
+
+func (c wireContent) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if c.parts != nil {
+		return enc.WriteValue(c.parts)
+	}
+	return enc.WriteToken(jsontext.String(c.text))
 }
 
 func jsonString(s string) jsontext.Value {
@@ -304,10 +326,10 @@ func (b *messageBuilder) flush() {
 		return
 	}
 	if b.text.Len() > 0 {
-		b.cur.Content = jsonString(b.text.String())
+		b.cur.Content = textContent(b.text.String())
 	}
 	// Reasoning alone is not a message an endpoint accepts.
-	if b.cur.Content != nil || len(b.cur.ToolCalls) > 0 {
+	if !b.cur.Content.IsZero() || len(b.cur.ToolCalls) > 0 {
 		b.out = append(b.out, *b.cur)
 	}
 	b.cur = nil
@@ -324,7 +346,7 @@ func (b *messageBuilder) attach(i int) *provider.Error {
 	if err != nil {
 		return &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
 	}
-	b.out = append(b.out, wireMessage{Role: "user", Content: content})
+	b.out = append(b.out, wireMessage{Role: "user", Content: partsContent(content)})
 	b.attached = nil
 	return nil
 }
@@ -346,7 +368,7 @@ func (b *messageBuilder) addUser(i int, u *transcript.User) *provider.Error {
 	if perr != nil {
 		return perr
 	}
-	if content != nil {
+	if !content.IsZero() {
 		b.out = append(b.out, wireMessage{Role: role, Content: content})
 	}
 	return nil
@@ -403,18 +425,33 @@ func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) *provid
 	if tr.CallID == "" {
 		return invalid("items[%d]: tool result has no call id", i)
 	}
+	// Most results are one text part, sent as stored without a copy.
+	var first string
+	var pieces int
 	var text strings.Builder
+	write := func(s string) {
+		switch pieces {
+		case 0:
+			first = s
+		case 1:
+			text.WriteString(first)
+			fallthrough
+		default:
+			text.WriteString(s)
+		}
+		pieces++
+	}
 	var binary []wirePart
 	var notes []string
 	for j, p := range tr.Parts {
 		switch {
 		case p.Stored != nil:
 		case p.Text != "":
-			text.WriteString(p.Text)
+			write(p.Text)
 		case p.Resource != nil && p.Resource.Data == nil:
-			text.WriteString(resourceText(p.Resource))
+			write(resourceText(p.Resource))
 		case p.Link != nil:
-			text.WriteString(linkText(p.Link))
+			write(linkText(p.Link))
 		case p.Image != nil, p.Audio != nil, p.Resource != nil:
 			// A part this API has no form for becomes text that says so:
 			// the result is stored already, so an error here would fail
@@ -438,12 +475,16 @@ func (b *messageBuilder) addToolResult(i int, tr *transcript.ToolResult) *provid
 		b.attached = append(b.attached, binary...)
 	}
 	for _, note := range notes {
-		if text.Len() > 0 {
-			text.WriteString("\n\n")
+		if pieces > 0 {
+			write("\n\n")
 		}
-		text.WriteString(note)
+		write(note)
 	}
-	b.out = append(b.out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: jsonString(text.String())})
+	content := first
+	if pieces > 1 {
+		content = text.String()
+	}
+	b.out = append(b.out, wireMessage{Role: "tool", ToolCallID: tr.CallID, Content: textContent(content)})
 	return nil
 }
 
@@ -495,7 +536,7 @@ func linkText(l *transcript.Link) string {
 
 // userContent returns a user message's content: a string when every part is
 // text, and an array of parts otherwise. It is nil when no part is sent.
-func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Error) {
+func userContent(i int, parts []transcript.Part) (wireContent, *provider.Error) {
 	var wire []wirePart
 	plain := true
 	for j, p := range parts {
@@ -506,7 +547,7 @@ func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Erro
 		case p.Image != nil, p.Audio != nil, p.Resource != nil && p.Resource.Data != nil:
 			part, perr := binaryPart(i, j, p)
 			if perr != nil {
-				return nil, perr
+				return wireContent{}, perr
 			}
 			plain = false
 			wire = append(wire, part)
@@ -515,24 +556,27 @@ func userContent(i int, parts []transcript.Part) (jsontext.Value, *provider.Erro
 		case p.Link != nil:
 			wire = append(wire, wirePart{Type: "text", Text: linkText(p.Link)})
 		default:
-			return nil, invalid("items[%d].parts[%d]: part has nothing set", i, j)
+			return wireContent{}, invalid("items[%d].parts[%d]: part has nothing set", i, j)
 		}
 	}
 	if len(wire) == 0 {
-		return nil, nil
+		return wireContent{}, nil
+	}
+	if plain && len(wire) == 1 {
+		return textContent(wire[0].Text), nil
 	}
 	if plain {
 		texts := make([]string, len(wire))
 		for k, p := range wire {
 			texts[k] = p.Text
 		}
-		return jsonString(strings.Join(texts, "\n\n")), nil
+		return textContent(strings.Join(texts, "\n\n")), nil
 	}
 	out, err := json.Marshal(wire)
 	if err != nil {
-		return nil, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
+		return wireContent{}, &provider.Error{Class: provider.Fail, Reason: provider.ReasonRequest, Message: fmt.Sprintf("items[%d]", i), Err: err}
 	}
-	return out, nil
+	return partsContent(out), nil
 }
 
 // resourceText is a text resource with its URI, so the model can tell

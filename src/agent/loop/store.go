@@ -32,7 +32,6 @@ func (tn *turn) load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
 	}
-	var history []transcript.Item
 	for entry, err := range entries {
 		if err != nil {
 			return fmt.Errorf("loop: loading session %s: %w", tn.id, err)
@@ -41,12 +40,9 @@ func (tn *turn) load(ctx context.Context) error {
 		if entry.Item.Usage != nil {
 			tn.cost.Add(*entry.Item.Usage)
 		}
-		if entry.Item.Compaction == nil {
-			history = append(history, entry.Item)
-		}
 		tn.parent = entry.ID
 	}
-	repairs, err := lostResults(history, tn.model.Interruption)
+	repairs, err := lostResults(tn.entries, tn.model.Interruption)
 	if err != nil {
 		return err
 	}

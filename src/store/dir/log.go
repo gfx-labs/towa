@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 	"uuid"
 
@@ -26,6 +27,13 @@ import (
 // readChunk is the size of the buffer a log is read through. It is not a
 // limit: a longer line is assembled from several reads.
 const readChunk = 64 << 10
+
+// chunks holds read buffers of readChunk bytes. Every load and append
+// checks the log's end through one, and none outlives its call.
+var chunks = sync.Pool{New: func() any {
+	buf := make([]byte, readChunk)
+	return &buf
+}}
 
 // TornError reports a log that ends in a record that was not written whole,
 // which a crash during Append leaves behind. The entries before Offset are

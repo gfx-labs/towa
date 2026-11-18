@@ -3,6 +3,7 @@ package loop
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/gfx-labs/towa/src/transcript"
@@ -73,7 +74,7 @@ func told(parts []transcript.Part) []transcript.Part {
 // part, and not at all when no part is left.
 func Conversation(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
 	items = make([]transcript.Item, 0, len(history)+1)
-	repairs, err = walk(history, interruption, func(item transcript.Item) { items = append(items, item) })
+	repairs, err = walk(slices.Values(history), interruption, func(item transcript.Item) { items = append(items, item) })
 	if err != nil {
 		return nil, nil, err
 	}
@@ -85,7 +86,7 @@ func Conversation(history []transcript.Item, interruption string) (items []trans
 // the place of one read, so the writes never pass the reads.
 func conversationInPlace(history []transcript.Item, interruption string) (items []transcript.Item, repairs []transcript.Item, err error) {
 	n := 0
-	repairs, err = walk(history, interruption, func(item transcript.Item) {
+	repairs, err = walk(slices.Values(history), interruption, func(item transcript.Item) {
 		history[n] = item
 		n++
 	})
@@ -96,14 +97,21 @@ func conversationInPlace(history []transcript.Item, interruption string) (items 
 }
 
 // lostResults returns the results Conversation would store first, without
-// building the items. A turn needs only these when it loads the session.
-func lostResults(history []transcript.Item, interruption string) ([]transcript.Item, error) {
-	return walk(history, interruption, nil)
+// building the items. A turn needs only these when it loads the session, and
+// reads them from its entries so that it keeps no second list of the items.
+func lostResults(entries []transcript.Entry, interruption string) ([]transcript.Item, error) {
+	return walk(func(yield func(transcript.Item) bool) {
+		for i := range entries {
+			if entries[i].Item.Compaction == nil && !yield(entries[i].Item) {
+				return
+			}
+		}
+	}, interruption, nil)
 }
 
 // walk passes each item a request holds to emit, which may be nil, and
 // returns the results for calls left without one.
-func walk(history []transcript.Item, interruption string, emit func(transcript.Item)) ([]transcript.Item, error) {
+func walk(history iter.Seq[transcript.Item], interruption string, emit func(transcript.Item)) ([]transcript.Item, error) {
 	interrupted := userText(interruption)
 	if err := interrupted.Validate(); err != nil {
 		return nil, err
@@ -127,7 +135,7 @@ func walk(history []transcript.Item, interruption string, emit func(transcript.I
 			pending[i].followed = true
 		}
 	}
-	for _, item := range history {
+	for item := range history {
 		if err := item.Validate(); err != nil {
 			return nil, err
 		}
