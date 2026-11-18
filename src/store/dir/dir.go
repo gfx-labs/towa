@@ -334,6 +334,12 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	defer root.Close() //nolint:errcheck // Closing drops the directory lock.
+	// A session open in another process is not removed under it.
+	leased, err := s.takeLease(id)
+	if err != nil {
+		return err
+	}
+	defer leased.Close() //nolint:errcheck // Closing drops the lease, and the file is removed with the directory.
 	// The lock is held until the files are gone, so that a call waiting
 	// for it finds a log with no name and reports the session as not found.
 	log, _, err := s.openLog(id, os.O_RDONLY, filelock.Exclusive)

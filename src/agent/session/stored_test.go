@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -212,6 +213,9 @@ func TestStoredSessionIsLoadedByAnotherAgent(t *testing.T) {
 	_, others = first.Await(`4`)
 	second, _ := shown(t, others)
 	want := append(append(append([]string{userChunk(t, "first")}, live...), userChunk(t, "compact")), second...)
+	// The pod lets the session go, which drops its lease.
+	first.Send(request(`5`, "session/close", `{"sessionId":"`+id+`"}`))
+	first.Await(`5`)
 
 	// The new pod: another agent with its own store value on the directory.
 	next := pod(t, root, nil)
@@ -303,6 +307,11 @@ func TestResumeTitleASavedSessionAndListInPages(t *testing.T) {
 	}
 	first.Send(prompt(`1`, ids[0], "first"))
 	first.Await(`1`)
+	for i, id := range ids {
+		closeID := fmt.Sprintf(`"close%d"`, i)
+		first.Send(request(closeID, "session/close", `{"sessionId":"`+id+`"}`))
+		first.Await(closeID)
+	}
 
 	next := pod(t, root, func(o *session.Options) { o.Session.ListPageSize = 2 })
 	// A session in the store and not in memory can be titled.
@@ -446,4 +455,35 @@ func TestTornSessionMovesToANewProcess(t *testing.T) {
 			fresh.exit()
 		})
 	}
+}
+
+// A session open in one process is refused to another, which is told the
+// holder's pid, and becomes free when the holder dies however it dies.
+func TestASessionIsOpenInOneProcessAtATime(t *testing.T) {
+	root := t.TempDir()
+	holder := startProcess(t, root)
+	holder.call(`"init"`, initialize)
+	made, _ := holder.call(`"new"`, newSession)
+	var created acp.NewSessionResponse
+	require.NoError(t, json.Unmarshal(made.Result, &created))
+	id := string(created.SessionId)
+
+	other := startProcess(t, root)
+	other.call(`"init"`, initialize)
+	for _, method := range []string{"session/load", "session/resume", "session/delete"} {
+		refused, _ := other.call(`1`, request(`1`, method, `{"sessionId":"`+id+`","cwd":"/work","mcpServers":[]}`))
+		require.NotNil(t, refused.Error, method)
+		require.Equal(t, acp.NewInvalidRequest(nil).Code, refused.Error.Code, method)
+		data, ok := refused.Error.Data.(map[string]any)
+		require.True(t, ok, method)
+		require.EqualValues(t, holder.cmd.Process.Pid, data["pid"], method)
+	}
+
+	require.NoError(t, holder.cmd.Process.Kill())
+	require.Error(t, holder.cmd.Wait())
+	loaded, _ := other.call(`2`, request(`2`, "session/resume", `{"sessionId":"`+id+`","cwd":"/work","mcpServers":[]}`))
+	require.Nil(t, loaded.Error)
+	answer, _ := other.call(`3`, prompt(`3`, id, "after the holder died"))
+	require.JSONEq(t, endTurn, string(answer.Result))
+	other.exit()
 }

@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"errors"
+	"io"
 	"maps"
 	"sync"
 
@@ -62,6 +64,10 @@ type session struct {
 	// meta is the session as the store last had it. It is the zero value
 	// without a store.
 	meta store.Meta
+	// lease keeps other processes from opening the session while this one
+	// has it. Close drops it once the turn and runtime have stopped. Nil
+	// without a store.
+	lease io.Closer
 }
 
 func newSession(id acp.SessionId, cwd string) *session {
@@ -227,6 +233,9 @@ func (s *session) beginClose(ctx context.Context) {
 			s.setMu.Unlock()
 			if runtime.Close != nil {
 				s.closeErr = runtime.Close(context.WithoutCancel(ctx))
+			}
+			if s.lease != nil {
+				s.closeErr = errors.Join(s.closeErr, s.lease.Close())
 			}
 			close(s.closeDone)
 		}()

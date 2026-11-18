@@ -117,6 +117,9 @@ func (a *Agent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.Ne
 		if err := a.store.Create(ctx, s.meta); err != nil {
 			return acp.NewSessionResponse{}, fmt.Errorf("session: storing session %s: %w", s.id, err)
 		}
+		if err := a.takeLease(ctx, s); err != nil {
+			return acp.NewSessionResponse{}, err
+		}
 	}
 	if err := a.put(s, a); err != nil {
 		return acp.NewSessionResponse{}, err

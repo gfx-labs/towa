@@ -111,14 +111,18 @@ func (a *Agent) attach(ctx context.Context, r attachRequest, replay bool) (*acp.
 	}
 	meta = plan.meta
 
-	*r.repaired, err = a.repair(ctx, r.id, meta.ID)
-	if err != nil {
-		return nil, nil, err
-	}
 	s := newFromPlan(r.id, meta.Cwd, r.dirs, r.mcpServers, plan)
 	s.meta = meta
 	attached := false
 	defer a.discard(ctx, s, &attached)
+	// Before the repair, which writes to the log.
+	if err := a.takeLease(ctx, s); err != nil {
+		return nil, nil, err
+	}
+	*r.repaired, err = a.repair(ctx, r.id, meta.ID)
+	if err != nil {
+		return nil, nil, err
+	}
 	a.announceAfterResponse(ctx, s)
 	if err := a.openRuntime(ctx, s); err != nil {
 		return nil, nil, err
@@ -335,6 +339,16 @@ func (a *Agent) DeleteSession(ctx context.Context, p acp.DeleteSessionRequest) (
 	return acp.DeleteSessionResponse{}, nil
 }
 
+// takeLease makes this process the only one with s open.
+func (a *Agent) takeLease(ctx context.Context, s *session) error {
+	l, err := a.store.Lease(ctx, s.meta.ID)
+	if err != nil {
+		return storeError(s.id, err)
+	}
+	s.lease = l
+	return nil
+}
+
 // storedMeta reads a session's Meta from the store. An id the store cannot
 // hold is an unknown session.
 func (a *Agent) storedMeta(ctx context.Context, id acp.SessionId) (store.Meta, error) {
@@ -431,6 +445,13 @@ func (a *Agent) persist(ctx context.Context, s *session) error {
 func storeError(id acp.SessionId, err error) error {
 	if errors.Is(err, store.ErrNotFound) {
 		return unknownSession(id)
+	}
+	if leased, ok := errors.AsType[*store.LeasedError](err); ok {
+		data := map[string]any{"error": "the session is open in another process", "sessionId": id}
+		if leased.PID != 0 {
+			data["pid"] = leased.PID
+		}
+		return acp.NewInvalidRequest(data)
 	}
 	return fmt.Errorf("session: store, session %s: %w", id, err)
 }

@@ -104,6 +104,9 @@ func (a *Agent) UnstableForkSession(ctx context.Context, request acp.UnstableFor
 	if err := a.storeFork(ctx, s, forkSource{id: p.SessionId, stored: meta.ID}, id, meta); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
+	if err := a.takeLease(ctx, s); err != nil {
+		return acp.UnstableForkSessionResponse{}, err
+	}
 	if err := a.put(s, a); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}

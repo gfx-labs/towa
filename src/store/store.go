@@ -9,6 +9,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"time"
@@ -24,6 +25,21 @@ var ErrNotFound = errors.New("store: session not found")
 // an append that a crash cut short. The entries before it are intact, and
 // Repair makes the session appendable again.
 var ErrTorn = errors.New("store: the session's log ends in a torn append")
+
+// LeasedError reports a session that another process has open. PID is
+// the process that took the lease, as it wrote it, and zero when it could
+// not be read.
+type LeasedError struct {
+	ID  uuid.UUID
+	PID int
+}
+
+func (e *LeasedError) Error() string {
+	if e.PID == 0 {
+		return fmt.Sprintf("store: session %s is open in another process", e.ID)
+	}
+	return fmt.Sprintf("store: session %s is open in process %d", e.ID, e.PID)
+}
 
 // Meta describes a session.
 type Meta struct {
@@ -113,7 +129,14 @@ type Store interface {
 	// Title, Model, Mode, Dirs, Archived and State.
 	SetMeta(ctx context.Context, meta Meta) error
 	List(ctx context.Context, filter Filter) ([]Meta, error)
+	// Delete removes a session. A session another process holds the lease
+	// of is not removed: the error is a *LeasedError.
 	Delete(ctx context.Context, id uuid.UUID) error
+	// Lease makes this process the only one that has the session open
+	// until the returned Closer is closed or the process ends. A session
+	// another process holds is refused with a *LeasedError, without
+	// waiting.
+	Lease(ctx context.Context, id uuid.UUID) (io.Closer, error)
 	// PutBlob stores content for a session under its hash and returns once
 	// it is durable. Storing the same content twice keeps one copy. The
 	// content lives in the session's directory, so it moves with it.

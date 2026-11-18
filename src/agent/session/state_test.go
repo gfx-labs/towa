@@ -29,6 +29,8 @@ func TestStoredSessionRetainsTurnSettings(t *testing.T) {
 	id := string(created.SessionId)
 	first.Send(request(`2`, "session/set_mode", `{"sessionId":"`+id+`","modeId":"auto"}`))
 	first.Await(`2`)
+	first.Send(request(`3`, "session/close", `{"sessionId":"`+id+`"}`))
+	first.Await(`3`)
 
 	// A separate agent opens the same store. Neither the initial _meta nor
 	// the system prompt is repeated in its load request.
