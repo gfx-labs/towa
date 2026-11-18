@@ -72,8 +72,8 @@ type Options struct {
 	// NoSync leaves out every fsync, of files and of directories. A crash
 	// of the machine can then lose or tear the last writes.
 	NoSync bool
-	// ZstdConcurrency is how many zstd encodes or decodes run at once over
-	// every session. 0 is one per CPU.
+	// ZstdConcurrency is how many zstd decodes run at once over every
+	// session. 0 is one per CPU. Encodes run one at a time.
 	ZstdConcurrency int
 }
 

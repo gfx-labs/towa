@@ -78,16 +78,18 @@ type codec struct {
 	enc              *zstd.Encoder
 	dec              *zstd.Decoder
 	encErr, decErr   error
-	// concurrency is how many EncodeAll or DecodeAll calls run at once.
-	// The library reads 0 as GOMAXPROCS.
+	// concurrency is how many DecodeAll calls run at once. The library
+	// reads 0 as GOMAXPROCS.
 	concurrency int
 }
 
 func (c *codec) encoder() (*zstd.Encoder, error) {
 	c.encOnce.Do(func() {
 		// EncodeAll runs on the caller's goroutine. The level is the
-		// library's default.
-		c.enc, c.encErr = zstd.NewWriter(nil, zstd.WithEncoderConcurrency(c.concurrency))
+		// library's default. One at a time: an encoder slot holds about
+		// 1.3 MB once used, a decoder slot a few KB, and an append is one
+		// turn's entries where a load is a whole log.
+		c.enc, c.encErr = zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
 	})
 	return c.enc, c.encErr
 }
