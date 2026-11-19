@@ -6,7 +6,7 @@ it is designed to be run in autonomous harness swarms and workflows in a single-
 
 towa comes with ui. the only way to speak with it is the acp protocol, over stdio or socket.
 
-for use on desktop, try [wisp](https://github.com/gfx-labs/wist), our acp native cli/tui client.
+for use on desktop, try [wist](https://github.com/gfx-labs/wist), our acp native cli/tui client.
 
 there are a large amount of configuration keys, everything configurable through ENV, cli, or file.
 
